@@ -281,11 +281,14 @@ def _ledger_balances(
   for ledger_id, payment_tds, receipt_tds in _tds_totals_by_ledger(db, ledger_ids, company_id=company_id):
     balances[ledger_id] = balances.get(ledger_id, 0.0) + float(payment_tds) - float(receipt_tds)
 
+  # A sales note's TCS share (#769) sits outside line_total but reverses TCS the
+  # invoice charged, so it credits the customer too; purchase notes carry none.
+  credit_note_amount = CreditNoteItem.line_total + func.coalesce(CreditNoteItem.tcs_amount, 0)
   credit_note_rows = (
     db.query(
       CreditNote.ledger_id,
-      func.coalesce(func.sum(case((Invoice.voucher_type == "purchase", CreditNoteItem.line_total), else_=0)), 0),
-      func.coalesce(func.sum(case((Invoice.voucher_type != "purchase", CreditNoteItem.line_total), else_=0)), 0),
+      func.coalesce(func.sum(case((Invoice.voucher_type == "purchase", credit_note_amount), else_=0)), 0),
+      func.coalesce(func.sum(case((Invoice.voucher_type != "purchase", credit_note_amount), else_=0)), 0),
     )
     .join(CreditNoteItem, CreditNoteItem.credit_note_id == CreditNote.id)
     .join(Invoice, Invoice.id == CreditNoteItem.invoice_id)
