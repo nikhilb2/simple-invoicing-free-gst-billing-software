@@ -55,6 +55,7 @@ from src.services.quotation import (
     require_restorable,
 )
 from src.services.serial_service import SerialManager
+from src.services.tcs import copied_tcs_fields
 from src.services.share_documents import (
     RESOURCE_INVOICE,
     document_share_url,
@@ -1079,6 +1080,7 @@ def duplicate_invoice(
             apply_round_off=original.apply_round_off,
             discount_type=original.discount_type,
             discount_value=original.discount_value,
+            **copied_tcs_fields(db, original, india_today(), active_company),
             items=[
                 InvoiceItemCreate(
                     product_id=item.product_id,

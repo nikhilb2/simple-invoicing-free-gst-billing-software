@@ -1,6 +1,6 @@
 import api from '../../api/client';
 import type { InvoiceDueSort } from '../../utils/invoiceDuesSorting';
-import type { CompanyProfile, DuesAgeing, Invoice, Ledger, LedgerAddress, LedgerAddressCreate, LedgerAddressUpdate, OutstandingInvoice, PaginatedInvoices, Product } from '../../types/api';
+import type { CompanyProfile, DuesAgeing, Invoice, Ledger, LedgerAddress, LedgerAddressCreate, LedgerAddressUpdate, OutstandingInvoice, PaginatedInvoices, Product, TaxWithholdingSection } from '../../types/api';
 import { toIsoDate } from '../../utils/dateRanges';
 
 export type VoucherTypeFilter = 'all' | 'sales' | 'purchase';
@@ -247,4 +247,10 @@ export async function updateLedgerAddress(ledgerId: number, addressId: number, d
 
 export async function deleteLedgerAddress(ledgerId: number, addressId: number): Promise<void> {
   await api.delete(`/ledgers/${ledgerId}/addresses/${addressId}`);
+}
+
+/** TCS sections in force on a date (#769). */
+export async function fetchTcsSections(date: string): Promise<TaxWithholdingSection[]> {
+  const res = await api.get<TaxWithholdingSection[]>('/tax-withholding-sections', { params: { kind: 'tcs', date } });
+  return res.data;
 }

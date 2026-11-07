@@ -20,7 +20,9 @@ import { createDueDateFormState, formatInvoiceDateLabel, resolveDueDate, type Du
 import { readInvoiceComposerPrefs, updateInvoiceComposerPrefs } from '../../utils/invoiceComposerPrefs.ts';
 import { useFY } from '../../context/FYContext';
 import { useShortcuts } from '../../context/ShortcutsContext';
-import { fetchInvoiceById, fetchInvoiceComposerData, fetchLedgerAddresses } from '../../features/invoices/api';
+import { fetchInvoiceById, fetchInvoiceComposerData, fetchLedgerAddresses, fetchTcsSections } from '../../features/invoices/api';
+import { EMPTY_TCS_FORM, buildTcsPayload, effectiveTcsRate, findTcsSection, reconcileTcsSection, tcsFormFromDocument, tcsHints, tcsRateInputValue, tcsTotalsInput, type TcsFormState } from './tcsForm';
+import { tcsLabel } from '../../utils/tcs';
 import { createQuotation, fetchConversionDraft, fetchQuotationById, updateQuotation } from '../../features/quotations/api';
 import { quotationQueryKeys } from '../../features/quotations/queryKeys';
 import {
@@ -82,6 +84,12 @@ export default function InvoicesPage() {
   const [invoiceDiscountType, setInvoiceDiscountType] = useState<'percentage' | 'net'>(initialPrefs.invoiceDiscountType);
   const [invoiceDiscountValue, setInvoiceDiscountValue] = useState('');
   const [supplierInvoiceNumber, setSupplierInvoiceNumber] = useState('');
+  /* TCS (#769): section, rate and amount as picked. The rate and amount follow
+     the suggestion and the computed value until they are typed over. */
+  const [tcsForm, setTcsForm] = useState<TcsFormState>(EMPTY_TCS_FORM);
+  /** The document being edited, duplicated or converted already carries TCS, so the block stays even if the company setting is off. */
+  const [tcsHadSaved, setTcsHadSaved] = useState(false);
+  const [tcsNotice, setTcsNotice] = useState('');
   const [referenceNotes, setReferenceNotes] = useState('');
   const [paymentMode, setPaymentMode] = useState('cash');
   const [paymentReference, setPaymentReference] = useState('');
@@ -338,15 +346,36 @@ export default function InvoicesPage() {
       discountValue: Number(item.discount_value),
     }];
   });
+  const tcsVisible = (voucherType === 'sales' || isQuote) && Boolean(company?.enable_tcs || tcsHadSaved);
+  const { data: tcsSections } = useQuery({
+    queryKey: ['tcs-sections', invoiceDate],
+    queryFn: () => fetchTcsSections(invoiceDate),
+    enabled: tcsVisible && Boolean(invoiceDate),
+    staleTime: 5 * 60 * 1000,
+  });
+  const tcsSection = tcsVisible ? findTcsSection(tcsForm, tcsSections) : null;
+  const tcsInput = tcsSection ? tcsTotalsInput(tcsForm, tcsSection, selectedLedger) : null;
   const {
-    invoiceDiscountAmount, afterDiscountTotal,
+    invoiceDiscountAmount, afterDiscountTotal, tcsAmount: tcsPreviewAmount,
     roundOffAmount: roundOffPreviewAmount, total: projectedTotalAmount,
   } = computeInvoiceTotals(totalLines, {
     taxInclusive,
     invoiceDiscount: { type: invoiceDiscountType, value: Number(invoiceDiscountValue) },
     applyRoundOff,
     interstateSupply: composerInterstateSupply,
+    tcs: tcsInput,
   });
+  const tcsRatePreview = tcsSection ? effectiveTcsRate(tcsForm, tcsSection, selectedLedger) : 0;
+
+  /* A section chosen for one date may not be in force on another. */
+  useEffect(() => {
+    if (!tcsSections) return;
+    const result = reconcileTcsSection(tcsForm, tcsSections);
+    if (result.cleared) {
+      setTcsForm(result.form);
+      setTcsNotice('That TCS section is not in force on this date, so it was cleared. Choose another if TCS applies.');
+    }
+  }, [tcsSections, tcsForm]);
 
   const resolvedDueDate = resolveDueDate({
     mode: dueDateMode,
@@ -363,6 +392,7 @@ export default function InvoicesPage() {
     isSaleLike && !shippingSameAsBilling ? 'shipping address' : '',
     Number(invoiceDiscountValue) > 0 ? 'discount' : '',
     applyRoundOff ? 'round off' : '',
+    tcsSection ? 'TCS' : '',
   ].filter(Boolean);
   const advancedSummary = advancedInUse.length > 0
     ? `In use: ${advancedInUse.join(' · ')}`
@@ -658,6 +688,9 @@ export default function InvoicesPage() {
     // Per-invoice, never remembered: a carried-over discount would silently
     // reduce the next invoice's total.
     setInvoiceDiscountValue('');
+    setTcsForm(EMPTY_TCS_FORM);
+    setTcsHadSaved(false);
+    setTcsNotice('');
     setStockShortage(null);
     setPaymentMode('cash');
     setPaymentReference('');
@@ -719,6 +752,9 @@ export default function InvoicesPage() {
     setReferenceNotes(quotation.reference_notes ?? '');
     setTaxInclusive(quotation.tax_inclusive);
     setApplyRoundOff(quotation.apply_round_off);
+    setTcsForm(tcsFormFromDocument(quotation));
+    setTcsHadSaved(quotation.tcs_section_id != null);
+    setTcsNotice('');
     setInvoiceDiscountType((quotation.discount_type as 'percentage' | 'net') || 'percentage');
     setInvoiceDiscountValue(quotation.discount_value != null ? String(quotation.discount_value) : '');
     setInvoiceDate(quotation.quotation_date);
@@ -753,6 +789,9 @@ export default function InvoicesPage() {
     setReferenceNotes(invoice.reference_notes ?? '');
     setTaxInclusive(invoice.tax_inclusive ?? false);
     setApplyRoundOff(invoice.apply_round_off ?? false);
+    setTcsForm(tcsFormFromDocument(invoice));
+    setTcsHadSaved(invoice.tcs_section_id != null);
+    setTcsNotice('');
     setInvoiceDiscountType(invoice.discount_type || 'percentage');
     setInvoiceDiscountValue(invoice.discount_value != null ? String(invoice.discount_value) : '');
     const dates = conversionDateDefaults(readInvoiceComposerPrefs());
@@ -798,6 +837,7 @@ export default function InvoicesPage() {
         apply_round_off: applyRoundOff,
         discount_type: invoiceDiscountType || null,
         discount_value: invoiceDiscountValue ? Number(invoiceDiscountValue) : null,
+        ...(tcsVisible ? buildTcsPayload(tcsForm, tcsSection, selectedLedger, tcsHadSaved) : {}),
         shipping_address_same_as_billing: shippingSameAsBilling,
         shipping_address_id: (!shippingSameAsBilling && selectedShippingAddressId !== null) ? selectedShippingAddressId : null,
         new_shipping_address: (!shippingSameAsBilling && selectedShippingAddressId === null && newShippingAddress.trim())
@@ -841,6 +881,9 @@ export default function InvoicesPage() {
     setReferenceNotes(invoice.voucher_type === 'sales' ? (invoice.reference_notes ?? '') : '');
     setTaxInclusive(invoice.tax_inclusive ?? false);
     setApplyRoundOff(invoice.apply_round_off ?? false);
+    setTcsForm(tcsFormFromDocument(invoice));
+    setTcsHadSaved(invoice.tcs_section_id != null);
+    setTcsNotice('');
     setInvoiceDiscountType((invoice.discount_type as 'percentage' | 'net') || 'percentage');
     setInvoiceDiscountValue(invoice.discount_value != null ? String(invoice.discount_value) : '');
     setSelectedLedgerId(String(invoice.ledger_id));
@@ -901,6 +944,9 @@ export default function InvoicesPage() {
     setReferenceNotes(invoice.voucher_type === 'sales' ? (invoice.reference_notes ?? '') : '');
     setTaxInclusive(invoice.tax_inclusive ?? false);
     setApplyRoundOff(invoice.apply_round_off ?? false);
+    setTcsForm(tcsFormFromDocument(invoice));
+    setTcsHadSaved(invoice.tcs_section_id != null);
+    setTcsNotice('');
     setInvoiceDiscountType((invoice.discount_type as 'percentage' | 'net') || 'percentage');
     setInvoiceDiscountValue(invoice.discount_value != null ? String(invoice.discount_value) : '');
     setSelectedLedgerId(String(invoice.ledger_id));
@@ -1031,6 +1077,7 @@ export default function InvoicesPage() {
         apply_round_off: applyRoundOff,
         discount_type: invoiceDiscountType || null,
         discount_value: invoiceDiscountValue ? Number(invoiceDiscountValue) : null,
+        ...(tcsVisible && voucherType === 'sales' ? buildTcsPayload(tcsForm, tcsSection, selectedLedger, tcsHadSaved) : {}),
         ...(voucherType === 'sales' ? {
           place_of_supply: placeOfSupply || null,
           shipping_address_same_as_billing: shippingSameAsBilling,
@@ -1653,6 +1700,73 @@ export default function InvoicesPage() {
                   <p className="muted-text" style={{ marginTop: 0 }}>
                     Discount: {formatCurrency(invoiceDiscountAmount, activeCurrencyCode)} · After discount: {formatCurrency(afterDiscountTotal, activeCurrencyCode)}
                   </p>
+                ) : null}
+
+                {tcsVisible ? (
+                  <div className="stack" style={{ gap: '8px' }} data-testid="tcs-block">
+                    <div className="field" style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: 0, flexWrap: 'wrap' }}>
+                      <label htmlFor="invoice-tcs-section" style={{ marginBottom: 0, fontSize: '13px' }}>TCS:</label>
+                      <select
+                        id="invoice-tcs-section"
+                        className="input"
+                        value={tcsForm.sectionId}
+                        onChange={(event) => {
+                          setTcsNotice('');
+                          setTcsForm({ ...EMPTY_TCS_FORM, sectionId: event.target.value });
+                        }}
+                        style={{ maxWidth: '360px' }}
+                      >
+                        <option value="">No TCS</option>
+                        {(tcsSections ?? []).map((entry) => (
+                          <option key={entry.id} value={entry.id}>{`${entry.section_ref} - ${entry.nature}`}</option>
+                        ))}
+                      </select>
+                      {tcsSection ? (
+                        <>
+                          <label htmlFor="invoice-tcs-rate" style={{ marginBottom: 0, fontSize: '13px' }}>Rate %</label>
+                          <input
+                            id="invoice-tcs-rate"
+                            className="input"
+                            type="number"
+                            step="0.001"
+                            min="0"
+                            value={tcsRateInputValue(tcsForm, tcsSection, selectedLedger)}
+                            onChange={(event) => setTcsForm((current) => ({ ...current, rateText: event.target.value }))}
+                            style={{ width: '90px' }}
+                          />
+                          <label htmlFor="invoice-tcs-amount" style={{ marginBottom: 0, fontSize: '13px' }}>Amount</label>
+                          <input
+                            id="invoice-tcs-amount"
+                            className="input"
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            value={tcsForm.amountText ?? String(tcsPreviewAmount ?? 0)}
+                            onChange={(event) => setTcsForm((current) => ({ ...current, amountText: event.target.value === '' ? null : event.target.value }))}
+                            style={{ width: '120px' }}
+                          />
+                          {tcsForm.amountText !== null || tcsForm.rateText !== null ? (
+                            <button
+                              type="button"
+                              className="button button--ghost"
+                              onClick={() => setTcsForm((current) => ({ ...current, rateText: null, amountText: null }))}
+                            >
+                              Reset
+                            </button>
+                          ) : null}
+                        </>
+                      ) : null}
+                    </div>
+                    {tcsNotice ? <p className="muted-text" role="status" style={{ marginTop: 0 }}>{tcsNotice}</p> : null}
+                    {tcsHints(tcsSection, selectedLedger).map((hint) => (
+                      <p key={hint} className="muted-text" style={{ marginTop: 0 }}>{hint}</p>
+                    ))}
+                    {tcsSection ? (
+                      <p className="muted-text" style={{ marginTop: 0 }}>
+                        {tcsLabel(tcsRatePreview, tcsSection.section_ref)}: {formatCurrency(tcsPreviewAmount ?? 0, activeCurrencyCode)} · Total: {formatCurrency(projectedTotalAmount, activeCurrencyCode)}
+                      </p>
+                    ) : null}
+                  </div>
                 ) : null}
               </div>
             ) : null}

@@ -71,6 +71,12 @@ class QuotationFields(BaseModel):
     shipping_address_same_as_billing: bool = True
     shipping_address_id: int | None = None
     new_shipping_address: ShippingAddressInline | None = None
+    # TCS (#769). The section must be a TCS row in force on the document date. A rate
+    # left out is suggested for the buyer; an amount left out is base x rate. Typed
+    # values always win: the app suggests, the user decides.
+    tcs_section_id: int | None = None
+    tcs_rate: float | None = Field(default=None, ge=0, le=100, allow_inf_nan=False)
+    tcs_amount: float | None = Field(default=None, ge=0, lt=MONEY_LIMIT, allow_inf_nan=False)
     items: List[QuotationItemCreate]
 
     @field_validator("discount_value", mode="after")
@@ -166,6 +172,11 @@ class QuotationOut(BaseModel):
     sgst_amount: float
     igst_amount: float
     total_amount: float
+    tcs_section_id: int | None = None
+    tcs_section_ref: str | None = None
+    tcs_rate: float | None = None
+    tcs_base_amount: float = 0
+    tcs_amount: float = 0
     status_note: str | None = None
     accepted_at: datetime | None = None
     declined_at: datetime | None = None

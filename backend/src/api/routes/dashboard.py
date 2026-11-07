@@ -250,6 +250,7 @@ def get_dashboard_metrics(
             Invoice.total_tax_amount,
             Invoice.round_off_amount,
             Invoice.total_amount,
+            Invoice.tcs_amount,
         )
         .join(InvoiceItem, InvoiceItem.invoice_id == Invoice.id)
         .outerjoin(Product, Product.id == InvoiceItem.product_id)

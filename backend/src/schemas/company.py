@@ -47,6 +47,8 @@ class CompanyProfileBase(BaseModel):
     eway_always_show_button: bool = True
     show_pay_qr_on_invoice: bool = False
     show_upi_pay_button: bool = False
+    # Optional TCS on sales invoices (#769). Off by default.
+    enable_tcs: bool = False
 
 
 class CompanyProfileUpdate(CompanyProfileBase):

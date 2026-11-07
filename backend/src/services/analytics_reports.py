@@ -353,7 +353,8 @@ def apportioned_invoice_rows(query, *, gst_inclusive=False):
 
     Every row must carry the invoice header totals under the names
     :func:`invoice_discount_amount` reads (``taxable_amount``,
-    ``total_tax_amount``, ``round_off_amount``, ``total_amount``), the invoice
+    ``total_tax_amount``, ``tcs_amount``, ``round_off_amount``,
+    ``total_amount``), the invoice
     id as ``row.id``, and the line's weight: ``line_taxable``, or ``line_total``
     with ``gst_inclusive``. Rows are grouped by invoice in
     ``Invoice.id, InvoiceItem.id`` order and the discount is apportioned
@@ -374,7 +375,7 @@ def apportioned_invoice_rows(query, *, gst_inclusive=False):
         ]
         shares = apportion_invoice_discount(
             weights,
-            # invoice_discount_amount only reads the four total columns, all
+            # invoice_discount_amount only reads the five total columns, all
             # of which the row carries under the same names.
             invoice_discount=invoice_discount_amount(header),
             invoice_tax=Decimal("0") if gst_inclusive else Decimal(str(header.total_tax_amount or 0)),
@@ -403,6 +404,7 @@ def _discounted_line_totals(
             Invoice.total_tax_amount,
             Invoice.round_off_amount,
             Invoice.total_amount,
+            Invoice.tcs_amount,
         )
         .join(InvoiceItem, InvoiceItem.invoice_id == Invoice.id)
         .filter(
@@ -473,6 +475,7 @@ def build_profit_loss_report(
             Invoice.total_tax_amount,
             Invoice.round_off_amount,
             Invoice.total_amount,
+            Invoice.tcs_amount,
         )
         .join(InvoiceItem, InvoiceItem.invoice_id == Invoice.id)
         .join(Product, Product.id == InvoiceItem.product_id)
@@ -721,6 +724,7 @@ def _dated_discounted_invoice_lines(
             Invoice.total_tax_amount,
             Invoice.round_off_amount,
             Invoice.total_amount,
+            Invoice.tcs_amount,
             InvoiceItem.product_id,
             InvoiceItem.quantity,
             InvoiceItem.taxable_amount.label("line_taxable"),

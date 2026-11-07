@@ -121,6 +121,7 @@ products_list	GET	/api/products/
 products_list_with_inventory	GET	/api/products/with-inventory
 products_update	PUT	/api/products/{product_id}
 products_update_with_inventory	PUT	/api/products/{product_id}/with-inventory
+reports_list_tcs_collected	GET	/api/reports/tcs-collected
 quotations_cancel	POST	/api/quotations/{quotation_id}/cancel
 quotations_conversion_draft	GET	/api/quotations/{quotation_id}/conversion-draft
 quotations_convert	POST	/api/quotations/{quotation_id}/convert

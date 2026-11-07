@@ -48,6 +48,9 @@ EXCLUDED_OPERATIONS: frozenset[tuple[str, str]] = frozenset(
         ("GET", "/api/tds/{kind}/csv"),
         ("GET", "/api/tds/suggestion"),
         ("PATCH", "/api/tds/allocations/{allocation_id}"),
+        # A file download adds nothing over the JSON report beside it, and the tool
+        # list is already near its size budget.
+        ("GET", "/api/reports/tcs-collected/export-csv"),
     }
 )
 

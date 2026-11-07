@@ -89,6 +89,54 @@ def _credited_on_line(db: Session, invoice_item_id: int, company_id: int | None)
     return Decimal(str(query.scalar() or 0))
 
 
+def _credited_on_invoice(db: Session, invoice_id: int, company_id: int | None) -> Decimal:
+    """The line totals active notes have already credited against a whole invoice."""
+    query = (
+        db.query(func.sum(CreditNoteItem.line_total))
+        .join(CreditNote, CreditNote.id == CreditNoteItem.credit_note_id)
+        .filter(CreditNoteItem.invoice_id == invoice_id, CreditNote.status == "active")
+    )
+    if company_id is not None:
+        query = query.filter(company_scope(CreditNote.company_id, company_id))
+    return Decimal(str(query.scalar() or 0))
+
+
+def _assign_tcs_shares(
+    db: Session,
+    built_items: list[dict],
+    invoice_map: dict[int, Invoice],
+    company_id: int | None,
+) -> Decimal:
+    """Give each note line its share of its invoice's TCS, and return the note's total.
+
+    TCS is reversed in proportion to what the note credits out of the invoice's line
+    totals. Like :func:`_pro_rata`, each share is the difference of two running totals,
+    so the notes against an invoice add back to exactly its TCS once its lines are fully
+    credited, however each share rounds. That is what lets a full credit note settle a
+    TCS invoice (#769).
+    """
+    total = Decimal("0")
+    running: dict[int, Decimal] = {}
+    for item in built_items:
+        item["tcs_amount"] = Decimal("0")
+        invoice = invoice_map.get(item["invoice_id"])
+        invoice_tcs = Decimal(str(getattr(invoice, "tcs_amount", 0) or 0)) if invoice is not None else Decimal("0")
+        if invoice_tcs <= 0:
+            continue
+        whole = sum((Decimal(str(line.line_total or 0)) for line in invoice.items), Decimal("0"))
+        if whole <= 0:
+            continue
+        if invoice.id not in running:
+            running[invoice.id] = _credited_on_invoice(db, invoice.id, company_id)
+        before = min(running[invoice.id], whole)
+        after = min(running[invoice.id] + Decimal(str(item["line_total"])), whole)
+        running[invoice.id] += Decimal(str(item["line_total"]))
+        share = _money(invoice_tcs * after / whole) - _money(invoice_tcs * before / whole)
+        item["tcs_amount"] = share
+        total += share
+    return _money(total)
+
+
 def _recompute_credit_status(invoice_id: int, db: Session, company_id: int | None = None) -> None:
     """Recalculate and persist credit_status for a single invoice."""
     invoice_query = db.query(Invoice).filter(Invoice.id == invoice_id)
@@ -102,7 +150,7 @@ def _recompute_credit_status(invoice_id: int, db: Session, company_id: int | Non
     from src.models.credit_note import CreditNoteItem as CNItem, CreditNote as CN
 
     result_query = (
-        db.query(func.sum(CNItem.line_total))
+        db.query(func.sum(CNItem.line_total + func.coalesce(CNItem.tcs_amount, 0)))
         .join(CN, CN.id == CNItem.credit_note_id)
         .filter(
             CNItem.invoice_id == invoice_id,
@@ -113,8 +161,8 @@ def _recompute_credit_status(invoice_id: int, db: Session, company_id: int | Non
         result_query = result_query.filter(company_scope(CN.company_id, company_id))
     result = result_query.scalar()
     credited_total = Decimal(str(result or 0))
-    # line_total includes tax, so compare against total_amount (which also
-    # includes tax) — taxable_amount excludes tax and would mark an invoice
+    # line_total includes tax, and the TCS share is added to it, so compare against
+    # total_amount (which also includes both) — taxable_amount excludes tax and would mark an invoice
     # fully credited too early. Fall back to taxable_amount for legacy rows
     # that never stored a total.
     invoice_total = Decimal(str(invoice.total_amount or invoice.taxable_amount or 0))
@@ -435,7 +483,11 @@ def create_credit_note(
             "line_total": line_total,
         })
 
-    total = _money(taxable_total + cgst_total + sgst_total + igst_total)
+    # Worked out before the line limit check below, which reads line_total only.
+    tcs_total = _assign_tcs_shares(db, built_items, invoice_map, company_id)
+    # Like an invoice's, a note's total carries the TCS it reverses, so the buyer's
+    # account is credited with all of it. The GST columns never include it.
+    total = _money(taxable_total + cgst_total + sgst_total + igst_total + tcs_total)
 
     # A line can't be credited for more than it charged, across all its notes of
     # every type. A return can land a paisa over on an old line whose tax doesn't
@@ -471,6 +523,7 @@ def create_credit_note(
         cgst_amount=cgst_total,
         sgst_amount=sgst_total,
         igst_amount=igst_total,
+        tcs_amount=tcs_total,
         total_amount=total,
     )
     db.add(cn)

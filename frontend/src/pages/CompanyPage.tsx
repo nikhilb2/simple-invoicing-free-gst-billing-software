@@ -744,6 +744,7 @@ export default function CompanyPage() {
     eway_always_show_button: true,
     show_pay_qr_on_invoice: false,
     show_upi_pay_button: false,
+    enable_tcs: false,
   });
   const [companyId, setCompanyId] = useState<number>(0);
   const [savedGstin, setSavedGstin] = useState('');
@@ -805,6 +806,7 @@ export default function CompanyPage() {
         eway_always_show_button: data.eway_always_show_button ?? true,
         show_pay_qr_on_invoice: data.show_pay_qr_on_invoice || false,
         show_upi_pay_button: data.show_upi_pay_button || false,
+        enable_tcs: data.enable_tcs || false,
       });
       setAdditionalInfo(data.additional_company_info || '');
       if (data.logo_data && data.logo_mime_type) {
@@ -892,6 +894,7 @@ export default function CompanyPage() {
         eway_always_show_button: form.eway_always_show_button,
         show_pay_qr_on_invoice: form.show_pay_qr_on_invoice,
         show_upi_pay_button: form.show_upi_pay_button,
+        enable_tcs: form.enable_tcs,
       };
 
       if (noCompany) {
@@ -1308,6 +1311,23 @@ export default function CompanyPage() {
                     registered as a merchant with your UPI provider &mdash; with a personal UPI ID, apps
                     such as Paytm warn your customer that the payment may fail. The QR keeps working
                     either way.
+                  </small>
+                </div>
+
+                <div className="field field--full">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
+                    <input
+                      id="company-enable-tcs"
+                      type="checkbox"
+                      checked={form.enable_tcs}
+                      onChange={(e) => setForm((current) => ({ ...current, enable_tcs: e.target.checked }))}
+                    />
+                    <label htmlFor="company-enable-tcs" style={{ marginBottom: 0, cursor: 'pointer', fontWeight: 500 }}>
+                      Collect TCS on sales invoices
+                    </label>
+                  </div>
+                  <small className="field-hint" style={{ marginLeft: '24px' }}>
+                    Only for sellers of scrap, liquor, minerals, forest produce, motor vehicles or notified goods above ₹10 lakh. Ordinary sales do not attract TCS.
                   </small>
                 </div>
 
