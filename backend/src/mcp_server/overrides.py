@@ -42,6 +42,12 @@ EXCLUDED_OPERATIONS: frozenset[tuple[str, str]] = frozenset(
         # See the /api/eway-bill note above: these two live under /api/invoices.
         ("GET", "/api/invoices/{invoice_id}/eway-bill/precheck"),
         ("POST", "/api/invoices/{invoice_id}/eway-bill/generate"),
+        # TDS (#768, #770): the JSON reports are tools; their CSV copies, the
+        # per-row certificate tick and the form's suggestion helper are UI-only,
+        # kept out so the tool list stays inside its token budget.
+        ("GET", "/api/tds/{kind}/csv"),
+        ("GET", "/api/tds/suggestion"),
+        ("PATCH", "/api/tds/allocations/{allocation_id}"),
     }
 )
 
@@ -67,6 +73,7 @@ NAME_OVERRIDES: dict[tuple[str, str], str] = {
     ("POST", "/api/invoices/{invoice_id}/duplicate"): "invoices_duplicate",
     ("POST", "/api/invoices/{invoice_id}/restore"): "invoices_restore",
     # ledgers
+    ("GET", "/api/tds/{kind}"): "tds_report",
     ("GET", "/api/ledgers/day-book"): "ledgers_day_book",
     ("GET", "/api/ledgers/day-book/csv"): "ledgers_day_book_csv",
     ("GET", "/api/ledgers/day-book/pdf"): "ledgers_day_book_pdf",

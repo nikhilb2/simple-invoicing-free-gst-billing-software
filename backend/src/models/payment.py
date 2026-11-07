@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, Numeric, ForeignKey, UniqueConstraint
+from sqlalchemy import Boolean, Column, Integer, String, DateTime, Numeric, ForeignKey, UniqueConstraint, text
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from src.db.base import Base
@@ -41,6 +41,17 @@ class PaymentInvoiceAllocation(Base):
     invoice_id = Column(Integer, ForeignKey("invoices.id"), nullable=False)
     allocated_amount = Column(Numeric(10, 2), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+    # TDS kept back on this invoice (#768 receipts, #770 payments). Not cash:
+    # Payment.amount stays the cash amount, and TDS never touches an account.
+    # The section reference, rate and base are copies taken at entry time so a
+    # later change to tax_withholding_sections never changes a saved voucher.
+    tds_amount = Column(Numeric(10, 2), nullable=False, default=0, server_default=text("0"))
+    tds_section_id = Column(Integer, ForeignKey("tax_withholding_sections.id"), nullable=True)
+    tds_section_ref = Column(String(64), nullable=True)
+    tds_rate = Column(Numeric(7, 3), nullable=True)
+    tds_base_amount = Column(Numeric(10, 2), nullable=True)
+    tds_certificate_received = Column(Boolean, nullable=False, default=False, server_default=text("false"))
 
     payment = relationship("Payment", back_populates="invoice_allocations")
     invoice = relationship("Invoice", back_populates="payment_allocations")
+    tds_section = relationship("TaxWithholdingSection")

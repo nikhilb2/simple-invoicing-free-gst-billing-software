@@ -168,6 +168,7 @@ export const PRIMARY_NAV: NavEntry[] = [
       { to: '/gstr1', label: 'GSTR-1 Filing', icon: FileCheck2, shortcutAction: 'go_gstr1' },
       // "Worksheet", not "Filing": it estimates from the books and files nothing.
       { to: '/gstr3b', label: 'GSTR-3B Worksheet', icon: ClipboardList, shortcutAction: 'go_gstr3b' },
+      { to: '/tds', label: 'TDS', icon: Percent },
     ],
   },
   {

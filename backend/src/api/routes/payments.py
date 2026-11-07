@@ -50,6 +50,12 @@ def _to_payment_out(payment: Payment) -> PaymentOut:
             "invoice_date": allocation.invoice.invoice_date if allocation.invoice else None,
             "due_date": allocation.invoice.due_date if allocation.invoice else None,
             "allocated_amount": float(allocation.allocated_amount or 0),
+            "tds_amount": float(allocation.tds_amount or 0),
+            "tds_section_id": allocation.tds_section_id,
+            "tds_section_ref": allocation.tds_section_ref,
+            "tds_rate": float(allocation.tds_rate) if allocation.tds_rate is not None else None,
+            "tds_base_amount": float(allocation.tds_base_amount) if allocation.tds_base_amount is not None else None,
+            "tds_certificate_received": bool(allocation.tds_certificate_received),
         }
         for allocation in payment.invoice_allocations
     ]
@@ -470,9 +476,21 @@ def _build_receipt_html(
 
     allocation_rows = []
     total_allocated_amount = 0.0
+    total_tds_amount = 0.0
+    has_tds = any(float(getattr(a, "tds_amount", 0) or 0) > 0 for a in payment.invoice_allocations)
+    cash_label = "Received" if payment.voucher_type == "receipt" else "Paid to supplier"
     for allocation in payment.invoice_allocations:
         amount = float(allocation.allocated_amount or 0)
         total_allocated_amount += amount
+        tds_amount = float(getattr(allocation, "tds_amount", 0) or 0)
+        total_tds_amount += tds_amount
+        tds_cell = ""
+        if has_tds:
+            tds_text = ""
+            if tds_amount > 0:
+                section = f'<br><span class="sub">s.{_re(allocation.tds_section_ref)}</span>' if allocation.tds_section_ref else ""
+                tds_text = f"{_fmt_amt(tds_amount, currency)}{section}"
+            tds_cell = f'<td class="amount-cell">{tds_text}</td>'
         invoice = allocation.invoice
         invoice_number = _re(invoice.invoice_number) if invoice and invoice.invoice_number else f"#{allocation.invoice_id}"
         invoice_date = invoice.invoice_date.strftime("%d %b %Y") if invoice and invoice.invoice_date else "-"
@@ -487,7 +505,7 @@ def _build_receipt_html(
               <td>{invoice_date}</td>
               <td>{due_date}</td>
               <td>{_re(payment_status)}</td>
-              <td class="amount-cell">{_fmt_amt(amount, currency)}</td>
+              <td class="amount-cell">{_fmt_amt(amount, currency)}</td>{tds_cell}
             </tr>"""
         )
 
@@ -503,7 +521,7 @@ def _build_receipt_html(
           <th>Invoice Date</th>
           <th>Due Date</th>
           <th>Status</th>
-          <th class="amount-cell">Allocated</th>
+          <th class="amount-cell">{cash_label if has_tds else 'Allocated'}</th>{'<th class="amount-cell">TDS deducted</th>' if has_tds else ''}
         </tr>
       </thead>
       <tbody>
@@ -512,7 +530,7 @@ def _build_receipt_html(
       <tfoot>
         <tr>
           <td colspan="4">Total Allocated</td>
-          <td class="amount-cell">{_fmt_amt(total_allocated_amount, currency)}</td>
+          <td class="amount-cell">{_fmt_amt(total_allocated_amount, currency)}</td>{f'<td class="amount-cell">{_fmt_amt(total_tds_amount, currency)}</td>' if has_tds else ''}
         </tr>
       </tfoot>
     </table>

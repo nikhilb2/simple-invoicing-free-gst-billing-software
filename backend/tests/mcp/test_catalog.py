@@ -28,8 +28,8 @@ from src.mcp_server.schema import (
 )
 
 # Measured against the real spec on 2026-09-08.
-EXPECTED_OPERATIONS = 172  # Includes GET /api/tax-withholding-sections
-EXPECTED_TOOLS = 150  # generated only; `search` and `fetch` are added on top
+EXPECTED_OPERATIONS = 176  # Includes GET /api/tax-withholding-sections and the four /api/tds routes
+EXPECTED_TOOLS = 151  # generated only; `search` and `fetch` are added on top
 # The /api/quotations routes added ten operations and ten tools, and the GSTR-3B
 # worksheet three of each.
 # GET /api/invoices/dues/ageing added one operation and one tool.
@@ -41,7 +41,10 @@ EXPECTED_TOOLS = 150  # generated only; `search` and `fetch` are added on top
 # landed; the whole /api/backups prefix is excluded, so tools stayed at 131.
 # The seven e-way bill operations are excluded, so tools stayed at 136.
 # GET /api/tax-withholding-sections adds one generated tool.
-EXPECTED_EXCLUDED = 21
+# The four /api/tds routes (#768, #770) add four operations but one tool, the
+# receivable/payable report; its CSV copy, the suggestion helper and the
+# certificate tick are excluded to stay inside the token budget.
+EXPECTED_EXCLUDED = 24
 EXPECTED_MULTIPART_SKIPPED = 1
 
 

@@ -216,6 +216,16 @@ export default function InvoicePreview({ invoice, onClose, onError, onPaymentRec
                   </Link>
                 </>
               ) : null}
+              {(invoice.tds_amount ?? 0) > 0 ? (
+                <>
+                  {' · '}
+                  {invoice.voucher_type === 'purchase' ? 'Paid to supplier' : 'Received'}{' '}
+                  {formatCurrency(invoice.paid_amount, invoice.company_currency_code || 'INR')}
+                  {' · '}
+                  {invoice.voucher_type === 'purchase' ? 'TDS deducted' : 'TDS deducted by customer'}{' '}
+                  {formatCurrency(invoice.tds_amount ?? 0, invoice.company_currency_code || 'INR')}
+                </>
+              ) : null}
             </>
           }
           primary={{

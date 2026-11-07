@@ -229,6 +229,8 @@ export type CompanyProfile = {
   eway_always_show_button: boolean;
   show_pay_qr_on_invoice: boolean;
   show_upi_pay_button: boolean;
+  // TDS (#768, #770)
+  enable_purchase_tds?: boolean;
 };
 
 export type EwayBillSettings = {
@@ -279,6 +281,8 @@ export type CompanyProfileUpdate = {
   eway_always_show_button?: boolean;
   show_pay_qr_on_invoice?: boolean;
   show_upi_pay_button?: boolean;
+  // TDS (#768, #770)
+  enable_purchase_tds?: boolean;
 };
 
 export type CompanyAccountType = 'bank' | 'cash';
@@ -388,6 +392,8 @@ export type Invoice = {
   /** The quotation or proforma this was converted from. */
   source_quotation_id?: number | null;
   source_quotation_number?: string | null;
+  // TDS (#768, #770)
+  tds_amount?: number;
 };
 
 export type OutstandingInvoice = {
@@ -402,6 +408,9 @@ export type OutstandingInvoice = {
   payment_status: 'unpaid' | 'partial' | 'paid';
   due_in_days: number | null;
   suggested_allocation_amount: number | null;
+  // TDS (#768, #770)
+  taxable_amount?: number;
+  tds_amount?: number;
 };
 
 export type InvoiceItem = {
@@ -636,7 +645,7 @@ export type InvoiceCreate = {
 
 export type LedgerStatementEntry = {
   entry_id: number;
-  entry_type: 'invoice' | 'payment' | 'credit_note';
+  entry_type: 'invoice' | 'payment' | 'credit_note' | 'tds';
   date: string;
   voucher_type: string;
   reference_number?: string | null;
@@ -654,6 +663,9 @@ export type LedgerStatementEntry = {
     due_date?: string | null;
     payment_status?: string | null;
     allocated_amount: number;
+    // TDS (#768, #770)
+    tds_amount?: number;
+    tds_section_ref?: string | null;
   }>;
 };
 
@@ -841,6 +853,13 @@ export type PaymentInvoiceAllocation = {
   invoice_date?: string | null;
   due_date?: string | null;
   allocated_amount: number;
+  // TDS (#768, #770)
+  tds_amount?: number;
+  tds_section_id?: number | null;
+  tds_section_ref?: string | null;
+  tds_rate?: number | null;
+  tds_base_amount?: number | null;
+  tds_certificate_received?: boolean;
 };
 
 export type Payment = {
@@ -1217,4 +1236,40 @@ export type ShareLink = {
   view_count: number;
   last_viewed_at: string | null;
   created_at: string;
+};
+
+// TDS (#768, #770)
+export type TaxWithholdingSection = {
+  id: number;
+  kind: string;
+  act: number | string;
+  section_ref: string;
+  legacy_code: string | null;
+  nature: string;
+  rate_individual_huf: number | null;
+  rate_other: number | null;
+  rate_no_pan: number | null;
+  threshold_single: number | null;
+  threshold_aggregate: number | null;
+  threshold_note: string | null;
+  base: string;
+  effective_from: string;
+  effective_to: string | null;
+};
+
+export type TdsSuggestion = {
+  invoice_id: number;
+  section_id: number;
+  section_ref: string;
+  act: number | string;
+  nature: string;
+  deduction_date: string;
+  in_force: boolean;
+  has_pan: boolean;
+  base_amount: number;
+  rate: number;
+  amount: number;
+  applies: boolean;
+  reason: string | null;
+  tax_year_total: number | null;
 };

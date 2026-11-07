@@ -106,6 +106,7 @@ def _to_invoice_out(
     result = InvoiceOut.model_validate(invoice)
     if payment_summary is not None:
         result.paid_amount = payment_summary.paid_amount
+        result.tds_amount = payment_summary.tds_amount
         result.remaining_amount = payment_summary.remaining_amount
         result.outstanding_amount = payment_summary.outstanding_amount
         result.payment_status = payment_summary.payment_status

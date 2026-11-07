@@ -162,6 +162,8 @@ class InvoiceOut(BaseModel):
     invoice_date: datetime
     due_date: datetime | None = None
     paid_amount: float = 0
+    # TDS kept back on this invoice (#768, #770); settles it like cash.
+    tds_amount: float = 0
     remaining_amount: float = 0
     outstanding_amount: float = 0
     payment_status: str = "unpaid"
@@ -230,7 +232,10 @@ class OutstandingInvoiceOut(BaseModel):
     invoice_date: datetime
     due_date: datetime | None = None
     total_amount: float
+    # Before GST: the base TDS is worked out on (#768, #770).
+    taxable_amount: float = 0
     paid_amount: float = 0
+    tds_amount: float = 0
     remaining_amount: float = 0
     outstanding_amount: float = 0
     payment_status: str = "unpaid"

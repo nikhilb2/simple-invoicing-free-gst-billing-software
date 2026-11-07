@@ -2,6 +2,8 @@ export type PaymentInvoiceAllocationLike = {
   invoice_id: number;
   invoice_number?: string | null;
   allocated_amount: number | string | null | undefined;
+  /** TDS settled alongside the cash. It is not cash, so it never counts towards the payment amount. */
+  tds_amount?: number | string | null;
 };
 
 export function remainingAmount(paymentAmount: number, allocatedTotal: number): number {
@@ -15,7 +17,9 @@ export function validateAllocations(
   const list = allocations ?? [];
   for (const allocation of list) {
     const amount = Number(allocation.allocated_amount);
-    if (!Number.isFinite(amount) || amount <= 0) {
+    const tds = Number(allocation.tds_amount || 0);
+    // Cash may be 0 only when the allocation settles TDS.
+    if (!Number.isFinite(amount) || amount < 0 || (amount === 0 && !(tds > 0))) {
       return `Allocated amount for ${allocation.invoice_number ?? `invoice ${allocation.invoice_id}`} must be greater than 0`;
     }
   }

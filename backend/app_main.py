@@ -18,6 +18,7 @@ from src.api.routes import auth, users, products, inventory, invoices, ledgers, 
 from src.api.routes import auth, users, products, inventory, invoices, ledgers, company, payments, smtp, email as email_routes, shortcuts, invoice_series as invoice_series_routes, financial_years as financial_years_routes, credit_notes as credit_notes_routes, backups as backups_routes, company_accounts as company_accounts_routes, bom as bom_routes, email_logs as email_logs_routes, api_keys as api_keys_routes, dashboard as dashboard_routes, analytics as analytics_routes, marketplace as marketplace_routes, serials as serials_routes, oauth as oauth_routes, well_known as well_known_routes, share as share_routes, public_share as public_share_routes, eway_bill as eway_bill_routes, quotations as quotations_routes, gstr3b as gstr3b_routes
 from src.mcp_server import register_mcp
 from src.api.routes import tax_withholding as tax_withholding_routes
+from src.api.routes import tds as tds_routes
 from src.services.inventory_service import InsufficientStockError
 from src.core.analytics import (
     bind_request,
@@ -320,6 +321,7 @@ app.include_router(ledgers.router, prefix="/api/ledgers", tags=["ledgers"])
 app.include_router(gstr3b_routes.router, prefix="/api/ledgers/tax-ledger/gstr3b", tags=["ledgers"])
 app.include_router(company.router, prefix="/api/company", tags=["company"])
 app.include_router(tax_withholding_routes.router, prefix="/api", tags=["tax-withholding"])
+app.include_router(tds_routes.router, prefix="/api/tds", tags=["tds"])
 app.include_router(company_accounts_routes.router, prefix="/api/company-accounts", tags=["company-accounts"])
 app.include_router(payments.router, prefix="/api/payments", tags=["payments"])
 app.include_router(smtp.router, prefix="/api/smtp-configs", tags=["smtp"])
