@@ -12,7 +12,7 @@ from io import BytesIO, StringIO
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from src.api.deps import get_active_company, get_current_user
@@ -26,6 +26,10 @@ from src.models.user import User
 from src.schemas.tcs_report import TcsReportOut, TcsReportRow, TcsSectionTotal
 from src.services.company_access import company_scope
 from src.services.gst_tax_service import india_today, money
+from src.services.tcs import DECLARATION_LEGACY_CODES
+
+DECLARATION_REMARK = "Declaration – not collected"
+NOT_COLLECTED_REMARK = "Not collected"
 
 router = APIRouter()
 
@@ -77,16 +81,29 @@ def build_report(db: Session, company: CompanyProfile, tax_year: int | None, qua
         .filter(
             Invoice.voucher_type == "sales",
             Invoice.status == "active",
-            Invoice.tcs_amount != 0,
+            # A sale with a section but no TCS is reported too: Form 27EQ lists
+            # non-collection under a s.394(2) declaration (Form 27C) with a remark.
+            or_(Invoice.tcs_amount != 0, Invoice.tcs_section_id.isnot(None)),
             Invoice.invoice_date >= start,
             Invoice.invoice_date <= end,
             company_scope(Invoice.company_id, company_id),
         )
         .all()
     )
+    def remark_for(invoice: Invoice) -> str | None:
+        if _dec(invoice.tcs_amount) != 0:
+            return None
+        section = sections.get(invoice.tcs_section_id)
+        ledger = getattr(invoice, "ledger", None)
+        declared = bool(getattr(ledger, "tcs_declaration_received", False))
+        if declared and section is not None and section.legacy_code in DECLARATION_LEGACY_CODES:
+            return DECLARATION_REMARK
+        return NOT_COLLECTED_REMARK
+
     for invoice in invoices:
         ref, nature = section_of(invoice)
         rows.append(TcsReportRow(
+            remark=remark_for(invoice),
             kind="invoice", id=invoice.id, document_number=invoice.invoice_number or f"INV-{invoice.id}",
             date=invoice.invoice_date.date(), buyer_name=invoice.ledger_name, buyer_pan=_buyer_pan(invoice),
             section_ref=ref, nature=nature, base_amount=money(_dec(invoice.tcs_base_amount)),
@@ -136,13 +153,18 @@ def build_report(db: Session, company: CompanyProfile, tax_year: int | None, qua
     grouped: dict[tuple, dict] = {}
     for row in rows:
         entry = grouped.setdefault((row.section_ref or "", row.nature or ""), {
-            "section_ref": row.section_ref, "nature": row.nature, "count": 0, "base": _ZERO, "tcs": _ZERO})
+            "section_ref": row.section_ref, "nature": row.nature, "count": 0, "base": _ZERO, "tcs": _ZERO,
+            "not_collected": _ZERO})
         entry["count"] += 1
-        entry["base"] += row.base_amount
+        if row.remark:
+            entry["not_collected"] += row.base_amount
+        else:
+            entry["base"] += row.base_amount
         entry["tcs"] += row.tcs_amount
     totals = [
         TcsSectionTotal(section_ref=e["section_ref"], nature=e["nature"], count=e["count"],
-                        base_amount=money(e["base"]), tcs_amount=money(e["tcs"]))
+                        base_amount=money(e["base"]), tcs_amount=money(e["tcs"]),
+                        not_collected_base=money(e["not_collected"]))
         for _, e in sorted(grouped.items())
     ]
     return TcsReportOut(
@@ -157,18 +179,21 @@ def build_report(db: Session, company: CompanyProfile, tax_year: int | None, qua
 def _csv(report: TcsReportOut) -> bytes:
     out = StringIO()
     writer = csv.writer(out)
-    writer.writerow(["Type", "Document", "Date", "Buyer", "Buyer PAN", "Section", "Nature", "Base", "Rate %", "TCS"])
+    writer.writerow(["Type", "Document", "Date", "Buyer", "Buyer PAN", "Section", "Nature", "Base", "Rate %", "TCS", "Remark"])
     for r in report.rows:
         writer.writerow([
             "Credit note" if r.kind == "credit_note" else "Invoice", r.document_number, r.date.isoformat(),
             r.buyer_name or "", r.buyer_pan or "", r.section_ref or "", r.nature or "",
-            f"{r.base_amount:.2f}", f"{r.rate:f}", f"{r.tcs_amount:.2f}",
+            f"{r.base_amount:.2f}", f"{r.rate:f}", f"{r.tcs_amount:.2f}", r.remark or "",
         ])
     writer.writerow([])
     writer.writerow(["Totals by section"])
-    writer.writerow(["Section", "Nature", "Documents", "Base", "TCS"])
+    writer.writerow(["Section", "Nature", "Documents", "Base", "TCS", "Not collected"])
     for t in report.totals_by_section:
-        writer.writerow([t.section_ref or "", t.nature or "", t.count, f"{t.base_amount:.2f}", f"{t.tcs_amount:.2f}"])
+        writer.writerow([
+            t.section_ref or "", t.nature or "", t.count, f"{t.base_amount:.2f}", f"{t.tcs_amount:.2f}",
+            f"{t.not_collected_base:.2f}",
+        ])
     writer.writerow(["Grand total", "", "", f"{report.total_base:.2f}", f"{report.total_tcs:.2f}"])
     return out.getvalue().encode("utf-8-sig")
 
