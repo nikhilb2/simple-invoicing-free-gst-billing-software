@@ -451,3 +451,47 @@ def test_quotation_without_tcs_is_unchanged(client, db_session, company):
     assert (quotation["total_amount"], quotation["round_off_amount"], quotation["tcs_amount"]) == (118, 0.01, 0)
     draft = _ok(client.get(f"/api/quotations/{quotation['id']}/conversion-draft"))
     assert draft["invoice"]["tcs_section_id"] is None
+
+
+# ── Review fixes ─────────────────────────────────────────────────────────────
+
+
+def test_cancelling_a_middle_credit_note_leaves_no_paisa_behind(client, db_session, company):
+    ledger = _ledger(client, gst=BUYER_GSTIN)
+    product = _product(client, price=1000, gst_rate=0)
+    invoice = _ok(_invoice(
+        client, ledger, product, quantity=3, unit_price=1000,
+        tcs_section_id=_section_id(db_session, SCRAP_2025), tcs_rate=2, tcs_amount=100.01,
+    ))
+    note_a = _credit(client, invoice, 1)
+    _credit(client, invoice, 1)
+    assert client.post(f"/api/credit-notes/{note_a['id']}/cancel").status_code == 200
+    _credit(client, invoice, 2)
+
+    from src.models.credit_note import CreditNote
+
+    active = db_session.query(CreditNote).filter(CreditNote.status == "active").all()
+    assert sum((Decimal(str(note.tcs_amount)) for note in active), Decimal("0")) == Decimal("100.01")
+    after = _ok(client.get(f"/api/invoices/{invoice['id']}"))
+    assert after["remaining_amount"] == 0
+    assert after["credit_status"] == "fully_credited"
+
+
+def test_a_rate_beyond_three_places_is_stored_and_used_as_rounded(client, db_session, company):
+    ledger = _ledger(client, gst=BUYER_GSTIN)
+    product = _product(client)
+
+    body = _ok(_invoice(client, ledger, product, tcs_section_id=_section_id(db_session, SCRAP_2025), tcs_rate=1.2345))
+
+    # 1.2345 is kept as 1.235 (NUMERIC(7,3)), and the amount comes from 1.235.
+    assert body["tcs_rate"] == 1.235
+    assert body["tcs_amount"] == 1457.30  # 118000 x 1.235%, not 1456.71 from 1.2345
+
+
+def test_out_of_range_tcs_rate_and_amount_are_refused(client, db_session, company):
+    ledger = _ledger(client, gst=BUYER_GSTIN)
+    product = _product(client)
+    section = _section_id(db_session, SCRAP_2025)
+    assert _invoice(client, ledger, product, tcs_section_id=section, tcs_rate=101).status_code == 422
+    assert _invoice(client, ledger, product, tcs_section_id=section, tcs_rate=-1).status_code == 422
+    assert _invoice(client, ledger, product, tcs_section_id=section, tcs_amount=-5).status_code == 422
