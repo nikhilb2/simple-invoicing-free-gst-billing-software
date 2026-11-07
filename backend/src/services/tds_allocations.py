@@ -27,8 +27,10 @@ from sqlalchemy.orm import Session
 
 from src.core.validation import pan_from_gstin
 from src.models.buyer import Buyer
+from src.models.company import CompanyProfile
 from src.models.invoice import Invoice
 from src.models.tax_withholding_section import TaxWithholdingSection
+from src.services.company_access import company_scope
 from src.services.tax_withholding import suggest_withholding
 
 ZERO = Decimal("0.00")
@@ -140,7 +142,12 @@ class TdsContext:
         return self._ledger
 
     def _require_purchase_tds_enabled(self) -> None:
-        raise HTTPException(status_code=400, detail="TDS on payments to suppliers is not supported yet.")
+        company = self.db.get(CompanyProfile, self.company_id) if self.company_id is not None else None
+        if company is None or not company.enable_purchase_tds:
+            raise HTTPException(
+                status_code=400,
+                detail="TDS on payments to suppliers is turned off. Turn it on in Company settings first.",
+            )
 
     def normalize(
         self,
@@ -217,6 +224,55 @@ def allocation_tds_columns(row: NormalizedAllocation, previous=None) -> dict:
 # Suggestion
 # ---------------------------------------------------------------------------
 
+def _money_text(value: Decimal) -> str:
+    """₹ with Indian digit grouping: ₹1,00,000.00."""
+    whole, _, paise = f"{money(value):.2f}".partition(".")
+    sign = "-" if whole.startswith("-") else ""
+    whole = whole.lstrip("-")
+    if len(whole) > 3:
+        head, tail = whole[:-3], whole[-3:]
+        groups = []
+        while len(head) > 2:
+            groups.insert(0, head[-2:])
+            head = head[:-2]
+        if head:
+            groups.insert(0, head)
+        whole = ",".join(groups + [tail])
+    return f"{sign}₹{whole}.{paise}"
+
+
+def _supplier_year_bases(
+    db: Session,
+    invoice: Invoice,
+    section: TaxWithholdingSection,
+    on_date: date,
+    company_id: int | None,
+) -> Decimal:
+    """Sum of the section base of this supplier's bills in the tax year, up to and including this bill."""
+    year_start = datetime.combine(tax_year_start(on_date), datetime.min.time())
+    query = db.query(Invoice).filter(
+        Invoice.ledger_id == invoice.ledger_id,
+        Invoice.voucher_type == invoice.voucher_type,
+        Invoice.status == "active",
+        Invoice.invoice_date >= year_start,
+        Invoice.invoice_date <= invoice.invoice_date,
+    )
+    if company_id is not None:
+        query = query.filter(company_scope(Invoice.company_id, company_id))
+    total = ZERO
+    seen_self = False
+    for other in query.all():
+        if other.id == invoice.id:
+            seen_self = True
+        elif as_date(other.invoice_date) == as_date(invoice.invoice_date) and other.id > invoice.id:
+            # Same day, entered later: comes after this bill.
+            continue
+        total += section_base(section, other)
+    if not seen_self:
+        total += section_base(section, invoice)
+    return money(total)
+
+
 def suggest_tds_for_invoice(
     db: Session,
     invoice: Invoice,
@@ -228,8 +284,12 @@ def suggest_tds_for_invoice(
 ) -> dict:
     """Suggested TDS for one invoice and section. Never binding.
 
-    The customer decides whether to deduct, so the suggestion is just
-    rate x base, with no threshold check.
+    Receipts (sales invoices): the customer decides whether to deduct, so the
+    suggestion is just rate x base, with no threshold check.
+
+    Payments (purchase bills): we decide, so the per-bill and tax-year
+    thresholds of the section are checked against this supplier's bills, and
+    for purchase of goods only the part above the threshold is suggested.
     """
     on_date = deduction_date(invoice.invoice_date, payment_date)
     bill_base = section_base(section, invoice)
@@ -257,6 +317,48 @@ def suggest_tds_for_invoice(
 
     base = bill_base
     reasons: list[str] = []
+    if invoice.voucher_type == "purchase":
+        single = Decimal(str(section.threshold_single)) if section.threshold_single is not None else None
+        aggregate = Decimal(str(section.threshold_aggregate)) if section.threshold_aggregate is not None else None
+        year_total = _supplier_year_bases(db, invoice, section, on_date, company_id)
+        result["tax_year_total"] = float(year_total)
+        if section.threshold_note == "excess over threshold" and aggregate is not None:
+            before = year_total - bill_base
+            above = max(ZERO, year_total - aggregate) - max(ZERO, before - aggregate)
+            if above <= 0:
+                result["applies"] = False
+                result["reason"] = (
+                    f"Bills from this supplier this tax year come to {_money_text(year_total)}, "
+                    f"not above {_money_text(aggregate)}. No TDS is due yet."
+                )
+                return result
+            base = money(above)
+            if base < bill_base:
+                reasons.append(f"TDS is only on the {_money_text(base)} above {_money_text(aggregate)} for the tax year.")
+        else:
+            over_single = single is not None and bill_base > single
+            over_aggregate = aggregate is not None and year_total > aggregate
+            if single is None and aggregate is None:
+                pass
+            elif not over_single and not over_aggregate:
+                parts = []
+                if single is not None:
+                    per = "a month" if section.threshold_note == "per month" else "per bill"
+                    parts.append(f"this bill ({_money_text(bill_base)}) is not above {_money_text(single)} {per}")
+                if aggregate is not None:
+                    parts.append(
+                        f"bills from this supplier this tax year ({_money_text(year_total)}) "
+                        f"are not above {_money_text(aggregate)}"
+                    )
+                result["applies"] = False
+                result["reason"] = ("No TDS suggested: " + " and ".join(parts) + ".")
+                return result
+            elif over_aggregate and not over_single:
+                reasons.append(
+                    f"This bill takes the tax year's total to {_money_text(year_total)}, above {_money_text(aggregate)}. "
+                    "Earlier bills this year may also need TDS."
+                )
+
     suggestion = suggest_withholding(section, base, party_type, has_pan)
     result["base_amount"] = float(base)
     result["rate"] = suggestion["rate"]

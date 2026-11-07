@@ -67,6 +67,16 @@ def _get_company_creation_capability(db: Session, user: User) -> CompanyCreation
     )
 
 
+def _checked_purchase_tds(enabled: bool, tan: str | None) -> bool:
+    """TDS on payments to suppliers (#770) needs the company's TAN first."""
+    if enabled and not tan:
+        raise HTTPException(
+            status_code=400,
+            detail="TDS on payments to suppliers needs the company TAN. Enter the TAN first.",
+        )
+    return enabled
+
+
 def _create_company_profile(db: Session, payload: CompanyProfileUpdate) -> CompanyProfile:
     profile = CompanyProfile(
         name=payload.name.strip(),
@@ -74,6 +84,7 @@ def _create_company_profile(db: Session, payload: CompanyProfileUpdate) -> Compa
         gst=payload.gst.strip().upper(),
         pan=payload.pan,
         tan=payload.tan,
+        enable_purchase_tds=_checked_purchase_tds(payload.enable_purchase_tds, payload.tan),
         phone_number=payload.phone_number.strip(),
         currency_code=payload.currency_code.strip().upper() if payload.currency_code else "INR",
         email=payload.email.strip() if payload.email else None,
@@ -177,6 +188,7 @@ def _company_to_out(company: CompanyProfile) -> CompanyProfileOut:
         gst=company.gst or "",
         pan=company.pan,
         tan=company.tan,
+        enable_purchase_tds=bool(company.enable_purchase_tds),
         phone_number=company.phone_number or "",
         currency_code=company.currency_code,
         email=company.email,
@@ -384,6 +396,11 @@ def upsert_company_profile(
         profile.pan = payload.pan
     if "tan" in payload.model_fields_set:
         profile.tan = payload.tan
+    if "enable_purchase_tds" in payload.model_fields_set or profile.enable_purchase_tds:
+        profile.enable_purchase_tds = _checked_purchase_tds(
+            payload.enable_purchase_tds if "enable_purchase_tds" in payload.model_fields_set else profile.enable_purchase_tds,
+            profile.tan,
+        )
     profile.phone_number = payload.phone_number.strip()
     profile.currency_code = payload.currency_code.strip().upper() if payload.currency_code else "INR"
     profile.email = payload.email.strip() if payload.email else None

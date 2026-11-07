@@ -36,6 +36,21 @@ def _receipt(client, sections, *, with_tds=True):
     return ledger, invoice, response.json()
 
 
+def _purchase_payment(client, db_session, sections, *, with_tds=True):
+    ledger = create_ledger(client, "Supplier Co", pan="AAACS1234A", party_type="company")
+    enable_purchase_tds(db_session)
+    bill = create_invoice(client, ledger, 100000, "2026-05-10", voucher_type="purchase")
+    if with_tds:
+        alloc = {"invoice_id": bill["id"], "allocated_amount": 117000, "tds_amount": 1000, "tds_section_id": sections["contractor"].id}
+        cash = 117000
+    else:
+        alloc = {"invoice_id": bill["id"], "allocated_amount": 118000}
+        cash = 118000
+    response = post_voucher(client, ledger, cash, [alloc], "2026-05-20T10:00:00", voucher_type="payment")
+    assert response.status_code == 200, response.text
+    return ledger, bill, response.json()
+
+
 def test_statement_csv_has_the_tds_line_in_the_credit_column(client, sections):
     ledger, _, _ = _receipt(client, sections)
     response = client.get(f"/api/ledgers/{ledger}/statement/csv", params={"from_date": FROM, "to_date": TO})
@@ -91,6 +106,28 @@ def test_receipt_html_without_tds_is_unchanged(client, db_session, sections):
     html = build_receipt_html(db_session, _company_id(db_session), receipt["id"])
     assert "TDS deducted" not in html
     assert ">Allocated</th>" in html
+
+
+def test_payment_voucher_html_labels_cash_as_paid_to_supplier(client, db_session, sections):
+    _, _, payment = _purchase_payment(client, db_session, sections)
+    html = build_receipt_html(db_session, _company_id(db_session), payment["id"])
+    assert "TDS deducted" in html
+    assert ">Paid to supplier</th>" in html
+
+
+def test_purchase_bill_html_shows_paid_and_tds_only_with_tds(client, db_session, sections):
+    _, bill, _ = _purchase_payment(client, db_session, sections)
+    html = build_invoice_html(db_session, _company_id(db_session), bill["id"])
+    assert "Paid to supplier:" in html
+    assert "TDS deducted:" in html
+    assert "Balance:" in html
+
+
+def test_purchase_bill_html_without_tds_has_no_block(client, db_session, sections):
+    _, bill, _ = _purchase_payment(client, db_session, sections, with_tds=False)
+    html = build_invoice_html(db_session, _company_id(db_session), bill["id"])
+    assert "Paid to supplier" not in html
+    assert "TDS deducted" not in html
 
 
 def test_connector_text_mentions_tds():

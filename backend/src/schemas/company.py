@@ -27,6 +27,8 @@ class CompanyProfileBase(BaseModel):
     gst: str = ""
     pan: str | None = None
     tan: str | None = None
+    # Off by default (#770). Turning it on needs a TAN.
+    enable_purchase_tds: bool = False
     phone_number: str = ""
     currency_code: str | None = None
     email: str | None = None

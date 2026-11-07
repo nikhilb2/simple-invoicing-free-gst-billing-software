@@ -51,6 +51,7 @@ def _build_purchase_invoice_html(
     invoice: Invoice,
     products: list[Product],
     serials: dict[int, list[str]] | None = None,
+    settlement: dict[str, float] | None = None,
 ) -> str:
     """Generate HTML for a purchase invoice (supplier at top-left, your company top-right,
     no bank details in footer, optional supplier ref row)."""
@@ -64,6 +65,14 @@ def _build_purchase_invoice_html(
     product_map = {p.id: p for p in products}
     serials_map = serials or {}
     tax_inclusive = bool(invoice.tax_inclusive)
+
+    settlement_html = ""
+    if settlement and float(settlement.get("tds_amount") or 0) > 0:
+        settlement_html = (
+            f'<p class="muted-text">Paid to supplier: {_fmt_currency(float(settlement.get("paid_amount") or 0), currency)}</p>'
+            f'<p class="muted-text">TDS deducted: {_fmt_currency(float(settlement["tds_amount"]), currency)}</p>'
+            f'<p class="muted-text">Balance: {_fmt_currency(float(settlement.get("remaining_amount") or 0), currency)}</p>'
+        )
 
     item_rows = ""
     for idx, item in enumerate(invoice.items or [], start=1):
@@ -369,6 +378,7 @@ def _build_purchase_invoice_html(
       <p class="eyebrow" style="margin-top: 10px;">Total due</p>
       <p class="invoice-sheet__total-value">{_fmt_currency(float(invoice.total_amount), currency)}</p>
       <p class="invoice-amount-words">{_amount_in_words_indian(float(invoice.total_amount), currency)}</p>
+      {settlement_html}
       <p class="muted-text">Received by {_e(invoice.company_name) or 'Your company'}</p>
     </div>
   </section>
