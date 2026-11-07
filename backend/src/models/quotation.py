@@ -30,6 +30,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import deferred, relationship
 
@@ -119,8 +120,8 @@ class Quotation(Base):
     tcs_section_id = Column(Integer, ForeignKey("tax_withholding_sections.id"), nullable=True)
     tcs_section_ref = Column(String(64), nullable=True)
     tcs_rate = Column(Numeric(7, 3), nullable=True)
-    tcs_base_amount = Column(Numeric(10, 2), nullable=False, default=0)
-    tcs_amount = Column(Numeric(10, 2), nullable=False, default=0)
+    tcs_base_amount = Column(Numeric(10, 2), nullable=False, default=0, server_default=text("0"))
+    tcs_amount = Column(Numeric(10, 2), nullable=False, default=0, server_default=text("0"))
 
     # Decline reason, or how an acceptance arrived ("PO 123 by email").
     status_note = Column(String, nullable=True)

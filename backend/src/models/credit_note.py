@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Numeric, Date, DateTime, ForeignKey, UniqueConstraint
+from sqlalchemy import Column, Integer, String, Numeric, Date, DateTime, ForeignKey, UniqueConstraint, text
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from src.db.base import Base
@@ -39,7 +39,7 @@ class CreditNote(Base):
     igst_amount = Column(Numeric(10, 2), nullable=False, default=0)
     # The TCS this note reverses, in proportion to what it credits. Included in
     # total_amount, like the invoice it reverses.
-    tcs_amount = Column(Numeric(10, 2), nullable=False, default=0)
+    tcs_amount = Column(Numeric(10, 2), nullable=False, default=0, server_default=text("0"))
     total_amount = Column(Numeric(10, 2), nullable=False, default=0)
     # The date on the document, at midnight like Invoice.invoice_date. Every
     # report and return dates the note by this; created_at is only when the row
@@ -80,7 +80,7 @@ class CreditNoteItem(Base):
     tax_amount = Column(Numeric(10, 2), nullable=False, default=0)
     line_total = Column(Numeric(10, 2), nullable=False)
     # This line's share of the invoice's TCS, outside line_total.
-    tcs_amount = Column(Numeric(10, 2), nullable=False, default=0)
+    tcs_amount = Column(Numeric(10, 2), nullable=False, default=0, server_default=text("0"))
     created_at = Column(DateTime, default=datetime.utcnow)
 
     credit_note = relationship("CreditNote", back_populates="items")
