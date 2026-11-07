@@ -5,7 +5,7 @@ from typing import List, Literal
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
 from src.core.document_limits import MONEY_LIMIT, QUANTITY_LIMIT
-from src.schemas.invoice import InvoiceCreate, _validate_discount_value
+from src.schemas.invoice import InvoiceCreate, _check_tcs_amount, _check_tcs_rate, _validate_discount_value
 from src.schemas.ledger_address import ShippingAddressInline
 
 DocumentType = Literal["quotation", "proforma"]
@@ -75,14 +75,24 @@ class QuotationFields(BaseModel):
     # left out is suggested for the buyer; an amount left out is base x rate. Typed
     # values always win: the app suggests, the user decides.
     tcs_section_id: int | None = None
-    tcs_rate: float | None = Field(default=None, ge=0, le=100, allow_inf_nan=False)
-    tcs_amount: float | None = Field(default=None, ge=0, lt=MONEY_LIMIT, allow_inf_nan=False)
+    tcs_rate: float | None = Field(default=None, allow_inf_nan=False)
+    tcs_amount: float | None = Field(default=None, allow_inf_nan=False)
     items: List[QuotationItemCreate]
 
     @field_validator("discount_value", mode="after")
     @classmethod
     def _check_discount_value(cls, value: float | None, info: ValidationInfo) -> float | None:
         return _check_places(_validate_discount_value(value, info), 2)
+
+    @field_validator("tcs_rate")
+    @classmethod
+    def _tcs_rate_in_range(cls, value: float | None) -> float | None:
+        return _check_tcs_rate(value)
+
+    @field_validator("tcs_amount")
+    @classmethod
+    def _tcs_amount_in_range(cls, value: float | None) -> float | None:
+        return _check_tcs_amount(value)
 
     @model_validator(mode="after")
     def _check_validity(self):

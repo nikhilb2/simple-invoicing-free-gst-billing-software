@@ -19,7 +19,7 @@ The rules this module keeps:
 
 from dataclasses import dataclass
 from datetime import date
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
@@ -173,7 +173,9 @@ def resolve_tcs(
                 "Choose a section for this date."
             ),
         )
+    # The column holds three places, so the amount is worked out from the rate as stored.
     rate = Decimal(str(tcs_rate)) if tcs_rate is not None else suggest_tcs_rate(section, ledger)
+    rate = rate.quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
     amount = _money(Decimal(str(tcs_amount))) if tcs_amount is not None else None
     return TcsCharge(
         section_id=section.id,
