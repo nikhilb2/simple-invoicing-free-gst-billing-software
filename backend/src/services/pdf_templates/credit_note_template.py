@@ -145,6 +145,11 @@ def _build_credit_note_html(
         (credit_note.cgst_amount or 0) + (credit_note.sgst_amount or 0) + (credit_note.igst_amount or 0)
     )
 
+    tcs_reversed = float(getattr(credit_note, "tcs_amount", 0) or 0)
+    tcs_reversed_html = (
+        f"<p>TCS reversed: {_fmt_currency(tcs_reversed, currency)}</p>\n    " if tcs_reversed != 0 else ""
+    )
+
     company_header_html = ""
     if logo_data and logo_mime_type:
         company_header_html = f"""
@@ -404,7 +409,7 @@ def _build_credit_note_html(
     <p>Taxable: {_fmt_currency(float(credit_note.taxable_amount or 0), currency)}</p>
     {tax_breakup_rows}
     <p>Total tax: {_fmt_currency(total_tax, currency)}</p>
-    <p class="eyebrow" style="margin-top: 10px;">Total credit</p>
+    {tcs_reversed_html}<p class="eyebrow" style="margin-top: 10px;">Total credit</p>
     <p class="sheet__total-value">{_fmt_currency(float(credit_note.total_amount or 0), currency)}</p>
     <p class="sheet__amount-words">{_amount_in_words_indian(float(credit_note.total_amount or 0), currency)}</p>
     <p class="muted-text">Authorized by {_e(seller_name) or 'Billing company'}</p>

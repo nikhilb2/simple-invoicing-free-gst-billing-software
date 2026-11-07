@@ -8,6 +8,8 @@
     due_date        (str|None)    — Payment due date; omitted if not provided
     buyer_name      (str)         — Buyer / party name
     total_amount    (str|number)  — Formatted invoice total, e.g. "12,500.00"
+    tcs_label       (str|None)    — TCS line wording; omitted when the invoice has no TCS
+    tcs_amount      (str|None)    — Formatted TCS amount included in the total
     items_count     (int)         — Number of line items on the invoice
     currency        (str)         — Currency symbol. Default: "₹"
     message         (str|None)    — Optional custom message from the sender
@@ -28,6 +30,7 @@
     ("Invoice date", invoice_date, None),
 ] %}
 {% if due_date %}{% set items = items + [("Due date", due_date, "alert")] %}{% endif %}
+{% if tcs_label and tcs_amount %}{% set items = items + [(tcs_label, (currency | default("₹")) ~ tcs_amount, None)] %}{% endif %}
 {% set items = items + [("Items", items_count ~ " item" ~ ("" if items_count == 1 else "s"), None)] %}
 
 {% call ui.recap("Invoice from " ~ (company_name or "us"), "Invoice " ~ invoice_number) %}
