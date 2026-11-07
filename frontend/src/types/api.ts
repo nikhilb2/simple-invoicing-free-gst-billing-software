@@ -107,6 +107,8 @@ export type Ledger = {
   gst: string;
   pan: string | null;
   party_type: string | null;
+  /** s.394(2) declaration received: suggest no TCS on Sl. No. 1 to 5 goods. */
+  tcs_declaration_received?: boolean;
   opening_balance: number | null;
   /** Closing balance to date (debit - credit). Only sent by the ledger list. */
   balance?: number | null;
@@ -126,6 +128,7 @@ export type LedgerCreate = {
   gst: string;
   pan: string;
   party_type: string | null;
+  tcs_declaration_received?: boolean;
   opening_balance: number | null;
   phone_number: string;
   email: string;
@@ -229,6 +232,8 @@ export type CompanyProfile = {
   eway_always_show_button: boolean;
   show_pay_qr_on_invoice: boolean;
   show_upi_pay_button: boolean;
+  /** Optional TCS on sales invoices (#769). Off by default. */
+  enable_tcs?: boolean;
 };
 
 export type EwayBillSettings = {
@@ -279,6 +284,7 @@ export type CompanyProfileUpdate = {
   eway_always_show_button?: boolean;
   show_pay_qr_on_invoice?: boolean;
   show_upi_pay_button?: boolean;
+  enable_tcs?: boolean;
 };
 
 export type CompanyAccountType = 'bank' | 'cash';
@@ -371,6 +377,12 @@ export type Invoice = {
   sgst_amount: number;
   igst_amount: number;
   total_amount: number;
+  /** TCS collected (#769): copies of the section and rate as saved. Never in the GST fields. */
+  tcs_section_id?: number | null;
+  tcs_section_ref?: string | null;
+  tcs_rate?: number | null;
+  tcs_base_amount?: number;
+  tcs_amount?: number;
   invoice_date: string;
   due_date: string | null;
   paid_amount: number;
@@ -482,6 +494,12 @@ export type Quotation = {
   sgst_amount: number;
   igst_amount: number;
   total_amount: number;
+  /** TCS collected (#769): copies of the section and rate as saved. Never in the GST fields. */
+  tcs_section_id?: number | null;
+  tcs_section_ref?: string | null;
+  tcs_rate?: number | null;
+  tcs_base_amount?: number;
+  tcs_amount?: number;
   status_note: string | null;
   accepted_at: string | null;
   declined_at: string | null;
@@ -510,6 +528,10 @@ export type QuotationFields = {
   shipping_address_same_as_billing?: boolean;
   shipping_address_id?: number | null;
   new_shipping_address?: { label: string; address: string } | null;
+  /** TCS: a section in force on the date. Rate left out is suggested; amount left out is base x rate. */
+  tcs_section_id?: number | null;
+  tcs_rate?: number | null;
+  tcs_amount?: number | null;
   items: Omit<InvoiceItemInput, 'serial_numbers'>[];
 };
 
@@ -561,6 +583,8 @@ export type CreditNoteItem = {
   taxable_amount: number;
   tax_amount: number;
   line_total: number;
+  /** This line's share of the invoice's TCS, outside line_total. */
+  tcs_amount?: number;
 };
 
 export type CreditNote = {
@@ -579,6 +603,8 @@ export type CreditNote = {
   cgst_amount: number;
   sgst_amount: number;
   igst_amount: number;
+  /** TCS reversed; included in total_amount. */
+  tcs_amount?: number;
   total_amount: number;
   created_at: string;
   cancelled_at: string | null;
@@ -616,6 +642,25 @@ export type PaginatedCreditNotes = {
   total_pages: number;
 };
 
+/** A TDS or TCS section from the effective-dated catalogue (#767). Rates are percentages. */
+export type TaxWithholdingSection = {
+  id: number;
+  kind: 'tds' | 'tcs';
+  act: number;
+  section_ref: string;
+  legacy_code: string | null;
+  nature: string;
+  rate_individual_huf: number;
+  rate_other: number;
+  rate_no_pan: number;
+  threshold_single: number | null;
+  threshold_aggregate: number | null;
+  threshold_note: string | null;
+  base: 'taxable' | 'gross';
+  effective_from: string;
+  effective_to: string | null;
+};
+
 export type InvoiceCreate = {
   voucher_type: 'sales' | 'purchase';
   ledger_id: number;
@@ -631,6 +676,10 @@ export type InvoiceCreate = {
   shipping_address_id?: number | null;
   new_shipping_address?: { label: string; address: string } | null;
   place_of_supply?: string | null;
+  /** TCS: a section in force on the date. Rate left out is suggested; amount left out is base x rate. */
+  tcs_section_id?: number | null;
+  tcs_rate?: number | null;
+  tcs_amount?: number | null;
   items: InvoiceItemInput[];
 };
 
