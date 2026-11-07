@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import api, { getApiErrorMessage } from '../api/client';
 import StatusToasts from '../components/StatusToasts';
-import type { Ledger, LedgerCreate } from '../types/api';
+import type { CompanyProfile, Ledger, LedgerCreate } from '../types/api';
 import { GSTIN_LENGTH, describeGstin, gstinError, normalizeGstinInput } from '../utils/gstin';
 import {
   applyOpeningBalanceSide,
@@ -24,12 +24,22 @@ export default function   LedgerCreatePage() {
   // A half-typed GSTIN is not wrong yet, so the error waits for all 15
   // characters or for the user to leave the field.
   const [gstTouched, setGstTouched] = useState(false);
+  // The TCS declaration only matters to a company that collects TCS (#769).
+  const [companyCollectsTcs, setCompanyCollectsTcs] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    api.get<CompanyProfile>('/company/')
+      .then((res) => { if (!cancelled) setCompanyCollectsTcs(Boolean(res.data?.enable_tcs)); })
+      .catch(() => { /* the checkbox just stays hidden */ });
+    return () => { cancelled = true; };
+  }, []);
   const [form, setForm] = useState<LedgerCreate>({
     name: '',
     address: '',
     gst: '',
     pan: '',
     party_type: null,
+    tcs_declaration_received: false,
     opening_balance: null,
     phone_number: '',
     email: '',
@@ -57,6 +67,7 @@ export default function   LedgerCreatePage() {
           gst: l.gst || '',
           pan: l.pan || (l.gst ? l.gst.slice(2, 12) : ''),
           party_type: l.party_type || null,
+          tcs_declaration_received: Boolean(l.tcs_declaration_received),
           opening_balance: l.opening_balance,
           phone_number: l.phone_number,
           email: l.email || '',
@@ -93,6 +104,7 @@ export default function   LedgerCreatePage() {
         gst: normalizeGstinInput(form.gst),
         pan: form.pan.trim().toUpperCase(),
         party_type: form.party_type || null,
+        tcs_declaration_received: Boolean(form.tcs_declaration_received),
         opening_balance: form.opening_balance,
         phone_number: form.phone_number.trim(),
         email: form.email.trim(),
@@ -242,6 +254,21 @@ export default function   LedgerCreatePage() {
                     <option value="other">Other</option>
                   </select>
                 </div>
+                {companyCollectsTcs || form.tcs_declaration_received ? (
+                  <div className="field field--full">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <input
+                        id="ledger-tcs-declaration"
+                        type="checkbox"
+                        checked={Boolean(form.tcs_declaration_received)}
+                        onChange={(e) => setForm((c) => ({ ...c, tcs_declaration_received: e.target.checked }))}
+                      />
+                      <label htmlFor="ledger-tcs-declaration" style={{ marginBottom: 0, cursor: 'pointer' }}>
+                        TCS declaration received (s.394(2)) - buyer uses the goods for manufacturing
+                      </label>
+                    </div>
+                  </div>
+                ) : null}
                 <div className="field field--full">
                   <label htmlFor="ledger-opening-balance">Opening balance</label>
                   <div className="opening-balance-group">
