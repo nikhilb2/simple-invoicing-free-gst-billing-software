@@ -614,7 +614,7 @@ def create_ledger(
     gst=gst,
     pan=payload.pan,
     party_type=payload.party_type,
-    tcs_declaration_received=payload.tcs_declaration_received,
+    tcs_declaration_received=bool(payload.tcs_declaration_received),
     phone_number=payload.phone_number.strip(),
     email=payload.email.strip() if payload.email else None,
     website=payload.website.strip() if payload.website else None,
@@ -1184,7 +1184,7 @@ def update_ledger(
     ledger.gst = gst
     ledger.pan = payload.pan
     ledger.party_type = payload.party_type
-    if "tcs_declaration_received" in payload.model_fields_set:
+    if payload.tcs_declaration_received is not None:
         ledger.tcs_declaration_received = payload.tcs_declaration_received
     ledger.phone_number = payload.phone_number.strip()
     ledger.email = payload.email.strip() if payload.email else None
