@@ -75,6 +75,8 @@ export type NavLeaf = {
    * hosting this capability is independent of the active company's admin role.
    */
   platformOnly?: boolean;
+  /** Hide the link unless the active company has TCS switched on (`enable_tcs`). */
+  tcsOnly?: boolean;
   shortcutAction?: ActionKey;
   /** Child paths that share this item's identity for titling purposes. */
   alsoTitles?: { path: string; title: string }[];
@@ -168,6 +170,7 @@ export const PRIMARY_NAV: NavEntry[] = [
       { to: '/gstr1', label: 'GSTR-1 Filing', icon: FileCheck2, shortcutAction: 'go_gstr1' },
       // "Worksheet", not "Filing": it estimates from the books and files nothing.
       { to: '/gstr3b', label: 'GSTR-3B Worksheet', icon: ClipboardList, shortcutAction: 'go_gstr3b' },
+      { to: '/reports/tcs-collected', label: 'TCS Collected', icon: Percent, tcsOnly: true },
     ],
   },
   {
@@ -340,18 +343,19 @@ export const NAV_ITEMS: NavLeaf[] = [
 ];
 
 /** Whether a nav item may be shown to a user with these capabilities. */
-export function isNavItemVisible(item: NavLeaf, isAdmin: boolean, canManagePlatform: boolean): boolean {
+export function isNavItemVisible(item: NavLeaf, isAdmin: boolean, canManagePlatform: boolean, tcsEnabled = false): boolean {
+  if (item.tcsOnly && !tcsEnabled) return false;
   if (item.platformOnly) return canManagePlatform;
   return !item.adminOnly || isAdmin;
 }
 
 /** PRIMARY_NAV with unauthorised items — and any section thereby emptied — dropped. */
-export function visiblePrimaryNav(isAdmin: boolean, canManagePlatform = false): NavEntry[] {
+export function visiblePrimaryNav(isAdmin: boolean, canManagePlatform = false, tcsEnabled = false): NavEntry[] {
   return PRIMARY_NAV.flatMap<NavEntry>((entry) => {
     if (entry.kind === 'link') {
-      return isNavItemVisible(entry, isAdmin, canManagePlatform) ? [entry] : [];
+      return isNavItemVisible(entry, isAdmin, canManagePlatform, tcsEnabled) ? [entry] : [];
     }
-    const children = entry.children.filter((item) => isNavItemVisible(item, isAdmin, canManagePlatform));
+    const children = entry.children.filter((item) => isNavItemVisible(item, isAdmin, canManagePlatform, tcsEnabled));
     return children.length > 0 ? [{ ...entry, children }] : [];
   });
 }

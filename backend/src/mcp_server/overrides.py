@@ -42,6 +42,9 @@ EXCLUDED_OPERATIONS: frozenset[tuple[str, str]] = frozenset(
         # See the /api/eway-bill note above: these two live under /api/invoices.
         ("GET", "/api/invoices/{invoice_id}/eway-bill/precheck"),
         ("POST", "/api/invoices/{invoice_id}/eway-bill/generate"),
+        # A file download adds nothing over the JSON report beside it, and the tool
+        # list is already near its size budget.
+        ("GET", "/api/reports/tcs-collected/export-csv"),
     }
 )
 
