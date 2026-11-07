@@ -51,6 +51,13 @@ EXCLUDED_OPERATIONS: frozenset[tuple[str, str]] = frozenset(
         # A file download adds nothing over the JSON report beside it, and the tool
         # list is already near its size budget.
         ("GET", "/api/reports/tcs-collected/export-csv"),
+        # The analytics CSV downloads repeat their JSON twins (analytics_profit_loss,
+        # analytics_sales_by_month, analytics_sales_by_product) for a spreadsheet,
+        # which a model gains nothing from. Dropped when TDS (#768, #770) and TCS
+        # (#769) together took the full tool list past its size budget.
+        ("GET", "/api/analytics/profit-loss/csv"),
+        ("GET", "/api/analytics/sales-by-month/csv"),
+        ("GET", "/api/analytics/sales-by-product/csv"),
     }
 )
 
@@ -137,11 +144,8 @@ NAME_OVERRIDES: dict[tuple[str, str], str] = {
     ("GET", "/api/analytics/product-performance"): "analytics_product_performance",
     ("GET", "/api/analytics/product-performance/{product_id}"): "analytics_product_performance_detail",
     ("GET", "/api/analytics/profit-loss"): "analytics_profit_loss",
-    ("GET", "/api/analytics/profit-loss/csv"): "analytics_profit_loss_csv",
     ("GET", "/api/analytics/sales-by-month"): "analytics_sales_by_month",
-    ("GET", "/api/analytics/sales-by-month/csv"): "analytics_sales_by_month_csv",
     ("GET", "/api/analytics/sales-by-product"): "analytics_sales_by_product",
-    ("GET", "/api/analytics/sales-by-product/csv"): "analytics_sales_by_product_csv",
     ("GET", "/api/dashboard/metrics"): "dashboard_metrics",
     # serials
     ("GET", "/api/serials/scan"): "serials_scan",
