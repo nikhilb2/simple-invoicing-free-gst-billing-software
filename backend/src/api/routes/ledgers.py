@@ -116,6 +116,7 @@ def _serialize_ledger(db: Session, ledger: Ledger, company_id: int | None = None
     gst=ledger.gst,
     pan=ledger.pan,
     party_type=ledger.party_type,
+    tcs_declaration_received=bool(ledger.tcs_declaration_received),
     opening_balance=float(opening_balance_payment.amount) if opening_balance_payment else None,
     phone_number=ledger.phone_number,
     email=ledger.email,
@@ -613,6 +614,7 @@ def create_ledger(
     gst=gst,
     pan=payload.pan,
     party_type=payload.party_type,
+    tcs_declaration_received=payload.tcs_declaration_received,
     phone_number=payload.phone_number.strip(),
     email=payload.email.strip() if payload.email else None,
     website=payload.website.strip() if payload.website else None,
@@ -1182,6 +1184,8 @@ def update_ledger(
     ledger.gst = gst
     ledger.pan = payload.pan
     ledger.party_type = payload.party_type
+    if "tcs_declaration_received" in payload.model_fields_set:
+        ledger.tcs_declaration_received = payload.tcs_declaration_received
     ledger.phone_number = payload.phone_number.strip()
     ledger.email = payload.email.strip() if payload.email else None
     ledger.website = payload.website.strip() if payload.website else None

@@ -96,6 +96,7 @@ class CreditNoteItemOut(BaseModel):
     taxable_amount: float
     tax_amount: float
     line_total: float
+    tcs_amount: float = 0
 
     class Config:
         from_attributes = True
@@ -116,6 +117,7 @@ class CreditNoteOut(BaseModel):
     cgst_amount: float
     sgst_amount: float
     igst_amount: float
+    tcs_amount: float = 0
     total_amount: float
     credit_note_date: Optional[datetime] = None
     created_at: datetime

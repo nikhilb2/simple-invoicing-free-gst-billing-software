@@ -114,6 +114,13 @@ class Quotation(Base):
     sgst_amount = Column(Numeric(10, 2), nullable=False, default=0)
     igst_amount = Column(Numeric(10, 2), nullable=False, default=0)
     total_amount = Column(Numeric(10, 2), nullable=False, default=0)
+    # TCS collected on the sale (#769). Copies of the section and rate as they stood
+    # when the document was saved; never part of taxable_amount or the GST columns.
+    tcs_section_id = Column(Integer, ForeignKey("tax_withholding_sections.id"), nullable=True)
+    tcs_section_ref = Column(String(64), nullable=True)
+    tcs_rate = Column(Numeric(7, 3), nullable=True)
+    tcs_base_amount = Column(Numeric(10, 2), nullable=False, default=0)
+    tcs_amount = Column(Numeric(10, 2), nullable=False, default=0)
 
     # Decline reason, or how an acceptance arrived ("PO 123 by email").
     status_note = Column(String, nullable=True)

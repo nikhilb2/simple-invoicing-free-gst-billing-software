@@ -84,6 +84,12 @@ class InvoiceCreate(BaseModel):
     # Two-digit GST state code of a sale. None takes the buyer's GSTIN state, or
     # the seller's own state for a buyer with no GSTIN.
     place_of_supply: str | None = None
+    # TCS (#769). The section must be a TCS row in force on the document date. A rate
+    # left out is suggested for the buyer; an amount left out is base x rate. Typed
+    # values always win: the app suggests, the user decides.
+    tcs_section_id: int | None = None
+    tcs_rate: float | None = Field(default=None, ge=0, le=100, allow_inf_nan=False)
+    tcs_amount: float | None = Field(default=None, ge=0, lt=MONEY_LIMIT, allow_inf_nan=False)
     items: List[InvoiceItemCreate]
 
     @field_validator("place_of_supply")
@@ -175,6 +181,11 @@ class InvoiceOut(BaseModel):
     round_off_amount: float = 0
     discount_type: str | None = None
     discount_value: float | None = None
+    tcs_section_id: int | None = None
+    tcs_section_ref: str | None = None
+    tcs_rate: float | None = None
+    tcs_base_amount: float = 0
+    tcs_amount: float = 0
     financial_year_id: Optional[int] = None
     shipping_address: str | None = None
     shipping_address_label: str | None = None

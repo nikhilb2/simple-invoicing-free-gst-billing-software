@@ -41,4 +41,7 @@ class CompanyProfile(Base):
     # Off by default: a tappable upi:// hand-off only goes through cleanly for a
     # registered merchant UPI ID, and only the owner knows whether theirs is one.
     show_upi_pay_button = Column(Boolean, nullable=False, default=False, server_default=text("false"))
+    # Off by default: TCS (s.394(1)) applies only to sellers of scrap, liquor, minerals,
+    # forest produce, motor vehicles and similar goods (#769).
+    enable_tcs = Column(Boolean, nullable=False, default=False, server_default=text("false"))
     terms = relationship("CompanyTerm", back_populates="company", order_by="CompanyTerm.serial_number", cascade="all, delete-orphan")

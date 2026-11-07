@@ -15,6 +15,8 @@ class LedgerCreate(BaseModel):
     gst: str | None = None
     pan: str | None = None
     party_type: str | None = None
+    # s.394(2) declaration from the buyer: suggest no TCS on sales to them (#769).
+    tcs_declaration_received: bool = False
     opening_balance: float | None = Field(
         default=None, gt=-_OPENING_BALANCE_LIMIT, lt=_OPENING_BALANCE_LIMIT, allow_inf_nan=False,
     )
@@ -73,6 +75,7 @@ class LedgerOut(BaseModel):
     gst: str = ""
     pan: str | None = None
     party_type: str | None = None
+    tcs_declaration_received: bool = False
     opening_balance: float | None = None
     # Closing balance to date (debit - credit); only populated where the caller
     # asks for it, since it costs extra aggregates.
