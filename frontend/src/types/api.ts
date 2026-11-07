@@ -1287,24 +1287,7 @@ export type ShareLink = {
   created_at: string;
 };
 
-// TDS (#768, #770)
-export type TaxWithholdingSection = {
-  id: number;
-  kind: string;
-  act: number | string;
-  section_ref: string;
-  legacy_code: string | null;
-  nature: string;
-  rate_individual_huf: number | null;
-  rate_other: number | null;
-  rate_no_pan: number | null;
-  threshold_single: number | null;
-  threshold_aggregate: number | null;
-  threshold_note: string | null;
-  base: string;
-  effective_from: string;
-  effective_to: string | null;
-};
+// TDS (#768, #770). TaxWithholdingSection is declared once, above.
 
 export type TdsSuggestion = {
   invoice_id: number;

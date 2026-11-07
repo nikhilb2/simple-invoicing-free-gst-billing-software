@@ -60,7 +60,10 @@ export function validateTdsAllocations(
   return null;
 }
 
-type SectionLabelInput = Pick<TaxWithholdingSection, 'section_ref' | 'nature' | 'rate_individual_huf' | 'rate_other'>;
+type SectionLabelInput = Pick<TaxWithholdingSection, 'section_ref' | 'nature'> & {
+  rate_individual_huf: number | null;
+  rate_other: number | null;
+};
 
 /** e.g. "s.393(1) Sl. No. 6(iii) — Professional fees (10%)". */
 export function sectionOptionLabel(section: SectionLabelInput): string {
