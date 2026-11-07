@@ -443,6 +443,17 @@ def build_invoice_html(
     company = _company(db, company_id)
     show_sku = company.show_sku_on_pdf if company else True
 
+    settlement = None
+    if invoice.voucher_type == "purchase":
+        # Only a bill with TDS settled against it gets the extra block.
+        summary = build_invoice_payment_summaries(db, [invoice]).get(invoice.id)
+        if summary is not None and summary.tds_amount > 0:
+            settlement = {
+                "paid_amount": summary.paid_amount,
+                "tds_amount": summary.tds_amount,
+                "remaining_amount": summary.remaining_amount,
+            }
+
     return _build_multi_copy_invoice_html(
         invoice,
         products,
@@ -450,6 +461,7 @@ def build_invoice_html(
         copies,
         show_sku=show_sku,
         serials=serials,
+        settlement=settlement,
         # Rendered once here, not inside the per-copy loop: a triplicate print would
         # otherwise encode the same QR three times.
         pay_qr_html=build_pay_qr_card_html(share_url),

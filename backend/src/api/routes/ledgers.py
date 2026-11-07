@@ -185,6 +185,48 @@ def _payment_debit_credit(payment: Payment) -> tuple[float, float]:
   return 0.0, 0.0
 
 
+def _tds_totals_by_ledger(
+  db: Session,
+  ledger_ids: list[int],
+  company_id: int | None = None,
+  before: datetime | None = None,
+):
+  """(ledger_id, TDS on payments, TDS on receipts) on active vouchers."""
+  query = (
+    _active_payments_query(db, company_id=company_id)
+    .join(PaymentInvoiceAllocation, PaymentInvoiceAllocation.payment_id == Payment.id)
+    .with_entities(
+      Payment.ledger_id,
+      func.coalesce(func.sum(case((Payment.voucher_type == "payment", PaymentInvoiceAllocation.tds_amount), else_=0)), 0),
+      func.coalesce(func.sum(case((Payment.voucher_type == "receipt", PaymentInvoiceAllocation.tds_amount), else_=0)), 0),
+    )
+    .filter(Payment.ledger_id.in_(ledger_ids))
+    .filter(PaymentInvoiceAllocation.tds_amount > 0)
+  )
+  if before is not None:
+    query = query.filter(Payment.date < before)
+  return query.group_by(Payment.ledger_id).all()
+
+
+def _tds_statement_entry(payment: Payment, allocation: PaymentInvoiceAllocation) -> LedgerStatementEntry:
+  """The ledger line for TDS kept back on one invoice of a receipt or payment."""
+  tds_amount = float(allocation.tds_amount or 0)
+  section = f", s.{allocation.tds_section_ref}" if allocation.tds_section_ref else ""
+  invoice_number = allocation.invoice.invoice_number if allocation.invoice else None
+  against = f" on {invoice_number}" if invoice_number else ""
+  return LedgerStatementEntry(
+    entry_id=payment.id,
+    entry_type="tds",
+    date=payment.date,
+    voucher_type="TDS",
+    reference_number=payment.payment_number,
+    particulars=f"TDS deducted{section}{against}",
+    # A receipt's TDS credits the customer; a payment's TDS debits the supplier.
+    debit=tds_amount if payment.voucher_type == "payment" else 0.0,
+    credit=tds_amount if payment.voucher_type == "receipt" else 0.0,
+  )
+
+
 def _ledger_balances(
   db: Session,
   ledger_ids: list[int],
@@ -231,6 +273,12 @@ def _ledger_balances(
     # An opening balance is signed: positive is a debit, negative a credit, so
     # the plain sum already lands on the right side of the balance.
     balances[ledger_id] = balances.get(ledger_id, 0.0) + float(payment_total) - float(receipt_total) + float(opening_total)
+
+  # TDS kept back on receipts credits the customer like cash; TDS we kept back
+  # on payments debits the supplier (#768, #770). It is not cash, so it lives on
+  # the allocations, not in Payment.amount.
+  for ledger_id, payment_tds, receipt_tds in _tds_totals_by_ledger(db, ledger_ids, company_id=company_id):
+    balances[ledger_id] = balances.get(ledger_id, 0.0) + float(payment_tds) - float(receipt_tds)
 
   credit_note_rows = (
     db.query(
@@ -385,6 +433,12 @@ def _build_ledger_statement_data(
         created_before=period_start,
     )
 
+    opening_tds_debit = 0.0
+    opening_tds_credit = 0.0
+    for _, payment_tds, receipt_tds in _tds_totals_by_ledger(db, [ledger.id], company_id=company_id, before=period_start):
+        opening_tds_debit += float(payment_tds)
+        opening_tds_credit += float(receipt_tds)
+
     period_invoices = (
         _active_invoices_query(db, company_id=company_id)
         .filter(Invoice.ledger_id == ledger.id)
@@ -451,6 +505,8 @@ def _build_ledger_statement_data(
               due_date=allocation.invoice.due_date if allocation.invoice else None,
               payment_status=summary.payment_status if summary else None,
               allocated_amount=float(allocation.allocated_amount or 0),
+              tds_amount=float(allocation.tds_amount or 0),
+              tds_section_ref=allocation.tds_section_ref,
             )
           )
         entries.append(LedgerStatementEntry(
@@ -468,6 +524,9 @@ def _build_ledger_statement_data(
             notes=payment.notes,
             invoice_allocations=entry_allocations,
         ))
+        for allocation in payment.invoice_allocations:
+            if float(allocation.tds_amount or 0) > 0:
+                entries.append(_tds_statement_entry(payment, allocation))
     for credit_note_entry in period_credit_note_summary.entries:
         entries.append(LedgerStatementEntry(
             entry_id=credit_note_entry.entry_id,
@@ -483,8 +542,8 @@ def _build_ledger_statement_data(
 
     period_debit = sum(entry.debit for entry in entries)
     period_credit = sum(entry.credit for entry in entries)
-    opening_debit = float(opening_totals[0]) + float(opening_payment_totals[0]) + float(opening_payment_totals[2]) + opening_credit_note_summary.purchase_credit_total
-    opening_credit = float(opening_totals[1]) + float(opening_payment_totals[1]) + float(opening_payment_totals[3]) + opening_credit_note_summary.sales_credit_total
+    opening_debit = float(opening_totals[0]) + float(opening_payment_totals[0]) + float(opening_payment_totals[2]) + opening_credit_note_summary.purchase_credit_total + opening_tds_debit
+    opening_credit = float(opening_totals[1]) + float(opening_payment_totals[1]) + float(opening_payment_totals[3]) + opening_credit_note_summary.sales_credit_total + opening_tds_credit
     opening_balance = opening_debit - opening_credit
     closing_balance = opening_balance + period_debit - period_credit
 
@@ -1141,7 +1200,9 @@ def list_unpaid_invoices(
             invoice_date=invoice.invoice_date,
             due_date=invoice.due_date,
             total_amount=float(invoice.total_amount or 0),
+            taxable_amount=float(invoice.taxable_amount or 0),
             paid_amount=summary.paid_amount,
+            tds_amount=summary.tds_amount,
             remaining_amount=summary.remaining_amount,
             outstanding_amount=summary.outstanding_amount,
             payment_status=summary.payment_status,

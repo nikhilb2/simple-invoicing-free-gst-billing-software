@@ -13,6 +13,8 @@ class CompanyProfile(Base):
     gst = Column(String, nullable=True)
     pan = Column(String(10), nullable=True)
     tan = Column(String(10), nullable=True)
+    # Off by default (#770): deduct TDS on payments to suppliers. Needs a TAN.
+    enable_purchase_tds = Column(Boolean, nullable=False, default=False, server_default=text("false"))
     phone_number = Column(String, nullable=True)
     currency_code = Column(String, nullable=True)
     email = Column(String, nullable=True)

@@ -5,6 +5,8 @@ import { fetchOutstandingInvoices } from '../features/invoices/api';
 import formatCurrency from '../utils/formatting';
 import { formatInvoiceDateLabel } from '../utils/invoiceDueDate';
 import { remainingAmount } from '../utils/validateAllocations';
+import { totalTds, validateTdsAllocations } from '../utils/tds';
+import TdsAllocationFields from './TdsAllocationFields';
 import EmptyState from './EmptyState';
 import ModalCloseButton from './ModalCloseButton';
 import { useFY } from '../context/FYContext';
@@ -161,6 +163,11 @@ export default function ReceiptModal({
       onError('Amount must be greater than 0');
       return;
     }
+    const tdsError = validateTdsAllocations(form.invoice_allocations, outstandingInvoices);
+    if (tdsError) {
+      onError(tdsError);
+      return;
+    }
     try {
       setSubmitting(true);
       const res = await api.post<Payment>('/payments/', form);
@@ -178,6 +185,7 @@ export default function ReceiptModal({
 
   const allocatedTotal = sumAllocatedAmount(form.invoice_allocations);
   const remainingUnallocated = remainingAmount(form.amount, allocatedTotal);
+  const tdsTotal = totalTds(form.invoice_allocations);
   const filteredInvoices = searchQuery.trim()
     ? outstandingInvoices.filter((inv) =>
         (inv.invoice_number ?? '').toLowerCase().includes(searchQuery.trim().toLowerCase())
@@ -317,6 +325,7 @@ export default function ReceiptModal({
                 {remainingUnallocated >= 0
                   ? `Unallocated ${formatCurrency(remainingUnallocated, currencyCode)}`
                   : `Over-allocated by ${formatCurrency(Math.abs(remainingUnallocated), currencyCode)}`}
+                {tdsTotal > 0 ? ` · TDS ${formatCurrency(tdsTotal, currencyCode)}` : ''}
               </p>
 
               {!loadingOutstanding && outstandingInvoices.length > 0 ? (
@@ -386,7 +395,7 @@ export default function ReceiptModal({
                                 id={`rcpt-allocation-${invoice.id}`}
                                 className="input"
                                 type="number"
-                                min="0.01"
+                                min={Number(existingAllocation?.tds_amount || 0) > 0 ? '0' : '0.01'}
                                 step="0.01"
                                 value={existingAllocation?.allocated_amount || ''}
                                 onChange={(event) => {
@@ -396,6 +405,24 @@ export default function ReceiptModal({
                                 }}
                               />
                             </div>
+                          ) : null}
+                          {existingAllocation ? (
+                            <TdsAllocationFields
+                              allocation={existingAllocation}
+                              invoice={invoice}
+                              paymentDate={form.date}
+                              currencyCode={currencyCode}
+                              idPrefix={`rcpt-${invoice.id}`}
+                              onChange={(patch) => {
+                                followAmount.current = false;
+                                setForm((f) => ({
+                                  ...f,
+                                  invoice_allocations: (f.invoice_allocations ?? []).map((allocation) =>
+                                    allocation.invoice_id === invoice.id ? { ...allocation, ...patch } : allocation,
+                                  ),
+                                }));
+                              }}
+                            />
                           ) : null}
                         </div>
                       </div>

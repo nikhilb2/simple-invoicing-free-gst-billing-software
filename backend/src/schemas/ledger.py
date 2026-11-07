@@ -111,11 +111,13 @@ class LedgerStatementInvoiceAllocation(BaseModel):
     due_date: datetime | None = None
     payment_status: str | None = None
     allocated_amount: float
+    tds_amount: float = 0
+    tds_section_ref: str | None = None
 
 
 class LedgerStatementEntry(BaseModel):
     entry_id: int
-    entry_type: str  # "invoice" or "payment"
+    entry_type: str  # "invoice", "payment", "credit_note" or "tds"
     date: datetime
     voucher_type: str
     reference_number: str | None = None  # Invoice number, payment number, or credit note number

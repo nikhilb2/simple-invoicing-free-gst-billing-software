@@ -19,7 +19,7 @@ from src.db.session import get_db
 from src.models.buyer import Buyer as Ledger
 from src.models.company import CompanyProfile
 from src.models.invoice import Invoice
-from src.models.payment import Payment
+from src.models.payment import Payment, PaymentInvoiceAllocation
 from src.models.product import Product
 from src.models.user import User, UserRole
 from src.services.credit_note_reporting import get_credit_note_ledger_summary
@@ -278,7 +278,8 @@ async def send_ledger_statement_email(
 
     # Summarise invoice debits and payment credits separately for the email body
     total_invoiced = sum(entry.debit for entry in statement_data.entries if entry.entry_type == "invoice")
-    total_received = sum(entry.credit for entry in statement_data.entries if entry.entry_type == "payment")
+    # TDS the customer kept back (#768) is settled like a receipt.
+    total_received = sum(entry.credit for entry in statement_data.entries if entry.entry_type in ("payment", "tds"))
 
     template = _jinja_env.get_template("ledger_statement.html")
     html_body = template.render(
@@ -384,6 +385,15 @@ async def send_payment_reminder_email(
     if company_id is not None:
         total_receipts_query = total_receipts_query.filter(company_scope(Payment.company_id, company_id))
     total_receipts = float(total_receipts_query.scalar())
+    # TDS the customer kept back settles their invoices too (#768).
+    total_receipt_tds_query = (
+        db.query(func.coalesce(func.sum(PaymentInvoiceAllocation.tds_amount), 0))
+        .join(Payment, Payment.id == PaymentInvoiceAllocation.payment_id)
+        .filter(Payment.ledger_id == ledger_id, Payment.voucher_type == "receipt", Payment.status == "active")
+    )
+    if company_id is not None:
+        total_receipt_tds_query = total_receipt_tds_query.filter(company_scope(Payment.company_id, company_id))
+    total_receipts += float(total_receipt_tds_query.scalar())
     outstanding_balance = total_sales - credit_note_summary.sales_credit_total - total_receipts
 
     last_payment_date = _last_receipt_date(db, ledger_id, company_id)

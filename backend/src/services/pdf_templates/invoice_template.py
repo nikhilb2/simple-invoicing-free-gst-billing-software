@@ -39,13 +39,13 @@ def _copy_label(n: int) -> str:
     return f"{n}{suffix} Copy"
 
 
-def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_accounts: list[CompanyAccount] | None = None, copy_label: str = "Original", show_sku: bool = True, serials: dict[int, list[str]] | None = None, pay_qr_html: str = "") -> str:
+def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_accounts: list[CompanyAccount] | None = None, copy_label: str = "Original", show_sku: bool = True, serials: dict[int, list[str]] | None = None, pay_qr_html: str = "", settlement: dict[str, float] | None = None) -> str:
     """Generate HTML for a sales invoice."""
     if invoice_bank_accounts is None:
         invoice_bank_accounts = []
     
     if invoice.voucher_type == "purchase":
-        return _build_purchase_invoice_html(invoice, products, serials)
+        return _build_purchase_invoice_html(invoice, products, serials, settlement=settlement)
 
     currency = invoice.company_currency_code or "USD"
     voucher_label = "Sales" if invoice.voucher_type == "sales" else "Purchase"
@@ -620,10 +620,10 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
     return html
 
 
-def _build_multi_copy_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_accounts: list[CompanyAccount], copies: int, show_sku: bool = True, serials: dict[int, list[str]] | None = None, pay_qr_html: str = "") -> str:
+def _build_multi_copy_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_accounts: list[CompanyAccount], copies: int, show_sku: bool = True, serials: dict[int, list[str]] | None = None, pay_qr_html: str = "", settlement: dict[str, float] | None = None) -> str:
     """Generate HTML for multiple copies of an invoice in a single document."""
     if invoice.voucher_type == "purchase":
-        return _build_purchase_invoice_html(invoice, products, serials)
+        return _build_purchase_invoice_html(invoice, products, serials, settlement=settlement)
     if copies == 1:
         return _build_invoice_html(invoice, products, invoice_bank_accounts, copy_label=_copy_label(1), show_sku=show_sku, serials=serials, pay_qr_html=pay_qr_html)
 

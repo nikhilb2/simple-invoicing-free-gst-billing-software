@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal, ROUND_HALF_UP
 
 from fastapi import HTTPException
@@ -10,6 +10,7 @@ from src.models.credit_note import CreditNote, CreditNoteItem
 from src.models.invoice import Invoice
 from src.models.payment import Payment, PaymentInvoiceAllocation
 from src.services.company_access import company_scope
+from src.services import tds_allocations
 
 
 @dataclass
@@ -21,6 +22,9 @@ class InvoicePaymentSummary:
     outstanding_amount: float
     payment_status: str
     due_in_days: int | None
+    # TDS the customer kept back (sales) or we kept back (purchases). Settles the
+    # invoice like cash but is not cash, so paid_amount stays the cash figure.
+    tds_amount: float = 0.0
 
 
 def _money(value: Decimal) -> Decimal:
@@ -68,6 +72,32 @@ def _payment_totals_by_invoice(
     return {invoice_id: _money(Decimal(str(total or 0))) for invoice_id, total in rows}
 
 
+def _tds_totals_by_invoice(
+    db: Session,
+    invoice_ids: list[int],
+    *,
+    exclude_payment_id: int | None = None,
+) -> dict[int, Decimal]:
+    """TDS settled per invoice on active receipts/payments (#768, #770)."""
+    if not invoice_ids:
+        return {}
+
+    query = (
+        db.query(PaymentInvoiceAllocation.invoice_id, func.coalesce(func.sum(PaymentInvoiceAllocation.tds_amount), 0))
+        .join(Payment, Payment.id == PaymentInvoiceAllocation.payment_id)
+        .filter(
+            Payment.status == "active",
+            PaymentInvoiceAllocation.invoice_id.in_(invoice_ids),
+            PaymentInvoiceAllocation.tds_amount > 0,
+        )
+    )
+    if exclude_payment_id is not None:
+        query = query.filter(Payment.id != exclude_payment_id)
+
+    rows = query.group_by(PaymentInvoiceAllocation.invoice_id).all()
+    return {invoice_id: _money(Decimal(str(total or 0))) for invoice_id, total in rows}
+
+
 def build_invoice_payment_summaries(
     db: Session,
     invoices: list[Invoice],
@@ -80,6 +110,7 @@ def build_invoice_payment_summaries(
     invoice_ids = [invoice.id for invoice in invoices]
     credit_totals = _credit_totals_by_invoice(db, invoice_ids)
     payment_totals = _payment_totals_by_invoice(db, invoice_ids, exclude_payment_id=exclude_payment_id)
+    tds_totals = _tds_totals_by_invoice(db, invoice_ids, exclude_payment_id=exclude_payment_id)
     today = date.today()
 
     summaries: dict[int, InvoicePaymentSummary] = {}
@@ -87,13 +118,14 @@ def build_invoice_payment_summaries(
         total_amount = _money(Decimal(str(invoice.total_amount or 0)))
         credited_amount = credit_totals.get(invoice.id, Decimal("0.00"))
         paid_amount = payment_totals.get(invoice.id, Decimal("0.00"))
-        remaining_amount = _money(total_amount - credited_amount - paid_amount)
+        tds_amount = tds_totals.get(invoice.id, Decimal("0.00"))
+        remaining_amount = _money(total_amount - credited_amount - paid_amount - tds_amount)
         if remaining_amount < 0:
             remaining_amount = Decimal("0.00")
 
         if remaining_amount <= 0:
             payment_status = "paid"
-        elif paid_amount > 0:
+        elif paid_amount > 0 or tds_amount > 0:
             payment_status = "partial"
         else:
             payment_status = "unpaid"
@@ -110,6 +142,7 @@ def build_invoice_payment_summaries(
             outstanding_amount=float(remaining_amount),
             payment_status=payment_status,
             due_in_days=due_in_days,
+            tds_amount=float(tds_amount),
         )
 
     return summaries
@@ -225,7 +258,34 @@ def validate_payment_allocations(
     invoice_allocations,
     exclude_payment_id: int | None = None,
     company_id: int | None = None,
+    payment_date: date | None = None,
 ) -> list[tuple[Invoice, Decimal]]:
+    return [
+        (row.invoice, row.allocated_amount)
+        for row in _validate_payment_allocations_detailed(
+            db,
+            ledger_id=ledger_id,
+            voucher_type=voucher_type,
+            payment_amount=payment_amount,
+            invoice_allocations=invoice_allocations,
+            exclude_payment_id=exclude_payment_id,
+            company_id=company_id,
+            payment_date=payment_date,
+        )
+    ]
+
+
+def _validate_payment_allocations_detailed(
+    db: Session,
+    *,
+    ledger_id: int | None,
+    voucher_type: str,
+    payment_amount: float,
+    invoice_allocations,
+    exclude_payment_id: int | None = None,
+    company_id: int | None = None,
+    payment_date: date | None = None,
+) -> list["tds_allocations.NormalizedAllocation"]:
     if not invoice_allocations:
         return []
 
@@ -251,8 +311,9 @@ def validate_payment_allocations(
     expected_invoice_type = "sales" if voucher_type == "receipt" else "purchase"
     summaries = build_invoice_payment_summaries(db, invoices, exclude_payment_id=exclude_payment_id)
 
-    normalized: list[tuple[Invoice, Decimal]] = []
+    normalized: list[tds_allocations.NormalizedAllocation] = []
     allocated_total = Decimal("0.00")
+    tds_context = tds_allocations.TdsContext(db, voucher_type=voucher_type, ledger_id=ledger_id, company_id=company_id)
     for allocation in invoice_allocations:
         invoice = invoice_map[allocation.invoice_id]
         if invoice.ledger_id != ledger_id:
@@ -266,18 +327,39 @@ def validate_payment_allocations(
             )
 
         allocated_amount = _money(Decimal(str(allocation.allocated_amount)))
-        if allocated_amount <= 0:
+        tds_amount = _money(Decimal(str(getattr(allocation, "tds_amount", 0) or 0)))
+        if tds_amount > 0:
+            # TDS alone may settle an invoice the cash went elsewhere for, but
+            # neither part may be negative.
+            if allocated_amount < 0:
+                raise HTTPException(status_code=400, detail="Allocated amounts must not be negative")
+        elif allocated_amount <= 0:
             raise HTTPException(status_code=400, detail="Allocated amounts must be greater than zero")
 
         summary = summaries[invoice.id]
         available_amount = _money(Decimal(str(summary.remaining_amount)))
-        if allocated_amount > available_amount:
+        if allocated_amount + tds_amount > available_amount:
+            if tds_amount > 0:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"Invoice {invoice.invoice_number or invoice.id} only has {float(available_amount):.2f} remaining, "
+                        f"but cash {float(allocated_amount):.2f} plus TDS {float(tds_amount):.2f} "
+                        f"comes to {float(allocated_amount + tds_amount):.2f}"
+                    ),
+                )
             raise HTTPException(
                 status_code=400,
                 detail=f"Invoice {invoice.invoice_number or invoice.id} only has {float(available_amount):.2f} remaining",
             )
 
-        normalized.append((invoice, allocated_amount))
+        normalized.append(tds_context.normalize(
+            invoice,
+            allocated_amount,
+            tds_amount,
+            getattr(allocation, "tds_section_id", None),
+            payment_date=payment_date,
+        ))
         allocated_total = _money(allocated_total + allocated_amount)
 
     if allocated_total > _money(Decimal(str(payment_amount or 0))):
@@ -294,7 +376,8 @@ def sync_payment_allocations(
     exclude_payment_id: int | None = None,
     company_id: int | None = None,
 ) -> None:
-    normalized = validate_payment_allocations(
+    payment_day = payment.date.date() if isinstance(payment.date, datetime) else payment.date
+    normalized = _validate_payment_allocations_detailed(
         db,
         ledger_id=payment.ledger_id,
         voucher_type=payment.voucher_type,
@@ -302,15 +385,22 @@ def sync_payment_allocations(
         invoice_allocations=invoice_allocations,
         exclude_payment_id=exclude_payment_id,
         company_id=company_id,
+        payment_date=payment_day,
     )
 
+    # Keep the section copies of a row whose section did not change, so editing
+    # a receipt never re-reads the (possibly newer) section table or party PAN.
+    previous_by_invoice = {
+        existing.invoice_id: existing for existing in list(payment.invoice_allocations)
+    }
     for existing_allocation in list(payment.invoice_allocations):
         db.delete(existing_allocation)
     db.flush()
 
-    for invoice, allocated_amount in normalized:
+    for row in normalized:
         db.add(PaymentInvoiceAllocation(
             payment_id=payment.id,
-            invoice_id=invoice.id,
-            allocated_amount=float(allocated_amount),
+            invoice_id=row.invoice.id,
+            allocated_amount=float(row.allocated_amount),
+            **tds_allocations.allocation_tds_columns(row, previous_by_invoice.get(row.invoice.id)),
         ))

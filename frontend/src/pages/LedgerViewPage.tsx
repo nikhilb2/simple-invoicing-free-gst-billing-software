@@ -16,6 +16,8 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import ModalCloseButton from '../components/ModalCloseButton';
 import formatCurrency, { formatDate } from '../utils/formatting';
 import { remainingAmount, validateAllocations } from '../utils/validateAllocations';
+import { totalTds, validateTdsAllocations } from '../utils/tds';
+import TdsAllocationFields from '../components/TdsAllocationFields';
 import { useFY } from '../context/FYContext';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import { fetchOutstandingInvoices, fetchLedgerAddresses, createLedgerAddress, updateLedgerAddress, deleteLedgerAddress } from '../features/invoices/api';
@@ -380,6 +382,7 @@ export default function LedgerViewPage() {
     title: string;
     searchQuery: string;
     onSearchChange: (q: string) => void;
+    paymentDate?: string;
   }) {
     if (input.voucherType !== 'receipt' && input.voucherType !== 'payment') {
       return null;
@@ -387,6 +390,9 @@ export default function LedgerViewPage() {
 
     const allocatedTotal = sumAllocatedAmount(input.allocations);
     const remainingUnallocated = remainingAmount(input.amount, allocatedTotal);
+    const tdsTotal = totalTds(input.allocations);
+    // Receipts record TDS the customer deducted; payments only when the company deducts TDS on purchases.
+    const showTds = input.voucherType === 'receipt' || Boolean(company?.enable_purchase_tds);
     const filteredInvoices = input.searchQuery.trim()
       ? input.outstanding.filter((inv) =>
           (inv.invoice_number ?? '').toLowerCase().includes(input.searchQuery.trim().toLowerCase())
@@ -416,6 +422,7 @@ export default function LedgerViewPage() {
           {remainingUnallocated >= 0
             ? `Unallocated ${formatCurrency(remainingUnallocated, activeCurrencyCode)}`
             : `Over-allocated by ${formatCurrency(Math.abs(remainingUnallocated), activeCurrencyCode)}`}
+          {tdsTotal > 0 ? ` · TDS ${formatCurrency(tdsTotal, activeCurrencyCode)}` : ''}
         </p>
 
         {!input.loading && input.outstanding.length > 0 ? (
@@ -483,7 +490,7 @@ export default function LedgerViewPage() {
                           id={`allocation-${input.title}-${invoice.id}`}
                           className="input"
                           type="number"
-                          min="0.01"
+                          min={Number(existingAllocation?.tds_amount || 0) > 0 ? '0' : '0.01'}
                           step="0.01"
                           value={existingAllocation?.allocated_amount || ''}
                           onChange={(event) => {
@@ -492,6 +499,20 @@ export default function LedgerViewPage() {
                           }}
                         />
                       </div>
+                    ) : null}
+                    {existingAllocation && showTds ? (
+                      <TdsAllocationFields
+                        allocation={existingAllocation}
+                        invoice={invoice}
+                        paymentDate={input.paymentDate}
+                        currencyCode={activeCurrencyCode}
+                        idPrefix={`allocation-${input.title}-${invoice.id}`}
+                        onChange={(patch) => input.onChange(
+                          (input.allocations ?? []).map((allocation) =>
+                            allocation.invoice_id === invoice.id ? { ...allocation, ...patch } : allocation,
+                          ),
+                        )}
+                      />
                     ) : null}
                   </div>
                 </div>
@@ -522,6 +543,11 @@ export default function LedgerViewPage() {
     const allocationError = validateAllocations(paymentForm.invoice_allocations, paymentForm.amount);
     if (allocationError) {
       setError(allocationError);
+      return;
+    }
+    const tdsError = validateTdsAllocations(paymentForm.invoice_allocations, outstandingInvoices);
+    if (tdsError) {
+      setError(tdsError);
       return;
     }
     try {
@@ -563,6 +589,8 @@ export default function LedgerViewPage() {
           invoice_date: allocation.invoice_date,
           due_date: allocation.due_date,
           allocated_amount: allocation.allocated_amount,
+          tds_amount: allocation.tds_amount ?? 0,
+          tds_section_id: allocation.tds_section_id ?? null,
         })),
       });
     } catch (err) {
@@ -580,6 +608,11 @@ export default function LedgerViewPage() {
     const editAllocationError = validateAllocations(editPaymentForm.invoice_allocations, editPaymentForm.amount ?? 0);
     if (editAllocationError) {
       setError(editAllocationError);
+      return;
+    }
+    const editTdsError = validateTdsAllocations(editPaymentForm.invoice_allocations, editOutstandingInvoices);
+    if (editTdsError) {
+      setError(editTdsError);
       return;
     }
     try {
@@ -1001,6 +1034,9 @@ export default function LedgerViewPage() {
                                     </span>
                                     <span className="receipt-allocation-chip__amount">
                                       {formatCurrency(allocation.allocated_amount || 0, activeCurrencyCode)}
+                                      {(allocation.tds_amount ?? 0) > 0
+                                        ? ` + TDS ${formatCurrency(allocation.tds_amount ?? 0, activeCurrencyCode)}`
+                                        : ''}
                                     </span>
                                   </span>
                                 ))}
@@ -1014,7 +1050,7 @@ export default function LedgerViewPage() {
                       {entry.debit > 0 ? `Dr ${formatCurrency(entry.debit, activeCurrencyCode)}` : `Cr ${formatCurrency(entry.credit, activeCurrencyCode)}`}
                     </span>
                     <div className="invoice-row__actions">
-                    {entry.entry_type === 'invoice' ? (
+                    {entry.entry_type === 'tds' ? null : entry.entry_type === 'invoice' ? (
                       <button
                         type="button"
                         className="button button--ghost button--small"
@@ -1237,6 +1273,7 @@ export default function LedgerViewPage() {
                   title: 'Allocate against invoices',
                   searchQuery: allocationCreateSearch,
                   onSearchChange: setAllocationCreateSearch,
+                  paymentDate: paymentForm.date,
                 })}
                 <button type="submit" className="button button--primary" disabled={submittingPayment} title="Save payment" aria-label="Save payment">
                   {submittingPayment ? 'Saving...' : 'Save'}
@@ -1422,6 +1459,7 @@ export default function LedgerViewPage() {
                   title: 'Edit invoice allocations',
                   searchQuery: allocationEditSearch,
                   onSearchChange: setAllocationEditSearch,
+                  paymentDate: editPaymentForm.date,
                 })}
                 <button type="submit" className="button button--primary" disabled={submittingEditPayment} title="Update payment" aria-label="Update payment">
                   {submittingEditPayment ? 'Saving...' : 'Update'}

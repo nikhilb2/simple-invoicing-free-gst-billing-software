@@ -473,6 +473,15 @@ export default function InvoiceDuesPage() {
                         {' · '}
                         Remaining {formatCurrency(invoice.outstanding_amount, invoice.company_currency_code || currencyCode)}
                       </span>
+                      {(invoice.tds_amount ?? 0) > 0 ? (
+                        <span className="table-subtext">
+                          {invoice.voucher_type === 'purchase' ? 'Paid to supplier' : 'Received'}{' '}
+                          {formatCurrency(invoice.paid_amount, invoice.company_currency_code || currencyCode)}
+                          {' · '}
+                          {invoice.voucher_type === 'purchase' ? 'TDS deducted' : 'TDS deducted by customer'}{' '}
+                          {formatCurrency(invoice.tds_amount ?? 0, invoice.company_currency_code || currencyCode)}
+                        </span>
+                      ) : null}
                       {(invoice.ledger_payable_amount ?? 0) > 0 ? (
                         <span className="table-subtext">
                           You also owe this party {formatCurrency(invoice.ledger_payable_amount ?? 0, currencyCode)} (net{' '}

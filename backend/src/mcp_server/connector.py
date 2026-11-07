@@ -215,9 +215,12 @@ def _render_payment(row: dict[str, Any]) -> str:
     if allocations:
         lines += ["", "Allocated against:"]
         for allocation in allocations[:25]:
+            tds_note = ""
+            if float(allocation.get("tds_amount") or 0) > 0:
+                tds_note = f" + TDS ₹{_money(allocation.get('tds_amount'))} (s.{allocation.get('tds_section_ref') or '—'})"
             lines.append(
                 f"- Invoice {allocation.get('invoice_number') or allocation.get('invoice_id')}: "
-                f"{_money(allocation.get('allocated_amount'))}"
+                f"{_money(allocation.get('allocated_amount'))}{tds_note}"
             )
     return "\n".join(lines)
 
