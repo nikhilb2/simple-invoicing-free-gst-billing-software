@@ -4,8 +4,11 @@
 analytics_product_performance	GET	/api/analytics/product-performance
 analytics_product_performance_detail	GET	/api/analytics/product-performance/{product_id}
 analytics_profit_loss	GET	/api/analytics/profit-loss
+analytics_profit_loss_csv	GET	/api/analytics/profit-loss/csv
 analytics_sales_by_month	GET	/api/analytics/sales-by-month
+analytics_sales_by_month_csv	GET	/api/analytics/sales-by-month/csv
 analytics_sales_by_product	GET	/api/analytics/sales-by-product
+analytics_sales_by_product_csv	GET	/api/analytics/sales-by-product/csv
 bom_create	POST	/api/bom/
 bom_delete	DELETE	/api/bom/{bom_id}
 bom_get_for_product	GET	/api/bom/product/{product_id}
@@ -118,7 +121,6 @@ products_list	GET	/api/products/
 products_list_with_inventory	GET	/api/products/with-inventory
 products_update	PUT	/api/products/{product_id}
 products_update_with_inventory	PUT	/api/products/{product_id}/with-inventory
-reports_list_tcs_collected	GET	/api/reports/tcs-collected
 quotations_cancel	POST	/api/quotations/{quotation_id}/cancel
 quotations_conversion_draft	GET	/api/quotations/{quotation_id}/conversion-draft
 quotations_convert	POST	/api/quotations/{quotation_id}/convert

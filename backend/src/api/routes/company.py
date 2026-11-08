@@ -84,7 +84,7 @@ def _create_company_profile(db: Session, payload: CompanyProfileUpdate) -> Compa
         gst=payload.gst.strip().upper(),
         pan=payload.pan,
         tan=payload.tan,
-        enable_purchase_tds=_checked_purchase_tds(payload.enable_purchase_tds, payload.tan),
+        enable_purchase_tds=_checked_purchase_tds(bool(payload.enable_purchase_tds), payload.tan),
         phone_number=payload.phone_number.strip(),
         currency_code=payload.currency_code.strip().upper() if payload.currency_code else "INR",
         email=payload.email.strip() if payload.email else None,
@@ -398,9 +398,9 @@ def upsert_company_profile(
         profile.pan = payload.pan
     if "tan" in payload.model_fields_set:
         profile.tan = payload.tan
-    if "enable_purchase_tds" in payload.model_fields_set or profile.enable_purchase_tds:
+    if payload.enable_purchase_tds is not None or profile.enable_purchase_tds:
         profile.enable_purchase_tds = _checked_purchase_tds(
-            payload.enable_purchase_tds if "enable_purchase_tds" in payload.model_fields_set else profile.enable_purchase_tds,
+            payload.enable_purchase_tds if payload.enable_purchase_tds is not None else bool(profile.enable_purchase_tds),
             profile.tan,
         )
     profile.phone_number = payload.phone_number.strip()
