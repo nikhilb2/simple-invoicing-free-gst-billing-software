@@ -13,6 +13,7 @@ import type { CompanyProfile, CompanyProfileUpdate, InvoiceSeries, InvoiceSeries
 import { clearSetupDraft, isCompanyConfigured, readSetupDraft, writeSetupDraft } from '../utils/companySetup';
 import { isCurrencyChange } from '../utils/currencyChange';
 import { buildSeriesPreview, gstr1SeriesFormatError } from '../utils/seriesPreview';
+import { purchaseTdsSetting } from '../utils/tds';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -882,7 +883,8 @@ export default function CompanyPage() {
         gst: form.gst.trim().toUpperCase(),
         pan: (form.pan || '').trim().toUpperCase(),
         tan: (form.tan || '').trim().toUpperCase(),
-        enable_purchase_tds: form.enable_purchase_tds,
+        // Never send the setting on without a TAN: the server refuses that save.
+        enable_purchase_tds: purchaseTdsSetting(form.enable_purchase_tds, form.tan),
         phone_number: form.phone_number.trim(),
         currency_code: form.currency_code.trim().toUpperCase(),
         email: form.email.trim(),
@@ -1155,7 +1157,11 @@ export default function CompanyPage() {
                     id="company-tan"
                     className="input"
                     value={form.tan || ''}
-                    onChange={(event) => setForm((current) => ({ ...current, tan: event.target.value.toUpperCase() }))}
+                    onChange={(event) => {
+                      const tan = event.target.value.toUpperCase();
+                      // Emptying the TAN turns purchase TDS off: it cannot stay on without one.
+                      setForm((current) => ({ ...current, tan, enable_purchase_tds: tan.trim() ? current.enable_purchase_tds : false }));
+                    }}
                     placeholder="ABCD12345E"
                     maxLength={10}
                   />
@@ -1180,7 +1186,7 @@ export default function CompanyPage() {
                   <small className="field-hint" style={{ marginLeft: '24px' }}>
                     Is your business required to deduct TDS? Companies, firms, LLPs, trusts and societies must deduct TDS on contractor, professional, commission and rent payments (a 'specified' or 'designated' person under the Income-tax Act 2025). An individual or HUF must do so only if their turnover last year was above ₹1 crore (business) or ₹50 lakh (profession). TDS on purchase of goods (s.393(1) Sl. No. 8(ii), formerly 194Q) applies only if your turnover last year was above ₹10 crore, and only on purchases above ₹50 lakh from one seller in the tax year.
                   </small>
-                  {form.enable_purchase_tds ? (
+                  {form.enable_purchase_tds && (form.tan || '').trim() ? (
                     <small className="field-hint" style={{ marginLeft: '24px' }}>
                       <Link to="/tds?tab=payable">View the TDS report</Link>
                     </small>

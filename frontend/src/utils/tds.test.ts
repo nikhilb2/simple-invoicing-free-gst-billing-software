@@ -3,8 +3,10 @@ import {
   deductionDate,
   isFullySettled,
   overSettlement,
+  purchaseTdsSetting,
   sectionOptionLabel,
   settledAmount,
+  showTdsFields,
   totalTds,
   validateTdsAllocations,
 } from './tds';
@@ -84,5 +86,32 @@ describe('validateAllocations with TDS', () => {
   it('allows zero cash only with TDS', () => {
     expect(validateAllocations([{ invoice_id: 1, allocated_amount: 0, tds_amount: 100 }], 500)).toBeNull();
     expect(validateAllocations([{ invoice_id: 1, allocated_amount: 0 }], 500)).toMatch(/greater than 0/);
+  });
+});
+
+describe('showTdsFields', () => {
+  it('always shows on receipts', () => {
+    expect(showTdsFields('receipt', false, { tds_amount: 0 })).toBe(true);
+  });
+  it('shows on payments only when purchase TDS is on', () => {
+    expect(showTdsFields('payment', true, { tds_amount: 0 })).toBe(true);
+    expect(showTdsFields('payment', false, { tds_amount: 0 })).toBe(false);
+    expect(showTdsFields('payment', undefined, undefined)).toBe(false);
+  });
+  it('keeps existing TDS visible on a payment after the setting is turned off', () => {
+    expect(showTdsFields('payment', false, { tds_amount: 1000 })).toBe(true);
+  });
+  it('never shows on opening balances', () => {
+    expect(showTdsFields('opening_balance', true, { tds_amount: 5 })).toBe(false);
+  });
+});
+
+describe('purchaseTdsSetting', () => {
+  it('is only on with a TAN', () => {
+    expect(purchaseTdsSetting(true, 'MUMA12345B')).toBe(true);
+    expect(purchaseTdsSetting(true, '')).toBe(false);
+    expect(purchaseTdsSetting(true, '   ')).toBe(false);
+    expect(purchaseTdsSetting(true, null)).toBe(false);
+    expect(purchaseTdsSetting(false, 'MUMA12345B')).toBe(false);
   });
 });

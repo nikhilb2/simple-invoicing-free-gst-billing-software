@@ -191,6 +191,7 @@ def _build_report(
         )
         .filter(
             Payment.status == "active",
+            Invoice.status == "active",
             Payment.voucher_type == voucher_type,
             PaymentInvoiceAllocation.tds_amount > 0,
             (Invoice.invoice_date <= period_end) | (Payment.date <= period_end),

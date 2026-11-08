@@ -30,7 +30,7 @@ from src.models.buyer import Buyer
 from src.models.company import CompanyProfile
 from src.models.invoice import Invoice
 from src.models.tax_withholding_section import TaxWithholdingSection
-from src.services.company_access import company_scope
+from src.services.company_access import company_scope, legacy_default_company
 from src.services.tax_withholding import suggest_withholding
 
 ZERO = Decimal("0.00")
@@ -103,8 +103,44 @@ def party_has_pan(ledger: Buyer | None) -> bool:
     return bool(ledger.pan or pan_from_gstin(ledger.gst))
 
 
-def party_rate(section: TaxWithholdingSection, ledger: Buyer | None) -> Decimal:
-    suggestion = suggest_withholding(section, 0, getattr(ledger, "party_type", None), party_has_pan(ledger))
+def holder_type_from_pan(pan: str | None) -> str | None:
+    """The PAN holder type, read from the PAN's 4th character."""
+    if not pan or len(pan) < 4:
+        return None
+    return {"P": "individual", "H": "huf", "C": "company", "F": "firm"}.get(pan[3].upper(), "other")
+
+
+@dataclass
+class Deductee:
+    """Whose PAN and holder type set the rate: the party the TDS is deducted from."""
+    party_type: str | None
+    has_pan: bool
+    is_self: bool  # True on a receipt: our own business is the deductee
+
+
+def _company_for(db: Session, company_id: int | None) -> CompanyProfile | None:
+    if company_id is not None:
+        return db.get(CompanyProfile, company_id)
+    return legacy_default_company(db)
+
+
+def deductee_for(db: Session, invoice: Invoice, ledger: Buyer | None, company_id: int | None) -> Deductee:
+    """The deductee of TDS on this invoice.
+
+    On a sales invoice (a receipt, #768) the customer deducts from *us*, so the
+    rate follows our company's PAN: 1%/2% by our holder type, and the s.397(2)
+    rate when we have no PAN. On a purchase bill (a payment, #770) we deduct
+    from the supplier, so it follows the supplier's PAN and party type.
+    """
+    if invoice.voucher_type == "sales":
+        company = _company_for(db, company_id)
+        pan = (company.pan or pan_from_gstin(company.gst)) if company is not None else None
+        return Deductee(party_type=holder_type_from_pan(pan), has_pan=bool(pan), is_self=True)
+    return Deductee(party_type=getattr(ledger, "party_type", None), has_pan=party_has_pan(ledger), is_self=False)
+
+
+def deductee_rate(section: TaxWithholdingSection, deductee: Deductee) -> Decimal:
+    suggestion = suggest_withholding(section, 0, deductee.party_type, deductee.has_pan)
     return Decimal(str(suggestion["rate"]))
 
 
@@ -128,11 +164,21 @@ class NormalizedAllocation:
 class TdsContext:
     """Validates the TDS part of each allocation on one receipt or payment."""
 
-    def __init__(self, db: Session, *, voucher_type: str, ledger_id: int | None, company_id: int | None):
+    def __init__(
+        self,
+        db: Session,
+        *,
+        voucher_type: str,
+        ledger_id: int | None,
+        company_id: int | None,
+        previous_allocations: dict | None = None,
+    ):
         self.db = db
         self.voucher_type = voucher_type
         self.ledger_id = ledger_id
         self.company_id = company_id
+        # invoice_id -> the allocation an edit replaces (empty on a new voucher).
+        self.previous_allocations = previous_allocations or {}
         self._ledger: Buyer | None = None
         self._ledger_loaded = False
 
@@ -143,8 +189,16 @@ class TdsContext:
             self._ledger_loaded = True
         return self._ledger
 
+    def _unchanged_from_previous(self, invoice: Invoice, tds_amount: Decimal, section_id: int | None) -> bool:
+        previous = self.previous_allocations.get(invoice.id)
+        return (
+            previous is not None
+            and money(previous.tds_amount) == tds_amount
+            and previous.tds_section_id == section_id
+        )
+
     def _require_purchase_tds_enabled(self) -> None:
-        company = self.db.get(CompanyProfile, self.company_id) if self.company_id is not None else None
+        company = _company_for(self.db, self.company_id)
         if company is None or not company.enable_purchase_tds:
             raise HTTPException(
                 status_code=400,
@@ -163,7 +217,9 @@ class TdsContext:
         if tds_amount <= 0:
             return NormalizedAllocation(invoice=invoice, allocated_amount=allocated_amount)
 
-        if self.voucher_type == "payment":
+        # With the setting turned off, a payment entered while it was on can
+        # still be edited as long as its TDS stays exactly as it was.
+        if self.voucher_type == "payment" and not self._unchanged_from_previous(invoice, tds_amount, section_id):
             self._require_purchase_tds_enabled()
 
         label = invoice.invoice_number or invoice.id
@@ -189,8 +245,8 @@ class TdsContext:
             allocated_amount=allocated_amount,
             tds_amount=tds_amount,
             section=section,
-            rate=party_rate(section, self.ledger),
-            base_amount=section_base(section, invoice),
+            rate=deductee_rate(section, deductee_for(self.db, invoice, self.ledger, self.company_id)),
+            base_amount=taxed_base(self.db, invoice, section, on_date, self.company_id),
         )
 
 
@@ -250,7 +306,9 @@ def _supplier_year_bases(
     on_date: date,
     company_id: int | None,
 ) -> Decimal:
-    """Sum of the section base of this supplier's bills in the tax year, up to and including this bill."""
+    """Sum of the section base of this party's invoices of the same type (bills
+    from a supplier, or sales to a customer) in the tax year, up to and
+    including this one."""
     year_start = datetime.combine(tax_year_start(on_date), datetime.min.time())
     query = db.query(Invoice).filter(
         Invoice.ledger_id == invoice.ledger_id,
@@ -275,6 +333,41 @@ def _supplier_year_bases(
     return money(total)
 
 
+def _excess_over_threshold(
+    db: Session,
+    invoice: Invoice,
+    section: TaxWithholdingSection,
+    on_date: date,
+    company_id: int | None,
+) -> tuple[Decimal, Decimal, Decimal] | None:
+    """For an "excess over threshold" section (s.393(1) Sl. No. 8(ii), 194Q):
+    (the part of this invoice above the tax-year threshold, the year's total, the threshold).
+    None for any other section."""
+    if section.threshold_note != "excess over threshold" or section.threshold_aggregate is None:
+        return None
+    aggregate = Decimal(str(section.threshold_aggregate))
+    bill_base = section_base(section, invoice)
+    year_total = _supplier_year_bases(db, invoice, section, on_date, company_id)
+    before = year_total - bill_base
+    above = max(ZERO, year_total - aggregate) - max(ZERO, before - aggregate)
+    return money(above), year_total, aggregate
+
+
+def taxed_base(
+    db: Session,
+    invoice: Invoice,
+    section: TaxWithholdingSection,
+    on_date: date,
+    company_id: int | None,
+) -> Decimal:
+    """The base the TDS is worked out on: the invoice's section base, or only the
+    part above the threshold for an "excess over threshold" section."""
+    excess = _excess_over_threshold(db, invoice, section, on_date, company_id)
+    if excess is not None:
+        return excess[0]
+    return section_base(section, invoice)
+
+
 def suggest_tds_for_invoice(
     db: Session,
     invoice: Invoice,
@@ -295,8 +388,9 @@ def suggest_tds_for_invoice(
     """
     on_date = deduction_date(invoice.invoice_date, payment_date)
     bill_base = section_base(section, invoice)
-    has_pan = party_has_pan(ledger)
-    party_type = getattr(ledger, "party_type", None)
+    deductee = deductee_for(db, invoice, ledger, company_id)
+    has_pan = deductee.has_pan
+    party_type = deductee.party_type
     result = {
         "invoice_id": invoice.id,
         "section_id": section.id,
@@ -319,54 +413,66 @@ def suggest_tds_for_invoice(
 
     base = bill_base
     reasons: list[str] = []
-    if invoice.voucher_type == "purchase":
+    excess = _excess_over_threshold(db, invoice, section, on_date, company_id)
+    if excess is not None:
+        # Purchase of goods: TDS only on the part above the threshold, on either side.
+        above, year_total, aggregate = excess
+        result["tax_year_total"] = float(year_total)
+        if above <= 0:
+            whose = "Bills from this supplier" if invoice.voucher_type == "purchase" else "Sales to this customer"
+            result["applies"] = False
+            result["reason"] = (
+                f"{whose} this tax year come to {_money_text(year_total)}, "
+                f"not above {_money_text(aggregate)}. No TDS is due yet."
+            )
+            return result
+        base = above
+        if base < bill_base:
+            reasons.append(f"TDS is only on the {_money_text(base)} above {_money_text(aggregate)} for the tax year.")
+    elif invoice.voucher_type == "purchase":
         single = Decimal(str(section.threshold_single)) if section.threshold_single is not None else None
         aggregate = Decimal(str(section.threshold_aggregate)) if section.threshold_aggregate is not None else None
         year_total = _supplier_year_bases(db, invoice, section, on_date, company_id)
         result["tax_year_total"] = float(year_total)
-        if section.threshold_note == "excess over threshold" and aggregate is not None:
-            before = year_total - bill_base
-            above = max(ZERO, year_total - aggregate) - max(ZERO, before - aggregate)
-            if above <= 0:
-                result["applies"] = False
-                result["reason"] = (
-                    f"Bills from this supplier this tax year come to {_money_text(year_total)}, "
-                    f"not above {_money_text(aggregate)}. No TDS is due yet."
+        over_single = single is not None and bill_base > single
+        over_aggregate = aggregate is not None and year_total > aggregate
+        if single is None and aggregate is None:
+            pass
+        elif not over_single and not over_aggregate:
+            parts = []
+            if single is not None:
+                per = "a month" if section.threshold_note == "per month" else "per bill"
+                parts.append(f"this bill ({_money_text(bill_base)}) is not above {_money_text(single)} {per}")
+            if aggregate is not None:
+                parts.append(
+                    f"bills from this supplier this tax year ({_money_text(year_total)}) "
+                    f"are not above {_money_text(aggregate)}"
                 )
-                return result
-            base = money(above)
-            if base < bill_base:
-                reasons.append(f"TDS is only on the {_money_text(base)} above {_money_text(aggregate)} for the tax year.")
-        else:
-            over_single = single is not None and bill_base > single
-            over_aggregate = aggregate is not None and year_total > aggregate
-            if single is None and aggregate is None:
-                pass
-            elif not over_single and not over_aggregate:
-                parts = []
-                if single is not None:
-                    per = "a month" if section.threshold_note == "per month" else "per bill"
-                    parts.append(f"this bill ({_money_text(bill_base)}) is not above {_money_text(single)} {per}")
-                if aggregate is not None:
-                    parts.append(
-                        f"bills from this supplier this tax year ({_money_text(year_total)}) "
-                        f"are not above {_money_text(aggregate)}"
-                    )
-                result["applies"] = False
-                result["reason"] = ("No TDS suggested: " + " and ".join(parts) + ".")
-                return result
-            elif over_aggregate and not over_single:
-                reasons.append(
-                    f"This bill takes the tax year's total to {_money_text(year_total)}, above {_money_text(aggregate)}. "
-                    "Earlier bills this year may also need TDS."
-                )
+            result["applies"] = False
+            result["reason"] = ("No TDS suggested: " + " and ".join(parts) + ".")
+            return result
+        elif over_aggregate and not over_single:
+            reasons.append(
+                f"This bill takes the tax year's total to {_money_text(year_total)}, above {_money_text(aggregate)}. "
+                "Earlier bills this year may also need TDS."
+            )
 
     suggestion = suggest_withholding(section, base, party_type, has_pan)
     result["base_amount"] = float(base)
     result["rate"] = suggestion["rate"]
     result["amount"] = suggestion["amount"]
-    if not has_pan:
-        higher_rate_section = "s.206AA" if section.act == 1961 else "s.397(2)"
-        reasons.append(f"The party has no PAN, so the higher rate of {higher_rate_section} applies.")
+    higher_rate_section = "s.206AA" if section.act == 1961 else "s.397(2)"
+    if deductee.is_self:
+        # On a receipt our business is the deductee: the customer's PAN plays no part.
+        if not has_pan:
+            reasons.append(
+                f"Your business has no PAN on file, so the customer must deduct at the higher rate of "
+                f"{higher_rate_section}. Add your PAN in Company settings."
+            )
+        elif Decimal(str(section.rate_individual_huf)) != Decimal(str(section.rate_other)):
+            holder = "an individual or HUF" if party_type in {"individual", "huf"} else "not an individual or HUF"
+            reasons.append(f"The rate follows your business's PAN: {suggestion['rate']:g}% because it is {holder}.")
+    elif not has_pan:
+        reasons.append(f"The supplier has no PAN, so the higher rate of {higher_rate_section} applies.")
     result["reason"] = " ".join(reasons) or None
     return result

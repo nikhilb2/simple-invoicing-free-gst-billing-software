@@ -138,3 +138,13 @@ def enable_purchase_tds(db_session, tan="MUMA12345B", client=None):
     company.enable_purchase_tds = True
     db_session.commit()
     return company
+
+
+def set_company_pan(client, db_session, pan):
+    """The company's own PAN: the deductee on a receipt (#768)."""
+    client.get("/api/company/")  # the default company is created on first use
+    company = db_session.query(CompanyProfile).first()
+    company.pan = pan
+    company.gst = None
+    db_session.commit()
+    return company

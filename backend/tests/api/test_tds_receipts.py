@@ -5,7 +5,6 @@ from io import StringIO
 
 import pytest
 
-from src.models.buyer import Buyer
 from src.models.payment import PaymentInvoiceAllocation
 from tests.api.tds_helpers import (
     add_sections,
@@ -15,6 +14,7 @@ from tests.api.tds_helpers import (
     get_invoice,
     ledger_balance,
     post_voucher,
+    set_company_pan,
     statement,
 )
 
@@ -22,6 +22,12 @@ from tests.api.tds_helpers import (
 @pytest.fixture
 def sections(db_session):
     return add_sections(db_session)
+
+
+@pytest.fixture(autouse=True)
+def company_pan(client, db_session):
+    # On a receipt our business is the deductee, so the rate follows our PAN.
+    return set_company_pan(client, db_session, "AAACM1234M")
 
 
 @pytest.fixture
@@ -179,12 +185,9 @@ def test_editing_a_receipt_updates_its_tds(client, customer, sections, db_sessio
 def test_editing_keeps_the_stored_section_copies(client, customer, sections, db_session):
     invoice, receipt = _example(client, customer, sections)
 
-    # The customer loses its PAN on file: a fresh entry would get the no-PAN rate,
-    # but an edit that keeps the section keeps the rate copied at entry time.
-    buyer = db_session.get(Buyer, customer)
-    buyer.pan = None
-    buyer.gst = None
-    db_session.commit()
+    # Our PAN goes missing: a fresh entry would get the no-PAN rate, but an
+    # edit that keeps the section keeps the rate copied at entry time.
+    set_company_pan(client, db_session, None)
 
     response = client.put(f"/api/payments/{receipt['id']}", json={
         "voucher_type": "receipt",

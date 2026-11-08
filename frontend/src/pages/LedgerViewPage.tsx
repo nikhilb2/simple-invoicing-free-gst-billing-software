@@ -16,7 +16,7 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import ModalCloseButton from '../components/ModalCloseButton';
 import formatCurrency, { formatDate } from '../utils/formatting';
 import { remainingAmount, validateAllocations } from '../utils/validateAllocations';
-import { totalTds, validateTdsAllocations } from '../utils/tds';
+import { showTdsFields, totalTds, validateTdsAllocations } from '../utils/tds';
 import TdsAllocationFields from '../components/TdsAllocationFields';
 import { useFY } from '../context/FYContext';
 import { useEscapeClose } from '../hooks/useEscapeClose';
@@ -391,8 +391,6 @@ export default function LedgerViewPage() {
     const allocatedTotal = sumAllocatedAmount(input.allocations);
     const remainingUnallocated = remainingAmount(input.amount, allocatedTotal);
     const tdsTotal = totalTds(input.allocations);
-    // Receipts record TDS the customer deducted; payments only when the company deducts TDS on purchases.
-    const showTds = input.voucherType === 'receipt' || Boolean(company?.enable_purchase_tds);
     const filteredInvoices = input.searchQuery.trim()
       ? input.outstanding.filter((inv) =>
           (inv.invoice_number ?? '').toLowerCase().includes(input.searchQuery.trim().toLowerCase())
@@ -500,7 +498,7 @@ export default function LedgerViewPage() {
                         />
                       </div>
                     ) : null}
-                    {existingAllocation && showTds ? (
+                    {existingAllocation && showTdsFields(input.voucherType, company?.enable_purchase_tds, existingAllocation) ? (
                       <TdsAllocationFields
                         allocation={existingAllocation}
                         invoice={invoice}

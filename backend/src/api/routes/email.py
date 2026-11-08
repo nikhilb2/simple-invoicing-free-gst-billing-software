@@ -36,6 +36,7 @@ from src.services.share_documents import (
     build_pay_qr_card_html,
     document_share_url,
     invoice_bank_accounts,
+    purchase_settlement,
 )
 from src.services.company_access import company_scope, legacy_default_company
 
@@ -167,6 +168,7 @@ async def send_invoice_email(
         active_company=active_company,
         serials=SerialManager(db).serials_for_invoice(invoice),
         pay_qr_html=build_pay_qr_card_html(share_url),
+        settlement=purchase_settlement(db, invoice),
     )
     pdf_bytes = pdf_buf.read()
 
