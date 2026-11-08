@@ -16,6 +16,8 @@ export interface TcsReportRow {
   base_amount: string;
   rate: string;
   tcs_amount: string;
+  /** "Declaration – not collected" (s.394(2), Form 27C) or "Not collected" on a sale with no TCS. */
+  remark?: string | null;
 }
 
 export interface TcsSectionTotal {
@@ -24,6 +26,8 @@ export interface TcsSectionTotal {
   count: number;
   base_amount: string;
   tcs_amount: string;
+  /** Sales under the section on which no TCS was collected; not in base_amount. */
+  not_collected_base?: string;
 }
 
 export interface TcsReport {

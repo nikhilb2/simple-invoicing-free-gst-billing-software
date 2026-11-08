@@ -98,3 +98,28 @@ def test_csv_export(client, db_session, company):
     assert rows[1][1] == inv["invoice_number"] and rows[1][4] == "ABCDE1234F" and rows[1][9] == "2360.00"
     assert [] in rows
     assert rows[-1] == ["Grand total", "", "", "118000.00", "2360.00"]
+
+
+def test_sale_under_a_declaration_is_listed_as_not_collected(client, db_session, company):
+    declared = _ledger(client, gst=BUYER_GSTIN, declaration=True, name="Mill")
+    product = _product(client)
+    collected = _tcs_invoice(client, db_session, _ledger(client, pan="ABCDE1234F", name="Trader"), product)
+    exempt = _tcs_invoice(client, db_session, declared, product)
+    assert exempt["tcs_amount"] == 0
+
+    report = _ok(client.get(URL, params={"tax_year": 2026, "quarter": 1}))
+
+    rows = {row["document_number"]: row for row in report["rows"]}
+    assert rows[exempt["invoice_number"]]["remark"] == "Declaration – not collected"
+    assert Decimal(rows[exempt["invoice_number"]]["tcs_amount"]) == 0
+    assert rows[collected["invoice_number"]]["remark"] is None
+    (total,) = report["totals_by_section"]
+    assert total["count"] == 2
+    assert Decimal(total["base_amount"]) == Decimal("118000.00")
+    assert Decimal(total["not_collected_base"]) == Decimal("118000.00")
+    assert Decimal(report["total_tcs"]) == Decimal("2360.00")
+
+    csv_rows = list(csv.reader(io.StringIO(
+        client.get(f"{URL}/export-csv", params={"tax_year": 2026, "quarter": 1}).content.decode("utf-8-sig")
+    )))
+    assert "Declaration – not collected" in [row[-1] for row in csv_rows[1:3]]

@@ -89,16 +89,17 @@ def _credited_on_line(db: Session, invoice_item_id: int, company_id: int | None)
     return Decimal(str(query.scalar() or 0))
 
 
-def _credited_on_invoice(db: Session, invoice_id: int, company_id: int | None) -> Decimal:
-    """The line totals active notes have already credited against a whole invoice."""
+def _credited_on_invoice(db: Session, invoice_id: int, company_id: int | None) -> tuple[Decimal, Decimal]:
+    """What active notes have already credited against a whole invoice: line totals and TCS."""
     query = (
-        db.query(func.sum(CreditNoteItem.line_total))
+        db.query(func.sum(CreditNoteItem.line_total), func.sum(CreditNoteItem.tcs_amount))
         .join(CreditNote, CreditNote.id == CreditNoteItem.credit_note_id)
         .filter(CreditNoteItem.invoice_id == invoice_id, CreditNote.status == "active")
     )
     if company_id is not None:
         query = query.filter(company_scope(CreditNote.company_id, company_id))
-    return Decimal(str(query.scalar() or 0))
+    lines, tcs = query.one()
+    return Decimal(str(lines or 0)), Decimal(str(tcs or 0))
 
 
 def _assign_tcs_shares(
@@ -109,14 +110,17 @@ def _assign_tcs_shares(
 ) -> Decimal:
     """Give each note line its share of its invoice's TCS, and return the note's total.
 
-    TCS is reversed in proportion to what the note credits out of the invoice's line
-    totals. Like :func:`_pro_rata`, each share is the difference of two running totals,
-    so the notes against an invoice add back to exactly its TCS once its lines are fully
-    credited, however each share rounds. That is what lets a full credit note settle a
-    TCS invoice (#769).
+    TCS is reversed in proportion to what the notes credit out of the invoice's line
+    totals. Each share brings the TCS reversed by the active notes up to the invoice's
+    TCS x credited / line totals, rounded, rather than adding a separately rounded
+    slice. So the active notes always add up to the rounded proportion of what they
+    credit, a note cancelled in the middle leaves no paisa behind, and once the lines
+    are fully credited exactly the invoice's TCS has been reversed. That is what lets a
+    full credit note settle a TCS invoice (#769).
     """
     total = Decimal("0")
-    running: dict[int, Decimal] = {}
+    credited: dict[int, Decimal] = {}
+    reversed_tcs: dict[int, Decimal] = {}
     for item in built_items:
         item["tcs_amount"] = Decimal("0")
         invoice = invoice_map.get(item["invoice_id"])
@@ -126,12 +130,13 @@ def _assign_tcs_shares(
         whole = sum((Decimal(str(line.line_total or 0)) for line in invoice.items), Decimal("0"))
         if whole <= 0:
             continue
-        if invoice.id not in running:
-            running[invoice.id] = _credited_on_invoice(db, invoice.id, company_id)
-        before = min(running[invoice.id], whole)
-        after = min(running[invoice.id] + Decimal(str(item["line_total"])), whole)
-        running[invoice.id] += Decimal(str(item["line_total"]))
-        share = _money(invoice_tcs * after / whole) - _money(invoice_tcs * before / whole)
+        if invoice.id not in credited:
+            credited[invoice.id], reversed_tcs[invoice.id] = _credited_on_invoice(db, invoice.id, company_id)
+        credited[invoice.id] += Decimal(str(item["line_total"]))
+        target = _money(invoice_tcs * min(credited[invoice.id], whole) / whole)
+        share = min(max(target - reversed_tcs[invoice.id], Decimal("0")), invoice_tcs - reversed_tcs[invoice.id])
+        share = max(share, Decimal("0"))
+        reversed_tcs[invoice.id] += share
         item["tcs_amount"] = share
         total += share
     return _money(total)

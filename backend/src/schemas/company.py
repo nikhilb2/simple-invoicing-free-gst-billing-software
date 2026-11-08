@@ -48,7 +48,9 @@ class CompanyProfileBase(BaseModel):
     show_pay_qr_on_invoice: bool = False
     show_upi_pay_button: bool = False
     # Optional TCS on sales invoices (#769). Off by default.
-    enable_tcs: bool = False
+    # None in a request means "leave it as it is"; responses always carry a bool.
+    # Optional rather than defaulted, which keeps it short in the MCP tool schema.
+    enable_tcs: bool | None = None
 
 
 class CompanyProfileUpdate(CompanyProfileBase):
@@ -76,6 +78,7 @@ class CompanyProfileUpdate(CompanyProfileBase):
 
 class CompanyProfileOut(CompanyProfileBase):
     id: int
+    enable_tcs: bool = False
     logo_data: str | None = None
     logo_mime_type: str | None = None
     terms: list[CompanyTermOut] = []

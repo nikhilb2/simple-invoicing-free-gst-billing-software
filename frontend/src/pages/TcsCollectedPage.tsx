@@ -62,6 +62,7 @@ export function TcsCollectedView({ report }: { report: TcsReport }) {
                     <tr key={`${row.kind}-${row.id}-${row.section_ref ?? ''}-${row.tcs_amount}`} data-kind={row.kind}>
                       <td>
                         {row.document_number}
+                        {row.remark ? <span className="status-chip">{' '}{row.remark}</span> : null}
                         {row.kind === 'credit_note' ? (
                           <span className="status-chip" title={row.invoice_number ? `Against ${row.invoice_number}` : undefined}>
                             {' '}Credit note
@@ -117,6 +118,11 @@ export function TcsCollectedView({ report }: { report: TcsReport }) {
               </tfoot>
             </table>
           </div>
+          {report.totals_by_section.filter((total) => Number(total.not_collected_base ?? 0) !== 0).map((total) => (
+            <p key={`nc-${total.section_ref}-${total.nature}`} className="muted-text" data-testid="tcs-not-collected">
+              {total.section_ref ?? ''}: {money(total.not_collected_base ?? '0')} sold with no TCS collected (declaration or not collected), not in the base above.
+            </p>
+          ))}
         </article>
       </section>
     </>

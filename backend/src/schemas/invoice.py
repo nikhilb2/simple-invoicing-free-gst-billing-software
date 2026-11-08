@@ -29,6 +29,21 @@ def _validate_discount_value(
     return value
 
 
+def _check_tcs_rate(value: float | None) -> float | None:
+    """0 to 100 percent. Checked here rather than with Field(ge=, le=), which would
+    add to every MCP tool schema that carries the field (the tool list has a size
+    budget, see tests/mcp/test_gating.py)."""
+    if value is not None and not 0 <= value <= 100:
+        raise ValueError("tcs_rate must be between 0 and 100")
+    return value
+
+
+def _check_tcs_amount(value: float | None) -> float | None:
+    if value is not None and not 0 <= value < MONEY_LIMIT:
+        raise ValueError(f"tcs_amount must be at least 0 and below {MONEY_LIMIT:,}")
+    return value
+
+
 class InvoiceItemCreate(BaseModel):
     product_id: int
     quantity: float = Field(lt=QUANTITY_LIMIT, allow_inf_nan=False)
@@ -88,9 +103,19 @@ class InvoiceCreate(BaseModel):
     # left out is suggested for the buyer; an amount left out is base x rate. Typed
     # values always win: the app suggests, the user decides.
     tcs_section_id: int | None = None
-    tcs_rate: float | None = Field(default=None, ge=0, le=100, allow_inf_nan=False)
-    tcs_amount: float | None = Field(default=None, ge=0, lt=MONEY_LIMIT, allow_inf_nan=False)
+    tcs_rate: float | None = Field(default=None, allow_inf_nan=False)
+    tcs_amount: float | None = Field(default=None, allow_inf_nan=False)
     items: List[InvoiceItemCreate]
+
+    @field_validator("tcs_rate")
+    @classmethod
+    def _tcs_rate_in_range(cls, value: float | None) -> float | None:
+        return _check_tcs_rate(value)
+
+    @field_validator("tcs_amount")
+    @classmethod
+    def _tcs_amount_in_range(cls, value: float | None) -> float | None:
+        return _check_tcs_amount(value)
 
     @field_validator("place_of_supply")
     @classmethod

@@ -16,7 +16,8 @@ class LedgerCreate(BaseModel):
     pan: str | None = None
     party_type: str | None = None
     # s.394(2) declaration from the buyer: suggest no TCS on sales to them (#769).
-    tcs_declaration_received: bool = False
+    # None (left out) is false on create and unchanged on update.
+    tcs_declaration_received: bool | None = None
     opening_balance: float | None = Field(
         default=None, gt=-_OPENING_BALANCE_LIMIT, lt=_OPENING_BALANCE_LIMIT, allow_inf_nan=False,
     )

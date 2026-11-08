@@ -18,6 +18,9 @@ class TcsReportRow(BaseModel):
     base_amount: Decimal
     rate: Decimal
     tcs_amount: Decimal
+    # Set on a sale that names a section but collected no TCS: "Declaration – not
+    # collected" under a s.394(2) declaration (Form 27C), else "Not collected".
+    remark: str | None = None
 
 
 class TcsSectionTotal(BaseModel):
@@ -26,6 +29,8 @@ class TcsSectionTotal(BaseModel):
     count: int
     base_amount: Decimal
     tcs_amount: Decimal
+    # Sales under the section on which no TCS was collected. Kept out of base_amount.
+    not_collected_base: Decimal = Decimal("0.00")
 
 
 class TcsReportOut(BaseModel):

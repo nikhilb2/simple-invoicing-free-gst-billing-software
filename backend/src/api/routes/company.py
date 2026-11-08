@@ -101,7 +101,7 @@ def _create_company_profile(db: Session, payload: CompanyProfileUpdate) -> Compa
         eway_always_show_button=payload.eway_always_show_button,
         show_pay_qr_on_invoice=payload.show_pay_qr_on_invoice,
         show_upi_pay_button=payload.show_upi_pay_button,
-        enable_tcs=payload.enable_tcs,
+        enable_tcs=bool(payload.enable_tcs),
     )
     db.add(profile)
     db.flush()
@@ -423,7 +423,7 @@ def upsert_company_profile(
     profile.show_pay_qr_on_invoice = payload.show_pay_qr_on_invoice
     profile.show_upi_pay_button = payload.show_upi_pay_button
     # Like the eway_* fields: a client that does not know the setting keeps it.
-    if "enable_tcs" in payload.model_fields_set:
+    if payload.enable_tcs is not None:
         profile.enable_tcs = payload.enable_tcs
     db.commit()
     db.refresh(profile)

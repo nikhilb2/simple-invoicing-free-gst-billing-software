@@ -21,7 +21,7 @@ import { readInvoiceComposerPrefs, updateInvoiceComposerPrefs } from '../../util
 import { useFY } from '../../context/FYContext';
 import { useShortcuts } from '../../context/ShortcutsContext';
 import { fetchInvoiceById, fetchInvoiceComposerData, fetchLedgerAddresses, fetchTcsSections } from '../../features/invoices/api';
-import { EMPTY_TCS_FORM, buildTcsPayload, effectiveTcsRate, findTcsSection, reconcileTcsSection, tcsFormFromDocument, tcsHints, tcsRateInputValue, tcsTotalsInput, type TcsFormState } from './tcsForm';
+import { EMPTY_TCS_FORM, buildTcsPayload, effectiveTcsRate, findTcsSection, reconcileTcsSection, tcsFormForCopy, tcsFormFromDocument, tcsHints, tcsRateInputValue, tcsTotalsInput, type TcsFormState } from './tcsForm';
 import { tcsLabel } from '../../utils/tcs';
 import { createQuotation, fetchConversionDraft, fetchQuotationById, updateQuotation } from '../../features/quotations/api';
 import { quotationQueryKeys } from '../../features/quotations/queryKeys';
@@ -789,8 +789,10 @@ export default function InvoicesPage() {
     setReferenceNotes(invoice.reference_notes ?? '');
     setTaxInclusive(invoice.tax_inclusive ?? false);
     setApplyRoundOff(invoice.apply_round_off ?? false);
+    // The server leaves TCS out of the draft when the company has turned it off.
     setTcsForm(tcsFormFromDocument(invoice));
-    setTcsHadSaved(invoice.tcs_section_id != null);
+    // The invoice is new: TCS shows and is sent only while the company has TCS on.
+    setTcsHadSaved(false);
     setTcsNotice('');
     setInvoiceDiscountType(invoice.discount_type || 'percentage');
     setInvoiceDiscountValue(invoice.discount_value != null ? String(invoice.discount_value) : '');
@@ -944,8 +946,9 @@ export default function InvoicesPage() {
     setReferenceNotes(invoice.voucher_type === 'sales' ? (invoice.reference_notes ?? '') : '');
     setTaxInclusive(invoice.tax_inclusive ?? false);
     setApplyRoundOff(invoice.apply_round_off ?? false);
-    setTcsForm(tcsFormFromDocument(invoice));
-    setTcsHadSaved(invoice.tcs_section_id != null);
+    setTcsForm(invoice.voucher_type === 'sales' ? tcsFormForCopy(invoice, Boolean(company?.enable_tcs)) : EMPTY_TCS_FORM);
+    // A duplicate is a new invoice: it carries TCS only while the company has TCS on.
+    setTcsHadSaved(false);
     setTcsNotice('');
     setInvoiceDiscountType((invoice.discount_type as 'percentage' | 'net') || 'percentage');
     setInvoiceDiscountValue(invoice.discount_value != null ? String(invoice.discount_value) : '');
