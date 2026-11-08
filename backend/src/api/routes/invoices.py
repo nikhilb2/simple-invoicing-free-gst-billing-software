@@ -37,6 +37,7 @@ from src.services.financial_year import get_active_fy, get_fy_for_date
 from src.services.gst_tax_service import india_today
 from src.services.invoice_payments import (
     build_invoice_payment_summaries,
+    invoice_has_tds_allocated,
     is_offset_by_payables,
     open_amounts_by_ledger,
 )
@@ -866,17 +867,17 @@ def update_invoice(
 
 
 
-def _build_invoice_pdf(invoice: Invoice, products: list[Product], invoice_bank_accounts: list[CompanyAccount], active_company: CompanyProfile | None = None, serials: dict[int, list[str]] | None = None, pay_qr_html: str = "") -> BytesIO:
+def _build_invoice_pdf(invoice: Invoice, products: list[Product], invoice_bank_accounts: list[CompanyAccount], active_company: CompanyProfile | None = None, serials: dict[int, list[str]] | None = None, pay_qr_html: str = "", settlement: dict[str, float] | None = None) -> BytesIO:
     show_sku = active_company.show_sku_on_pdf if active_company else True
-    html = _build_invoice_html(invoice, products, invoice_bank_accounts, copy_label=_copy_label(1), show_sku=show_sku, serials=serials, pay_qr_html=pay_qr_html)
+    html = _build_invoice_html(invoice, products, invoice_bank_accounts, copy_label=_copy_label(1), show_sku=show_sku, serials=serials, pay_qr_html=pay_qr_html, settlement=settlement)
     pdf_bytes = weasyprint.HTML(string=html, url_fetcher=safe_url_fetcher).write_pdf()
     buf = BytesIO(pdf_bytes)
     return buf
 
 
-def _build_multi_copy_invoice_pdf(invoice: Invoice, products: list[Product], invoice_bank_accounts: list[CompanyAccount], copies: int, active_company: CompanyProfile | None = None, serials: dict[int, list[str]] | None = None, pay_qr_html: str = "") -> BytesIO:
+def _build_multi_copy_invoice_pdf(invoice: Invoice, products: list[Product], invoice_bank_accounts: list[CompanyAccount], copies: int, active_company: CompanyProfile | None = None, serials: dict[int, list[str]] | None = None, pay_qr_html: str = "", settlement: dict[str, float] | None = None) -> BytesIO:
     show_sku = active_company.show_sku_on_pdf if active_company else True
-    html = _build_multi_copy_invoice_html(invoice, products, invoice_bank_accounts, copies, show_sku=show_sku, serials=serials, pay_qr_html=pay_qr_html)
+    html = _build_multi_copy_invoice_html(invoice, products, invoice_bank_accounts, copies, show_sku=show_sku, serials=serials, pay_qr_html=pay_qr_html, settlement=settlement)
     pdf_bytes = weasyprint.HTML(string=html, url_fetcher=safe_url_fetcher).write_pdf()
     buf = BytesIO(pdf_bytes)
     return buf
@@ -961,6 +962,14 @@ def cancel_invoice(
             raise HTTPException(
                 status_code=400,
                 detail="This invoice has credit notes against it — cancel them first",
+            )
+        # TDS settled on it would otherwise stay in the TDS report and the
+        # ledger with no invoice behind it.
+        if invoice_has_tds_allocated(db, invoice.id):
+            side = "receipt" if invoice.voucher_type == "sales" else "payment"
+            raise HTTPException(
+                status_code=400,
+                detail=f"TDS is recorded against this invoice. Remove the TDS from the {side} first, then cancel the invoice.",
             )
         processor = InvoiceProcessor(db)
         # Serials first: cancelling a purchase whose units are already sold is

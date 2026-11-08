@@ -410,6 +410,25 @@ def invoice_bank_accounts(db: Session, company_id: int) -> list[CompanyAccount]:
     )
 
 
+def purchase_settlement(db: Session, invoice: Invoice) -> dict[str, float] | None:
+    """Paid to supplier / TDS deducted / balance for a purchase bill's PDF.
+
+    Only a bill with TDS settled against it gets the block (#770); every other
+    invoice gets None and prints exactly as before. Shared by the download,
+    share-link and emailed copies so they agree.
+    """
+    if invoice.voucher_type != "purchase":
+        return None
+    summary = build_invoice_payment_summaries(db, [invoice]).get(invoice.id)
+    if summary is None or summary.tds_amount <= 0:
+        return None
+    return {
+        "paid_amount": summary.paid_amount,
+        "tds_amount": summary.tds_amount,
+        "remaining_amount": summary.remaining_amount,
+    }
+
+
 def build_invoice_html(
     db: Session,
     company_id: int,
@@ -443,16 +462,7 @@ def build_invoice_html(
     company = _company(db, company_id)
     show_sku = company.show_sku_on_pdf if company else True
 
-    settlement = None
-    if invoice.voucher_type == "purchase":
-        # Only a bill with TDS settled against it gets the extra block.
-        summary = build_invoice_payment_summaries(db, [invoice]).get(invoice.id)
-        if summary is not None and summary.tds_amount > 0:
-            settlement = {
-                "paid_amount": summary.paid_amount,
-                "tds_amount": summary.tds_amount,
-                "remaining_amount": summary.remaining_amount,
-            }
+    settlement = purchase_settlement(db, invoice)
 
     return _build_multi_copy_invoice_html(
         invoice,

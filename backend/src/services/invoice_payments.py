@@ -313,7 +313,21 @@ def _validate_payment_allocations_detailed(
 
     normalized: list[tds_allocations.NormalizedAllocation] = []
     allocated_total = Decimal("0.00")
-    tds_context = tds_allocations.TdsContext(db, voucher_type=voucher_type, ledger_id=ledger_id, company_id=company_id)
+    previous_allocations = {}
+    if exclude_payment_id is not None:
+        # The rows an edit replaces: TDS left exactly as it was stays allowed
+        # even if purchase TDS has since been turned off.
+        previous_allocations = {
+            row.invoice_id: row
+            for row in db.query(PaymentInvoiceAllocation).filter(PaymentInvoiceAllocation.payment_id == exclude_payment_id)
+        }
+    tds_context = tds_allocations.TdsContext(
+        db,
+        voucher_type=voucher_type,
+        ledger_id=ledger_id,
+        company_id=company_id,
+        previous_allocations=previous_allocations,
+    )
     for allocation in invoice_allocations:
         invoice = invoice_map[allocation.invoice_id]
         if invoice.ledger_id != ledger_id:
@@ -404,3 +418,18 @@ def sync_payment_allocations(
             allocated_amount=float(row.allocated_amount),
             **tds_allocations.allocation_tds_columns(row, previous_by_invoice.get(row.invoice.id)),
         ))
+
+
+def invoice_has_tds_allocated(db: Session, invoice_id: int) -> bool:
+    """True when an active receipt/payment has TDS settled against this invoice (#768, #770)."""
+    return (
+        db.query(PaymentInvoiceAllocation.id)
+        .join(Payment, Payment.id == PaymentInvoiceAllocation.payment_id)
+        .filter(
+            Payment.status == "active",
+            PaymentInvoiceAllocation.invoice_id == invoice_id,
+            PaymentInvoiceAllocation.tds_amount > 0,
+        )
+        .first()
+        is not None
+    )

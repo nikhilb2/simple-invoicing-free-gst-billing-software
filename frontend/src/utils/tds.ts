@@ -73,3 +73,24 @@ export function sectionOptionLabel(section: SectionLabelInput): string {
       : ` (${rates[0]}% / ${rates[1]}%)`;
   return `${ref} — ${section.nature}${rate}`;
 }
+
+/**
+ * Whether an allocation row shows the TDS fields. Receipts always may; a
+ * payment only when the company deducts TDS on purchases, or when the row
+ * already carries TDS (so it stays visible, and removable, after the setting
+ * is turned off).
+ */
+export function showTdsFields(
+  voucherType: string,
+  enablePurchaseTds: boolean | undefined,
+  allocation: Pick<PaymentInvoiceAllocation, 'tds_amount'> | undefined,
+): boolean {
+  if (voucherType === 'receipt') return true;
+  if (voucherType !== 'payment') return false;
+  return Boolean(enablePurchaseTds) || Number(allocation?.tds_amount || 0) > 0;
+}
+
+/** The enable_purchase_tds value to save: never on without a TAN (the server refuses it). */
+export function purchaseTdsSetting(enabled: boolean | undefined, tan: string | null | undefined): boolean {
+  return Boolean(enabled) && Boolean((tan || '').trim());
+}
