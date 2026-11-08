@@ -398,7 +398,10 @@ class TestCSVImport:
         assert data["created"] == 1
         assert data["updated"] == 0
         assert data["errors"] == [
-            {"row": 2, "message": "Row 2 has more cells than the header row"}
+            {
+                "row": 2,
+                "message": "This row has more cells than the header row. Check for an unquoted comma, for example in Description.",
+            }
         ]
 
         items = client.get("/api/products/with-inventory?search=Gadget").json()["items"]
@@ -406,13 +409,12 @@ class TestCSVImport:
         assert items[0]["sku"] == "G-1"
         assert client.get("/api/products/?search=Widget").json()["items"] == []
 
-    def test_import_csv_fewer_cells_and_blank_extra_cells_still_work(self, client):
-        """Fewer cells than the header still import with missing cells blank,
-        and a trailing comma (blank extra cell) is ignored (Issue #749)."""
+    def test_import_csv_fewer_cells_still_work(self, client):
+        """Fewer cells than the header still import with missing cells blank
+        (Issue #749)."""
         csv_content = (
             "Item Name,Item Code,Selling Price\n"
             "Only Name,IMP040\n"
-            "Trailing Comma,IMP041,10,\n"
         )
 
         res = client.post(
@@ -421,7 +423,7 @@ class TestCSVImport:
         )
         assert res.status_code == 200
         data = res.json()
-        assert data["created"] == 2
+        assert data["created"] == 1
         assert data["errors"] == []
 
     def test_import_csv_empty_file(self, client):

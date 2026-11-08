@@ -895,14 +895,15 @@ def _import_csv_from_content(content: bytes, db: Session, active_company: Compan
         # on that list and raise AttributeError, failing the whole import
         # with a 500. Report such a row instead and keep importing the rest:
         # an unquoted comma shifts later values into the wrong column, so
-        # the row cannot be saved safely. Extra cells that are all blank
-        # (e.g. a trailing comma) carry no data, so they are ignored.
-        extra_cells = row.get(None)
-        if extra_cells and any(
-            cell.strip() for cell in extra_cells if isinstance(cell, str)
-        ):
+        # the row cannot be saved safely. This applies even when the extra
+        # cells are blank: a trailing comma can mean the last column was
+        # really empty, e.g. a missing Selling Price.
+        if None in row:
             errors.append(
-                {"row": row_num, "message": f"Row {row_num} has more cells than the header row"}
+                {
+                    "row": row_num,
+                    "message": "This row has more cells than the header row. Check for an unquoted comma, for example in Description.",
+                }
             )
             continue
         values = dict(
