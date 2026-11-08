@@ -1,6 +1,7 @@
 import type { Ledger, TaxWithholdingSection } from '../../../types/api';
 import formatCurrency from '../../../utils/formatting';
 import { tcsLabel } from '../../../utils/tcs';
+import { sectionOptionLabels } from '../../../utils/withholdingSections';
 import { EMPTY_TCS_FORM, effectiveTcsRate, tcsHints, tcsRateInputValue, type TcsFormState } from '../tcsForm';
 
 type TcsFieldsProps = {
@@ -14,12 +15,15 @@ type TcsFieldsProps = {
   previewAmount: number | undefined;
   currencyCode: string;
   notice?: string;
+  /** The document total including TCS, shown beside the TCS line when given. */
+  totalAmount?: number;
 };
 
 /** Section, rate and amount for TCS (#769): the app suggests the rate, the user decides. */
 export default function TcsFields({
-  idPrefix, form, onChange, sections, section, buyer, previewAmount, currencyCode, notice,
+  idPrefix, form, onChange, sections, section, buyer, previewAmount, currencyCode, notice, totalAmount,
 }: TcsFieldsProps) {
+  const sectionLabels = sectionOptionLabels(sections ?? []);
   return (
     <div className="stack" style={{ gap: '8px', gridColumn: '1 / -1' }} data-testid="tcs-fields">
       <div className="field" style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: 0, flexWrap: 'wrap' }}>
@@ -33,7 +37,7 @@ export default function TcsFields({
         >
           <option value="">No TCS</option>
           {(sections ?? []).map((entry) => (
-            <option key={entry.id} value={entry.id}>{`${entry.section_ref} - ${entry.nature}`}</option>
+            <option key={entry.id} value={entry.id}>{sectionLabels.get(entry.id)}</option>
           ))}
         </select>
         {section ? (
@@ -75,6 +79,7 @@ export default function TcsFields({
       {section ? (
         <p className="muted-text" style={{ marginTop: 0 }}>
           {tcsLabel(effectiveTcsRate(form, section, buyer), section.section_ref)}: {formatCurrency(previewAmount ?? 0, currencyCode)}
+          {totalAmount !== undefined ? ` · Total: ${formatCurrency(totalAmount, currencyCode)}` : null}
         </p>
       ) : null}
     </div>

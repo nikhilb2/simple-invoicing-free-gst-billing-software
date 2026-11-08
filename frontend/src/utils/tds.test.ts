@@ -67,15 +67,15 @@ describe('validateTdsAllocations', () => {
 describe('sectionOptionLabel', () => {
   it('formats ref, nature and rate', () => {
     expect(sectionOptionLabel({ section_ref: '393(1) Sl. No. 6(iii)', nature: 'Professional fees', rate_individual_huf: 10, rate_other: 10 }))
-      .toBe('s.393(1) Sl. No. 6(iii) — Professional fees (10%)');
+      .toBe('s.393(1) Sl. No. 6(iii): Professional fees (10%)');
   });
   it('shows both rates when they differ', () => {
     expect(sectionOptionLabel({ section_ref: '194C', nature: 'Contractors', rate_individual_huf: 1, rate_other: 2 }))
-      .toBe('s.194C — Contractors (1% / 2%)');
+      .toBe('s.194C: Contractors (1% / 2%)');
   });
   it('omits the rate when unknown', () => {
     expect(sectionOptionLabel({ section_ref: '194C', nature: 'Contractors', rate_individual_huf: null, rate_other: null }))
-      .toBe('s.194C — Contractors');
+      .toBe('s.194C: Contractors');
   });
 });
 

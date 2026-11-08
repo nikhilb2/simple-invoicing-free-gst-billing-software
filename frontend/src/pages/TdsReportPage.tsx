@@ -10,6 +10,7 @@ import { downloadTdsCsv, fetchTdsReport, getBlobErrorMessage, setCertificateRece
 import { certificateForm, currentTaxYear, quarterOptions, taxYearOptions } from '../features/tds/period';
 import type { TdsKind, TdsReport, TdsTotal } from '../features/tds/types';
 import formatCurrency, { formatDate, plural } from '../utils/formatting';
+import { sectionRefLabel } from '../utils/withholdingSections';
 
 const TABS: { id: TdsKind; label: string }[] = [
   { id: 'receivable', label: 'TDS receivable' },
@@ -28,7 +29,6 @@ function TotalsTable({ title, firstColumn, totals }: { title: string; firstColum
     <section className="panel stack">
       <div className="panel__header">
         <div>
-          <p className="eyebrow">Totals</p>
           <h2 className="nav-panel__title">{title}</h2>
         </div>
       </div>
@@ -251,7 +251,7 @@ export default function TdsReportPage() {
                             <strong className="text-xs">{r.payment_number || '-'}</strong>
                             <div className="text-xs">{formatDate(r.payment_date)}</div>
                           </td>
-                          <td className="text-xs">{r.section_ref || '-'}</td>
+                          <td className="text-xs">{sectionRefLabel(r.section_ref) || '-'}</td>
                           <td className="text-right">{r.rate === null ? '-' : `${r.rate}%`}</td>
                           <td className="text-right">{formatCurrency(r.taxable_amount)}</td>
                           <td className="text-right">{formatCurrency(r.tds_amount)}</td>

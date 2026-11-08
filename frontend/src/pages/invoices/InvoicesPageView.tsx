@@ -21,8 +21,8 @@ import { readInvoiceComposerPrefs, updateInvoiceComposerPrefs } from '../../util
 import { useFY } from '../../context/FYContext';
 import { useShortcuts } from '../../context/ShortcutsContext';
 import { fetchInvoiceById, fetchInvoiceComposerData, fetchLedgerAddresses, fetchTcsSections } from '../../features/invoices/api';
-import { EMPTY_TCS_FORM, buildTcsPayload, effectiveTcsRate, findTcsSection, reconcileTcsSection, tcsFormForCopy, tcsFormFromDocument, tcsHints, tcsRateInputValue, tcsTotalsInput, type TcsFormState } from './tcsForm';
-import { tcsLabel } from '../../utils/tcs';
+import { EMPTY_TCS_FORM, buildTcsPayload, findTcsSection, reconcileTcsSection, tcsFormForCopy, tcsFormFromDocument, tcsTotalsInput, type TcsFormState } from './tcsForm';
+import TcsFields from './components/TcsFields';
 import { createQuotation, fetchConversionDraft, fetchQuotationById, updateQuotation } from '../../features/quotations/api';
 import { quotationQueryKeys } from '../../features/quotations/queryKeys';
 import {
@@ -365,7 +365,6 @@ export default function InvoicesPage() {
     interstateSupply: composerInterstateSupply,
     tcs: tcsInput,
   });
-  const tcsRatePreview = tcsSection ? effectiveTcsRate(tcsForm, tcsSection, selectedLedger) : 0;
 
   /* A section chosen for one date may not be in force on another. */
   useEffect(() => {
@@ -392,7 +391,6 @@ export default function InvoicesPage() {
     isSaleLike && !shippingSameAsBilling ? 'shipping address' : '',
     Number(invoiceDiscountValue) > 0 ? 'discount' : '',
     applyRoundOff ? 'round off' : '',
-    tcsSection ? 'TCS' : '',
   ].filter(Boolean);
   const advancedSummary = advancedInUse.length > 0
     ? `In use: ${advancedInUse.join(' · ')}`
@@ -1704,73 +1702,6 @@ export default function InvoicesPage() {
                     Discount: {formatCurrency(invoiceDiscountAmount, activeCurrencyCode)} · After discount: {formatCurrency(afterDiscountTotal, activeCurrencyCode)}
                   </p>
                 ) : null}
-
-                {tcsVisible ? (
-                  <div className="stack" style={{ gap: '8px' }} data-testid="tcs-block">
-                    <div className="field" style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: 0, flexWrap: 'wrap' }}>
-                      <label htmlFor="invoice-tcs-section" style={{ marginBottom: 0, fontSize: '13px' }}>TCS:</label>
-                      <select
-                        id="invoice-tcs-section"
-                        className="input"
-                        value={tcsForm.sectionId}
-                        onChange={(event) => {
-                          setTcsNotice('');
-                          setTcsForm({ ...EMPTY_TCS_FORM, sectionId: event.target.value });
-                        }}
-                        style={{ maxWidth: '360px' }}
-                      >
-                        <option value="">No TCS</option>
-                        {(tcsSections ?? []).map((entry) => (
-                          <option key={entry.id} value={entry.id}>{`${entry.section_ref} - ${entry.nature}`}</option>
-                        ))}
-                      </select>
-                      {tcsSection ? (
-                        <>
-                          <label htmlFor="invoice-tcs-rate" style={{ marginBottom: 0, fontSize: '13px' }}>Rate %</label>
-                          <input
-                            id="invoice-tcs-rate"
-                            className="input"
-                            type="number"
-                            step="0.001"
-                            min="0"
-                            value={tcsRateInputValue(tcsForm, tcsSection, selectedLedger)}
-                            onChange={(event) => setTcsForm((current) => ({ ...current, rateText: event.target.value }))}
-                            style={{ width: '90px' }}
-                          />
-                          <label htmlFor="invoice-tcs-amount" style={{ marginBottom: 0, fontSize: '13px' }}>Amount</label>
-                          <input
-                            id="invoice-tcs-amount"
-                            className="input"
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            value={tcsForm.amountText ?? String(tcsPreviewAmount ?? 0)}
-                            onChange={(event) => setTcsForm((current) => ({ ...current, amountText: event.target.value === '' ? null : event.target.value }))}
-                            style={{ width: '120px' }}
-                          />
-                          {tcsForm.amountText !== null || tcsForm.rateText !== null ? (
-                            <button
-                              type="button"
-                              className="button button--ghost"
-                              onClick={() => setTcsForm((current) => ({ ...current, rateText: null, amountText: null }))}
-                            >
-                              Reset
-                            </button>
-                          ) : null}
-                        </>
-                      ) : null}
-                    </div>
-                    {tcsNotice ? <p className="muted-text" role="status" style={{ marginTop: 0 }}>{tcsNotice}</p> : null}
-                    {tcsHints(tcsSection, selectedLedger).map((hint) => (
-                      <p key={hint} className="muted-text" style={{ marginTop: 0 }}>{hint}</p>
-                    ))}
-                    {tcsSection ? (
-                      <p className="muted-text" style={{ marginTop: 0 }}>
-                        {tcsLabel(tcsRatePreview, tcsSection.section_ref)}: {formatCurrency(tcsPreviewAmount ?? 0, activeCurrencyCode)} · Total: {formatCurrency(projectedTotalAmount, activeCurrencyCode)}
-                      </p>
-                    ) : null}
-                  </div>
-                ) : null}
               </div>
             ) : null}
 
@@ -2042,6 +1973,25 @@ export default function InvoicesPage() {
                     </div>
                   );
                 })}
+              </div>
+            ) : null}
+
+            {/* TCS sits by the line items, not under Advanced options: a company that
+                has switched TCS on must see it on every sales invoice and quotation. */}
+            {tcsVisible ? (
+              <div className="field-grid" data-testid="tcs-block">
+                <TcsFields
+                  idPrefix="invoice"
+                  form={tcsForm}
+                  onChange={(next) => { setTcsNotice(''); setTcsForm(next); }}
+                  sections={tcsSections}
+                  section={tcsSection}
+                  buyer={selectedLedger}
+                  previewAmount={tcsPreviewAmount}
+                  currencyCode={activeCurrencyCode}
+                  notice={tcsNotice}
+                  totalAmount={projectedTotalAmount}
+                />
               </div>
             ) : null}
 
