@@ -14,6 +14,7 @@ import { clearSetupDraft, isCompanyConfigured, readSetupDraft, writeSetupDraft }
 import { isCurrencyChange } from '../utils/currencyChange';
 import { buildSeriesPreview, gstr1SeriesFormatError } from '../utils/seriesPreview';
 import { purchaseTdsSetting } from '../utils/tds';
+import { companyIdentityErrors, firstIdentityErrorField, type CompanyIdentityErrors } from '../utils/companyFieldErrors';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -727,6 +728,8 @@ export default function CompanyPage() {
   const seriesSectionRef = useRef<HTMLElement>(null);
   const companySetupSectionRef = useRef<HTMLElement>(null);
   const gstInputRef = useRef<HTMLInputElement>(null);
+  const panInputRef = useRef<HTMLInputElement>(null);
+  const tanInputRef = useRef<HTMLInputElement>(null);
   const [form, setForm] = useState<CompanyProfileUpdate>({
     name: '',
     address: '',
@@ -764,7 +767,9 @@ export default function CompanyPage() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [initialSetupRequired, setInitialSetupRequired] = useState<boolean | null>(null);
-  const [gstError, setGstError] = useState('');
+  // GSTIN / PAN / TAN messages from a failed save, shown under each input.
+  const [identityErrors, setIdentityErrors] = useState<CompanyIdentityErrors>({});
+  const gstError = identityErrors.gst ?? '';
   const [showFirstSetupPrompt, setShowFirstSetupPrompt] = useState(false);
   const setupRequiredByRoute = searchParams.get('setup') === 'required';
   const [showSetupDialog, setShowSetupDialog] = useState(setupRequiredByRoute);
@@ -920,21 +925,26 @@ export default function CompanyPage() {
       if (initialSetupRequired && payload.name) {
         setShowFirstSetupPrompt(true);
       }
-      setGstError('');
+      setIdentityErrors({});
       await loadCompanyProfile();
     } catch (err) {
       const { message, fieldErrors } = await getApiErrorDetails(err, 'Unable to save company profile');
       setError(message);
-      const gstFieldError = fieldErrors.find((fieldError) => fieldError.field === 'gst');
-      if (gstFieldError) {
-        // The button is at the foot of a long form, so on a phone the field is off-screen.
-        setGstError(gstFieldError.message);
-        gstInputRef.current?.focus();
-        gstInputRef.current?.scrollIntoView({ block: 'center' });
-      }
+      showIdentityErrors(fieldErrors);
     } finally {
       setSubmitting(false);
     }
+  }
+
+  /** Puts GSTIN / PAN / TAN errors under their inputs and brings the first into view. */
+  function showIdentityErrors(fieldErrors: Parameters<typeof companyIdentityErrors>[0]) {
+    const errors = companyIdentityErrors(fieldErrors);
+    setIdentityErrors(errors);
+    const first = firstIdentityErrorField(errors);
+    const input = first === 'gst' ? gstInputRef.current : first === 'pan' ? panInputRef.current : first === 'tan' ? tanInputRef.current : null;
+    // The button is at the foot of a long form, so on a phone the field is off-screen.
+    input?.focus();
+    input?.scrollIntoView({ block: 'center' });
   }
 
   async function handleAdditionalInfoSave(value: string) {
@@ -946,6 +956,11 @@ export default function CompanyPage() {
       };
       await api.put('/company/', payload);
       setAdditionalInfo(value);
+    } catch (err) {
+      // This save sends the whole form, so an unsaved bad PAN or TAN fails it too:
+      // point at that field as well as reporting under this card.
+      showIdentityErrors((await getApiErrorDetails(err, 'Failed to save')).fieldErrors);
+      throw err;
     } finally {
       setAdditionalSaving(false);
     }
@@ -1128,7 +1143,7 @@ export default function CompanyPage() {
                     className="input"
                     value={form.gst}
                     onChange={(event) => {
-                      setGstError('');
+                      setIdentityErrors((current) => ({ ...current, gst: undefined }));
                       setForm((current) => ({ ...current, gst: event.target.value }));
                     }}
                     placeholder="27ABCDE1234F1Z0"
@@ -1143,28 +1158,40 @@ export default function CompanyPage() {
                   <label htmlFor="company-pan">PAN</label>
                   <input
                     id="company-pan"
+                    ref={panInputRef}
                     className="input"
                     value={form.pan || ''}
-                    onChange={(event) => setForm((current) => ({ ...current, pan: event.target.value.toUpperCase() }))}
+                    onChange={(event) => {
+                      setIdentityErrors((current) => ({ ...current, pan: undefined }));
+                      setForm((current) => ({ ...current, pan: event.target.value.toUpperCase() }));
+                    }}
                     placeholder="ABCDE1234F"
                     maxLength={10}
+                    aria-invalid={identityErrors.pan ? true : undefined}
+                    aria-describedby={identityErrors.pan ? 'company-pan-error' : undefined}
                   />
+                  {identityErrors.pan ? <p className="field-error" id="company-pan-error" role="alert">{identityErrors.pan}</p> : null}
                 </div>
 
                 <div className="field">
                   <label htmlFor="company-tan">TAN</label>
                   <input
                     id="company-tan"
+                    ref={tanInputRef}
                     className="input"
                     value={form.tan || ''}
                     onChange={(event) => {
+                      setIdentityErrors((current) => ({ ...current, tan: undefined }));
                       const tan = event.target.value.toUpperCase();
                       // Emptying the TAN turns purchase TDS off: it cannot stay on without one.
                       setForm((current) => ({ ...current, tan, enable_purchase_tds: tan.trim() ? current.enable_purchase_tds : false }));
                     }}
                     placeholder="ABCD12345E"
                     maxLength={10}
+                    aria-invalid={identityErrors.tan ? true : undefined}
+                    aria-describedby={identityErrors.tan ? 'company-tan-error' : undefined}
                   />
+                  {identityErrors.tan ? <p className="field-error" id="company-tan-error" role="alert">{identityErrors.tan}</p> : null}
                 </div>
 
                 <div className="field field--full">
