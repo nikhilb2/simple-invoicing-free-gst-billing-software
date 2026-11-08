@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { TaxWithholdingSection } from '../../types/api';
 import {
   EMPTY_TCS_FORM, buildTcsPayload, effectiveTcsRate, findTcsSection, reconcileTcsSection,
-  tcsFormFromDocument, tcsHints, tcsRateInputValue, tcsTotalsInput,
+  tcsFormForCopy, tcsFormFromDocument, tcsHints, tcsRateInputValue, tcsTotalsInput,
 } from './tcsForm';
 
 const section: TaxWithholdingSection = {
@@ -51,7 +51,32 @@ describe('tcsForm', () => {
     expect(tcsFormFromDocument({ tcs_section_id: 7, tcs_rate: 1, tcs_base_amount: 1000, tcs_amount: 10 }))
       .toEqual({ sectionId: '7', rateText: '1', amountText: null });
     expect(tcsFormFromDocument({ tcs_section_id: 7, tcs_rate: 1, tcs_base_amount: 1000, tcs_amount: 15 }).amountText).toBe('15');
-    expect(tcsFormFromDocument({ tcs_section_id: 7, tcs_rate: 1, tcs_amount: 15 }).amountText).toBeNull();
+  });
+
+  it('rounds half-up like the server, so a saved amount at a binary tie is not taken as typed', () => {
+    // 1001.25 x 2% = 20.025: the server stores 20.03.
+    expect(tcsFormFromDocument({ tcs_section_id: 7, tcs_rate: 2, tcs_base_amount: 1001.25, tcs_amount: 20.03 }).amountText)
+      .toBeNull();
+  });
+
+  it('loads a conversion draft: no rate follows the suggestion, an amount without a base was typed', () => {
+    // A quotation from before 1 April 2026 converted today: the section moved, so the draft has no rate.
+    const moved = tcsFormFromDocument({ tcs_section_id: 7 });
+    expect(moved).toEqual({ sectionId: '7', rateText: null, amountText: null });
+    expect(effectiveTcsRate(moved, section, withPan)).toBe(1);
+    // The quotation's typed 2000 against a computed 2360 travels in the draft without a base.
+    expect(tcsFormFromDocument({ tcs_section_id: 7, tcs_rate: 2, tcs_amount: 2000 }).amountText).toBe('2000');
+  });
+
+  it('resends the chosen TCS while the sections for the date have not loaded', () => {
+    const saved = tcsFormFromDocument({ tcs_section_id: 7, tcs_rate: 2, tcs_base_amount: 1000, tcs_amount: 25 });
+    expect(buildTcsPayload(saved, null, withPan, true)).toEqual({ tcs_section_id: 7, tcs_rate: 2, tcs_amount: 25 });
+    expect(buildTcsPayload({ ...chosen }, null, withPan, true)).toEqual({ tcs_section_id: 7 });
+  });
+
+  it('uses the rate at three places, as the server stores it', () => {
+    expect(effectiveTcsRate({ ...chosen, rateText: '1.2345' }, section, withPan)).toBe(1.235);
+    expect(buildTcsPayload({ ...chosen, rateText: '1.2345' }, section, withPan, false)).toEqual({ tcs_section_id: 7, tcs_rate: 1.235 });
   });
 
   it('hints about PAN and declaration', () => {
@@ -59,5 +84,16 @@ describe('tcsForm', () => {
     expect(tcsHints(section, { ...withPan, tcs_declaration_received: true })).toEqual(['Declaration received: no TCS suggested']);
     expect(tcsHints(section, withPan)).toEqual([]);
     expect(tcsHints(section, null)).toEqual([]);
+  });
+});
+
+describe('copies', () => {
+  const saved = { tcs_section_id: 7, tcs_rate: 2, tcs_base_amount: 1000, tcs_amount: 20 };
+
+  it('a duplicate keeps TCS only while the company has TCS on', () => {
+    expect(tcsFormForCopy(saved, true)).toEqual({ sectionId: '7', rateText: '2', amountText: null });
+    expect(tcsFormForCopy(saved, false)).toEqual(EMPTY_TCS_FORM);
+    // And with nothing chosen, a new document sends no TCS keys at all.
+    expect(buildTcsPayload(tcsFormForCopy(saved, false), null, null, false)).toEqual({});
   });
 });

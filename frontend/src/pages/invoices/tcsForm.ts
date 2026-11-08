@@ -4,7 +4,8 @@
  * nothing at all when TCS is not in play.
  */
 import type { Ledger, TaxWithholdingSection } from '../../types/api';
-import { suggestTcsRate, buyerHasPan, declarationCovers } from '../../utils/tcs';
+import { suggestTcsRate, buyerHasPan, declarationCovers, roundTcsRate } from '../../utils/tcs';
+import { roundMoney } from '../../utils/invoiceTotals';
 
 export type TcsFormState = {
   /** '' means no TCS. */
@@ -24,16 +25,35 @@ type SavedTcs = {
   tcs_base_amount?: number | null;
 };
 
-/** The form as a saved document left it. An amount that differs from base x rate was typed by hand. */
+/**
+ * The form as a saved document or a conversion draft left it.
+ *
+ * - No rate (a draft whose section moved to a newer row): follow the suggestion.
+ * - An amount with no base (a draft, which carries the amount only when it was typed
+ *   on the quotation): typed.
+ * - An amount that differs from base x rate, rounded half-up as the server does: typed.
+ */
 export function tcsFormFromDocument(doc: SavedTcs | null | undefined): TcsFormState {
   if (!doc || doc.tcs_section_id == null) return EMPTY_TCS_FORM;
-  const rate = doc.tcs_rate ?? 0;
+  const rateText = doc.tcs_rate != null ? String(doc.tcs_rate) : null;
   let amountText: string | null = null;
-  if (doc.tcs_amount != null && doc.tcs_base_amount != null) {
-    const computed = Math.round((doc.tcs_base_amount * rate / 100 + Number.EPSILON) * 100) / 100;
-    if (Math.abs(computed - doc.tcs_amount) > 0.005) amountText = String(doc.tcs_amount);
+  if (doc.tcs_amount != null) {
+    if (doc.tcs_base_amount == null || doc.tcs_rate == null) {
+      amountText = String(doc.tcs_amount);
+    } else if (roundMoney(doc.tcs_base_amount * doc.tcs_rate / 100) !== roundMoney(doc.tcs_amount)) {
+      amountText = String(doc.tcs_amount);
+    }
   }
-  return { sectionId: String(doc.tcs_section_id), rateText: String(rate), amountText };
+  return { sectionId: String(doc.tcs_section_id), rateText, amountText };
+}
+
+/**
+ * The form for a new document copied from ``doc`` (a duplicate or a conversion).
+ * A copy is a new document, so it gets TCS only while the company has TCS on:
+ * the server refuses TCS on a new document otherwise.
+ */
+export function tcsFormForCopy(doc: SavedTcs | null | undefined, companyEnablesTcs: boolean): TcsFormState {
+  return companyEnablesTcs ? tcsFormFromDocument(doc) : EMPTY_TCS_FORM;
 }
 
 export function findTcsSection(form: TcsFormState, sections: TaxWithholdingSection[] | undefined): TaxWithholdingSection | null {
@@ -46,7 +66,8 @@ export function effectiveTcsRate(form: TcsFormState, section: TaxWithholdingSect
   if (!section) return 0;
   if (form.rateText !== null) {
     const typed = Number(form.rateText);
-    return Number.isFinite(typed) ? typed : 0;
+    // The server keeps three places and works the amount out from them.
+    return Number.isFinite(typed) ? roundTcsRate(typed) : 0;
   }
   return suggestTcsRate(section, buyer);
 }
@@ -79,7 +100,21 @@ export function buildTcsPayload(
   buyer: Partial<Ledger> | null | undefined,
   documentHadTcs: boolean,
 ): { tcs_section_id?: number | null; tcs_rate?: number; tcs_amount?: number } {
-  if (!section) return documentHadTcs ? { tcs_section_id: null } : {};
+  if (!section) {
+    if (form.sectionId) {
+      // Chosen, but the sections for the date have not loaded (slow or failed
+      // request): send what the form holds rather than strip the TCS. The server
+      // still checks the section against the date.
+      const rate = form.rateText !== null && Number.isFinite(Number(form.rateText)) ? roundTcsRate(Number(form.rateText)) : null;
+      const amount = form.amountText !== null && form.amountText.trim() !== '' ? Number(form.amountText) : null;
+      return {
+        tcs_section_id: Number(form.sectionId),
+        ...(rate !== null ? { tcs_rate: rate } : {}),
+        ...(amount !== null && Number.isFinite(amount) ? { tcs_amount: amount } : {}),
+      };
+    }
+    return documentHadTcs ? { tcs_section_id: null } : {};
+  }
   const input = tcsTotalsInput(form, section, buyer);
   return {
     tcs_section_id: section.id,

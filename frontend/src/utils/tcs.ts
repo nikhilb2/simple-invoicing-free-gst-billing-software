@@ -34,6 +34,13 @@ export function suggestTcsRate(
   return Math.min(rate, 20);
 }
 
+/** A rate as the server stores it: three places, half-up (NUMERIC(7,3)). */
+export function roundTcsRate(value: number): number {
+  const magnitude = Math.abs(value);
+  const rounded = Math.round((magnitude + 4 * Number.EPSILON * Math.max(1, magnitude)) * 1000) / 1000;
+  return rounded === 0 ? 0 : Math.sign(value) * rounded;
+}
+
 /** "TCS @ 2% (s.394(1) Sl. No. 4)", the line documents show. */
 export function tcsLabel(rate: number | null | undefined, sectionRef: string | null | undefined): string {
   const pct = `${Number(rate ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 3 })}%`;
