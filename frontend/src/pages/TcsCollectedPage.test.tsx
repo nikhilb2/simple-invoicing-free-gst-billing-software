@@ -66,3 +66,19 @@ describe('TcsCollectedView', () => {
 function TcsCollectedViewHtml() {
   return renderToStaticMarkup(<TcsCollectedView report={report} />);
 }
+
+describe('sales with no TCS collected', () => {
+  it('flags a declaration row and notes the amount sold without TCS', () => {
+    const html = renderToStaticMarkup(
+      <TcsCollectedView
+        report={{
+          ...report,
+          rows: [{ ...report.rows[0], id: 9, tcs_amount: '0.00', remark: 'Declaration – not collected' }],
+          totals_by_section: [{ ...report.totals_by_section[0], not_collected_base: '118000.00' }],
+        }}
+      />,
+    );
+    expect(html).toContain('Declaration – not collected');
+    expect(html).toContain('sold with no TCS collected');
+  });
+});
