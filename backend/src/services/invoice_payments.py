@@ -302,7 +302,11 @@ def _validate_payment_allocations_detailed(
     invoices_query = db.query(Invoice).filter(Invoice.id.in_(invoice_ids))
     if company_id is not None:
         invoices_query = invoices_query.filter(company_scope(Invoice.company_id, company_id))
-    invoices = invoices_query.all()
+    # Serialise settlement checks: two receipts or payments saved at once against
+    # the same bill would otherwise both see the same remaining amount and both
+    # allocate cash and TDS against it. Locking in id order avoids deadlocks;
+    # SQLAlchemy ignores FOR UPDATE on SQLite.
+    invoices = invoices_query.order_by(Invoice.id).with_for_update().all()
     invoice_map = {invoice.id: invoice for invoice in invoices}
     missing_ids = sorted(set(invoice_ids) - set(invoice_map))
     if missing_ids:
