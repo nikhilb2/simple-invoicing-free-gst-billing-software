@@ -32,6 +32,8 @@ class Invoice(Base):
     ledger_address = Column("buyer_address", String, nullable=True)
     ledger_gst = Column("buyer_gst", String, nullable=True)
     ledger_phone = Column("buyer_phone", String, nullable=True)
+    # The buyer's PAN when TCS was applied; later ledger edits leave it alone.
+    ledger_pan = Column("buyer_pan", String(10), nullable=True)
     company_name = Column(String, nullable=True)
     company_address = Column(String, nullable=True)
     company_gst = Column(String, nullable=True)

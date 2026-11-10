@@ -57,6 +57,10 @@ def _dec(value) -> Decimal:
 
 
 def _buyer_pan(invoice: Invoice) -> str | None:
+    snapshot = (getattr(invoice, "ledger_pan", None) or "").strip().upper()
+    if snapshot:
+        return snapshot
+    # Invoices saved before the snapshot existed read the ledger.
     ledger = invoice.ledger if hasattr(invoice, "ledger") else None
     pan = (getattr(ledger, "pan", None) or "").strip().upper() or None
     return pan or pan_from_gstin(invoice.ledger_gst) or pan_from_gstin(getattr(ledger, "gst", None))

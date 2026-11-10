@@ -99,8 +99,14 @@ def successor_section(db: Session, section_id: int | None, on_date: date) -> Tax
     return candidates[0] if len(candidates) == 1 else None
 
 
+def buyer_pan(ledger) -> str | None:
+    """The buyer's PAN: the ledger's own, else the one inside its GSTIN."""
+    pan = (getattr(ledger, "pan", None) or "").strip().upper()
+    return pan or pan_from_gstin(getattr(ledger, "gst", None)) or None
+
+
 def buyer_has_pan(ledger) -> bool:
-    return bool((getattr(ledger, "pan", None) or "").strip() or pan_from_gstin(getattr(ledger, "gst", None)))
+    return buyer_pan(ledger) is not None
 
 
 def declaration_covers(section: TaxWithholdingSection, ledger) -> bool:

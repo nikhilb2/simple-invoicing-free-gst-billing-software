@@ -31,7 +31,7 @@ from src.services.gst_tax_service import (
     invoice_is_interstate,
     money as _money,
 )
-from src.services.tcs import resolve_tcs
+from src.services.tcs import buyer_pan, resolve_tcs
 from src.services.inventory_service import InventoryManager
 from src.services.serial_service import SerialManager
 from src.core.config import settings
@@ -534,6 +534,7 @@ class InvoiceProcessor:
             voucher_type=payload.voucher_type,
             already_has_tcs=invoice.tcs_section_id is not None,
         )
+        invoice.ledger_pan = buyer_pan(ledger) if tcs is not None else None
 
         if regenerate_number:
             invoice.invoice_number = generate_next_number(
