@@ -123,3 +123,12 @@ def test_sale_under_a_declaration_is_listed_as_not_collected(client, db_session,
         client.get(f"{URL}/export-csv", params={"tax_year": 2026, "quarter": 1}).content.decode("utf-8-sig")
     )))
     assert "Declaration – not collected" in [row[-1] for row in csv_rows[1:3]]
+
+
+def test_csv_neutralises_formulas_in_free_text(client, db_session, company):
+    ledger = _ledger(client, gst=BUYER_GSTIN, name="=HYPERLINK(\"http://x\")")
+    product = _product(client)
+    _tcs_invoice(client, db_session, ledger, product)
+    response = client.get(f"{URL}/export-csv", params={"tax_year": 2026, "quarter": 1})
+    rows = list(csv.reader(io.StringIO(response.content.decode("utf-8-sig"))))
+    assert rows[1][3] == "'=HYPERLINK(\"http://x\")"

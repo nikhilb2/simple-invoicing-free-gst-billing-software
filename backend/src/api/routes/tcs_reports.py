@@ -16,6 +16,7 @@ from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from src.api.deps import get_active_company, get_current_user
+from src.core.csv_safety import csv_text
 from src.core.validation import pan_from_gstin
 from src.db.session import get_db
 from src.models.company import CompanyProfile
@@ -182,16 +183,16 @@ def _csv(report: TcsReportOut) -> bytes:
     writer.writerow(["Type", "Document", "Date", "Buyer", "Buyer PAN", "Section", "Nature", "Base", "Rate %", "TCS", "Remark"])
     for r in report.rows:
         writer.writerow([
-            "Credit note" if r.kind == "credit_note" else "Invoice", r.document_number, r.date.isoformat(),
-            r.buyer_name or "", r.buyer_pan or "", r.section_ref or "", r.nature or "",
-            f"{r.base_amount:.2f}", f"{r.rate:f}", f"{r.tcs_amount:.2f}", r.remark or "",
+            "Credit note" if r.kind == "credit_note" else "Invoice", csv_text(r.document_number), r.date.isoformat(),
+            csv_text(r.buyer_name), csv_text(r.buyer_pan), csv_text(r.section_ref), csv_text(r.nature),
+            f"{r.base_amount:.2f}", f"{r.rate:f}", f"{r.tcs_amount:.2f}", csv_text(r.remark),
         ])
     writer.writerow([])
     writer.writerow(["Totals by section"])
     writer.writerow(["Section", "Nature", "Documents", "Base", "TCS", "Not collected"])
     for t in report.totals_by_section:
         writer.writerow([
-            t.section_ref or "", t.nature or "", t.count, f"{t.base_amount:.2f}", f"{t.tcs_amount:.2f}",
+            csv_text(t.section_ref), csv_text(t.nature), t.count, f"{t.base_amount:.2f}", f"{t.tcs_amount:.2f}",
             f"{t.not_collected_base:.2f}",
         ])
     writer.writerow(["Grand total", "", "", f"{report.total_base:.2f}", f"{report.total_tcs:.2f}"])
