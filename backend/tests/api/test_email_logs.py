@@ -244,3 +244,16 @@ def test_unauthenticated_request_gets_401():
     finally:
         if saved_override is not None:
             app.dependency_overrides[get_current_user] = saved_override
+
+
+def test_to_date_at_the_end_of_the_supported_range_does_not_overflow(client, db_session):
+    _seed_company(db_session, 1, "Company A")
+    _seed_log(
+        db_session,
+        company_id=1,
+        subject="final-day",
+        sent_at=datetime(2026, 10, 1, 9, 0, tzinfo=timezone.utc),
+    )
+
+    payload = _list_logs(client, to_date="9999-12-31")
+    assert payload["total"] == 1

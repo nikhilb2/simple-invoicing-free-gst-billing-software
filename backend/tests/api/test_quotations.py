@@ -1168,3 +1168,9 @@ def test_a_conversion_can_choose_another_place_of_supply(setup):
     assert invoice["place_of_supply"] == "10"
     assert invoice["igst_amount"] > 0
     assert invoice["cgst_amount"] == 0
+
+
+def test_page_beyond_the_supported_range_returns_422(setup):
+    client, _, _ = setup
+    response = client.get("/api/quotations/", params={"page": 9223372036854775807})
+    assert response.status_code == 422

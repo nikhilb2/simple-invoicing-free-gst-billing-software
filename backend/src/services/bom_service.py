@@ -3,16 +3,20 @@ BOM (Bill of Materials) business logic service.
 Handles BOM calculations, validation, and production execution.
 """
 
+import logging
 from decimal import Decimal
 from typing import Set
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
 
+from src.core.document_limits import QUANTITY_STORAGE_CUTOFF
 from src.models.bom import BillOfMaterial
 from src.models.product import Product
 from src.models.inventory import Inventory
 from src.models.production_transaction import ProductionTransaction
 from src.schemas.bom import BOMComponentOut
+
+logger = logging.getLogger(__name__)
 
 
 class CircularBOMError(Exception):
@@ -344,7 +348,14 @@ def execute_production(
             db.add(product_inventory)
 
         before_produced = float(product_inventory.quantity)
-        product_inventory.quantity += quantity
+        new_quantity = Decimal(str(product_inventory.quantity)) + quantity
+        if new_quantity >= Decimal(str(QUANTITY_STORAGE_CUTOFF)):
+            db.rollback()
+            return {
+                "success": False,
+                "message": f"Stock for {product.name} can't go above 999,999,999.999.",
+            }
+        product_inventory.quantity = new_quantity
         after_produced = float(product_inventory.quantity)
 
         inventory_changes[product_id] = {
@@ -374,9 +385,10 @@ def execute_production(
             "inventory_changes": inventory_changes,
         }
 
-    except Exception as e:
+    except Exception:
         db.rollback()
+        logger.exception("Production failed for product_id=%s", product_id)
         return {
             "success": False,
-            "message": f"Production failed: {str(e)}",
+            "message": "Production failed. Please try again.",
         }

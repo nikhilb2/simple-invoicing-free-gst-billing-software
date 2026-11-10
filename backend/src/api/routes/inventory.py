@@ -14,6 +14,7 @@ from src.models.user import User, UserRole
 from src.schemas.inventory import InventoryAdjust, InventoryOut, PaginatedInventoryOut
 from src.schemas.bom import ProduceRequest, ProductionTransactionOut, PaginatedProductionTransactionOut
 from src.api.deps import get_active_company, get_current_user, require_company_role
+from src.api.pagination import MAX_PAGE
 from src.core.analytics import distinct_id_for, track
 from src.core.document_limits import QUANTITY_STORAGE_CUTOFF
 from src.services import bom_service
@@ -129,7 +130,7 @@ def list_inventory(
     maintain_inventory: bool | None = Query(None),
     sort_by: Literal["name", "quantity", "date_added", "last_sold", "attention"] = Query("name"),
     sort_order: Literal["asc", "desc"] = Query("asc"),
-    page: int = Query(1, ge=1),
+    page: int = Query(1, ge=1, le=MAX_PAGE),
     page_size: int = Query(20, ge=1, le=500),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
@@ -258,7 +259,7 @@ def produce_item(
 
 @router.get("/production-history", response_model=PaginatedProductionTransactionOut)
 def get_production_history(
-    page: int = Query(1, ge=1),
+    page: int = Query(1, ge=1, le=MAX_PAGE),
     page_size: int = Query(20, ge=1, le=500),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),

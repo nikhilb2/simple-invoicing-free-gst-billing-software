@@ -24,6 +24,7 @@ from src.schemas.serial import (
     SerialScanOut,
 )
 from src.api.deps import get_active_company, get_current_user
+from src.api.pagination import MAX_PAGE
 from src.services.serial_service import SerialManager
 from src.services.company_access import company_scope
 
@@ -170,7 +171,7 @@ def list_serials(
     product_id: int | None = Query(None),
     status: Literal["in_stock", "sold", "void"] | None = Query(None),
     search: str = Query(""),
-    page: int = Query(1, ge=1),
+    page: int = Query(1, ge=1, le=MAX_PAGE),
     page_size: int = Query(50, ge=1, le=500),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),

@@ -15,6 +15,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from src.api.deps import get_active_company, get_current_user
+from src.api.pagination import MAX_PAGE
 from src.api.routes.invoices import build_invoice_out, track_invoice_created
 from src.core.analytics import distinct_id_for, track
 from src.core.http_headers import content_disposition
@@ -150,7 +151,7 @@ def create(
 @router.get("", response_model=PaginatedQuotationOut, include_in_schema=False)
 @router.get("/", response_model=PaginatedQuotationOut)
 def list_quotations(
-    page: int = Query(1, ge=1),
+    page: int = Query(1, ge=1, le=MAX_PAGE),
     page_size: int = Query(20, ge=1, le=500),
     search: str = Query(""),
     status: StatusFilter | None = Query(None),
