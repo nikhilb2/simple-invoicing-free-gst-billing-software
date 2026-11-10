@@ -2,7 +2,7 @@ import type { Ledger, TaxWithholdingSection } from '../../../types/api';
 import formatCurrency from '../../../utils/formatting';
 import { tcsLabel } from '../../../utils/tcs';
 import { sectionOptionLabels } from '../../../utils/withholdingSections';
-import { EMPTY_TCS_FORM, effectiveTcsRate, tcsHints, tcsRateInputValue, type TcsFormState } from '../tcsForm';
+import { EMPTY_TCS_FORM, effectiveTcsRate, tcsHints, tcsRateInputValue, tcsThresholdHint, type TcsFormState } from '../tcsForm';
 
 type TcsFieldsProps = {
   idPrefix: string;
@@ -17,11 +17,13 @@ type TcsFieldsProps = {
   notice?: string;
   /** The document total including TCS, shown beside the TCS line when given. */
   totalAmount?: number;
+  /** The invoice value before TCS, for the motor vehicle threshold hint. */
+  invoiceValue?: number;
 };
 
 /** Section, rate and amount for TCS (#769): the app suggests the rate, the user decides. */
 export default function TcsFields({
-  idPrefix, form, onChange, sections, section, buyer, previewAmount, currencyCode, notice, totalAmount,
+  idPrefix, form, onChange, sections, section, buyer, previewAmount, currencyCode, notice, totalAmount, invoiceValue,
 }: TcsFieldsProps) {
   const sectionLabels = sectionOptionLabels(sections ?? []);
   return (
@@ -73,7 +75,8 @@ export default function TcsFields({
         ) : null}
       </div>
       {notice ? <p className="muted-text" role="status" style={{ marginTop: 0 }}>{notice}</p> : null}
-      {tcsHints(section, buyer).map((hint) => (
+      {[...tcsHints(section, buyer), tcsThresholdHint(section, invoiceValue ?? Number.POSITIVE_INFINITY)]
+        .filter((hint): hint is string => Boolean(hint)).map((hint) => (
         <p key={hint} className="muted-text" style={{ marginTop: 0 }}>{hint}</p>
       ))}
       {section ? (

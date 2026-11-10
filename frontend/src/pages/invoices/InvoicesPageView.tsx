@@ -21,7 +21,7 @@ import { readInvoiceComposerPrefs, updateInvoiceComposerPrefs } from '../../util
 import { useFY } from '../../context/FYContext';
 import { useShortcuts } from '../../context/ShortcutsContext';
 import { fetchInvoiceById, fetchInvoiceComposerData, fetchLedgerAddresses, fetchTcsSections } from '../../features/invoices/api';
-import { EMPTY_TCS_FORM, buildTcsPayload, findTcsSection, reconcileTcsSection, tcsFormForCopy, tcsFormFromDocument, tcsTotalsInput, type TcsFormState } from './tcsForm';
+import { EMPTY_TCS_FORM, buildTcsPayload, findTcsSection, reconcileTcsSection, tcsFormForCopy, tcsFormFromDocument, tcsFormOnBuyerChange, tcsTotalsInput, type TcsFormState } from './tcsForm';
 import TcsFields from './components/TcsFields';
 import { createQuotation, fetchConversionDraft, fetchQuotationById, updateQuotation } from '../../features/quotations/api';
 import { quotationQueryKeys } from '../../features/quotations/queryKeys';
@@ -355,6 +355,15 @@ export default function InvoicesPage() {
   });
   const tcsSection = tcsVisible ? findTcsSection(tcsForm, tcsSections) : null;
   const tcsInput = tcsSection ? tcsTotalsInput(tcsForm, tcsSection, selectedLedger) : null;
+  // A new buyer is suggested their own rate again (PAN or none) unless the rate was typed by hand.
+  const previousBuyerRef = useRef(selectedLedger);
+  useEffect(() => {
+    const previous = previousBuyerRef.current;
+    previousBuyerRef.current = selectedLedger;
+    if (previous?.id === selectedLedger?.id) return;
+    setTcsForm((current) => tcsFormOnBuyerChange(current, tcsSection, previous, selectedLedger));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedLedger?.id]);
   const {
     invoiceDiscountAmount, afterDiscountTotal, tcsAmount: tcsPreviewAmount,
     roundOffAmount: roundOffPreviewAmount, total: projectedTotalAmount,
@@ -1991,6 +2000,7 @@ export default function InvoicesPage() {
                   currencyCode={activeCurrencyCode}
                   notice={tcsNotice}
                   totalAmount={projectedTotalAmount}
+                  invoiceValue={projectedTotalAmount - (tcsPreviewAmount ?? 0)}
                 />
               </div>
             ) : null}

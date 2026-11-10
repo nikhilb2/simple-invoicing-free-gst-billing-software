@@ -6,6 +6,7 @@
 import type { Ledger, TaxWithholdingSection } from '../../types/api';
 import { suggestTcsRate, buyerHasPan, declarationCovers, roundTcsRate } from '../../utils/tcs';
 import { roundMoney } from '../../utils/invoiceTotals';
+import formatCurrency from '../../utils/formatting';
 
 export type TcsFormState = {
   /** '' means no TCS. */
@@ -139,4 +140,30 @@ export function tcsHints(section: TaxWithholdingSection | null, buyer: Partial<L
   if (declarationCovers(section, buyer)) hints.push('Declaration received: no TCS suggested');
   else if (!buyerHasPan(buyer)) hints.push('No PAN: higher rate under s.397(2)');
   return hints;
+}
+
+/**
+ * The form after the buyer changes. A rate equal to what the old buyer was suggested
+ * (a saved or copied document stores it as text) goes back to following the
+ * suggestion, so the new buyer's PAN decides it. A rate the user typed that differs
+ * from that suggestion stays.
+ */
+export function tcsFormOnBuyerChange(
+  form: TcsFormState,
+  section: TaxWithholdingSection | null,
+  previousBuyer: Partial<Ledger> | null | undefined,
+  nextBuyer: Partial<Ledger> | null | undefined,
+): TcsFormState {
+  if (!section || form.rateText === null || !previousBuyer || !nextBuyer) return form;
+  const typed = Number(form.rateText);
+  if (!Number.isFinite(typed) || roundTcsRate(typed) !== suggestTcsRate(section, previousBuyer)) return form;
+  return { ...form, rateText: null };
+}
+
+/** The ₹10 lakh line of the motor vehicle section: TCS applies only above it. */
+export function tcsThresholdHint(section: TaxWithholdingSection | null, invoiceValue: number): string | null {
+  if (!section || section.legacy_code !== '206C(1F)' || section.threshold_single == null) return null;
+  const threshold = Number(section.threshold_single);
+  if (!(invoiceValue <= threshold)) return null;
+  return `TCS applies only above ${formatCurrency(threshold, 'INR')} for this section; this invoice is at or below it.`;
 }

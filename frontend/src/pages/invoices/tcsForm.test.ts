@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { TaxWithholdingSection } from '../../types/api';
 import {
   EMPTY_TCS_FORM, buildTcsPayload, effectiveTcsRate, findTcsSection, reconcileTcsSection,
-  tcsFormForCopy, tcsFormFromDocument, tcsHints, tcsRateInputValue, tcsTotalsInput,
+  tcsFormForCopy, tcsFormFromDocument, tcsFormOnBuyerChange, tcsHints, tcsThresholdHint, tcsRateInputValue, tcsTotalsInput,
 } from './tcsForm';
 
 const section: TaxWithholdingSection = {
@@ -97,3 +97,26 @@ describe('copies', () => {
     expect(buildTcsPayload(tcsFormForCopy(saved, false), null, null, false)).toEqual({});
   });
 });
+
+describe('tcsForm buyer change and threshold', () => {
+  it('re-suggests when the stored rate was only the old buyer suggestion', () => {
+    const saved = { ...chosen, rateText: '1' };
+    expect(tcsFormOnBuyerChange(saved, section, withPan, noPan)).toEqual({ ...chosen, rateText: null });
+    expect(effectiveTcsRate(tcsFormOnBuyerChange(saved, section, withPan, noPan), section, noPan)).toBe(5);
+  });
+
+  it('leaves a rate typed by hand alone', () => {
+    const typed = { ...chosen, rateText: '3' };
+    expect(tcsFormOnBuyerChange(typed, section, withPan, noPan)).toBe(typed);
+    expect(tcsFormOnBuyerChange(chosen, section, withPan, noPan)).toBe(chosen);
+  });
+
+  it('hints that a motor vehicle sale at or below 10 lakh carries no TCS', () => {
+    const car = { ...section, legacy_code: '206C(1F)', threshold_single: 1000000 };
+    expect(tcsThresholdHint(car, 1000000)).toContain('only above');
+    expect(tcsThresholdHint(car, 500000)).toContain('10,00,000');
+    expect(tcsThresholdHint(car, 1000001)).toBeNull();
+    expect(tcsThresholdHint(section, 500000)).toBeNull();
+  });
+});
+

@@ -404,6 +404,7 @@ export default function CreateInvoiceModal({
                     previewAmount={tcsPreviewAmount}
                     currencyCode={currencyCode}
                     notice={tcsNotice}
+                    invoiceValue={totalAmount - (tcsPreviewAmount ?? 0)}
                   />
                 ) : null}
               </div>

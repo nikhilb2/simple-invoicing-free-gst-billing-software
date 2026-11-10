@@ -51,4 +51,15 @@ describe('TcsFields (quick invoice modal)', () => {
     expect(html).toContain('s.394(1) Sl. No. 7: LRS remittance for education or medical purposes (2%)');
     expect(html).toContain('s.394(1) Sl. No. 7: Other LRS remittances (20%)');
   });
+
+  it('hints under the motor vehicle section when the invoice is at or below 10 lakh', () => {
+    const car = { ...scrap, id: 9, legacy_code: '206C(1F)', section_ref: '394(1) Sl. No. 6', nature: 'Motor vehicles', threshold_single: 1000000 };
+    const render = (invoiceValue: number) => renderToStaticMarkup(
+      <TcsFields idPrefix="m" form={{ sectionId: '9', rateText: null, amountText: null }} onChange={() => {}}
+        sections={[car]} section={car} buyer={{ gst: '29ABCDE1234F1ZW', pan: null }} previewAmount={0}
+        currencyCode="INR" invoiceValue={invoiceValue} />,
+    );
+    expect(render(800000)).toContain('TCS applies only above');
+    expect(render(1200000)).not.toContain('TCS applies only above');
+  });
 });
