@@ -31,8 +31,7 @@ def _check_places(value: float | None, places: int) -> float | None:
 
 
 class QuotationItemCreate(BaseModel):
-    """A line that is priced but not fulfilled. Deliberately has no serial_numbers
-    and no gst_rate: serials are picked at conversion, and tax follows the product."""
+    """A priced line. No serial_numbers or gst_rate: serials are picked at conversion, tax follows the product."""
 
     product_id: int
     quantity: float = Field(lt=QUANTITY_LIMIT, allow_inf_nan=False)

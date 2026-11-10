@@ -188,7 +188,7 @@ DESCRIPTION_OVERRIDES: dict[tuple[str, str], str] = {
     ("GET", "/api/invoices/dues"): "List invoices with an outstanding balance, for chasing payment.",
     ("GET", "/api/invoices/export"): "Export the filtered invoice list as CSV.",
     ("GET", "/api/invoices/{invoice_id}/pdf"): "Render an invoice as a PDF document.",
-    ("POST", "/api/invoices/{invoice_id}/duplicate"): "Create an active copy dated today with a fresh number and normal stock checks/movement. Serial-tracked invoices must be copied from the UI to pick new serials.",
+    ("POST", "/api/invoices/{invoice_id}/duplicate"): "Copy an invoice as a new active one dated today, with a fresh number and normal stock checks. Serial-tracked: copy in the UI.",
     ("POST", "/api/invoices/{invoice_id}/restore"): "Un-cancel a previously cancelled invoice.",
     # ledgers
     ("GET", "/api/ledgers/"): "List ledgers (customers, suppliers and account heads). Supports free-text `search`.",
