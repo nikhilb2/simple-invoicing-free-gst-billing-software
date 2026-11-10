@@ -9,6 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from src.models.buyer import Buyer
 from src.models.company import CompanyProfile
 from src.models.invoice import Invoice
 from src.models.tax_withholding_section import TaxWithholdingSection
@@ -419,6 +420,29 @@ def test_duplicate_copies_the_tcs_onto_todays_section(client, db_session, compan
     assert (march_copy["tcs_section_ref"], march_copy["tcs_rate"], march_copy["tcs_amount"]) == (SCRAP_2025, 2, 2360)
     # Same section: the typed amount travels with it.
     assert (april_copy["tcs_section_ref"], april_copy["tcs_amount"], april_copy["total_amount"]) == (SCRAP_2025, 2000, 120000)
+
+
+@pytest.mark.parametrize("old_ref", ["206C(1) Sl. No. (iii)", "206C(1) Sl. No. (iv)"])
+def test_duplicate_of_a_1961_timber_invoice_moves_to_the_2025_timber_row(client, db_session, company, old_ref):
+    ledger = _ledger(client, gst=BUYER_GSTIN)
+    product = _product(client)
+    march = _ok(_invoice(client, ledger, product, when=MARCH, tcs_section_id=_section_id(db_session, old_ref)))
+    copy_id = _ok(client.post(f"/api/invoices/{march['id']}/duplicate"))["id"]
+    copy = _ok(client.get(f"/api/invoices/{copy_id}"))
+    assert (copy["tcs_section_ref"], copy["tcs_rate"]) == ("394(1) Sl. No. 3", 2)
+
+
+def test_buyer_pan_is_kept_on_the_invoice_when_the_ledger_changes(client, db_session, company):
+    ledger = _ledger(client, gst=BUYER_GSTIN)
+    product = _product(client)
+    inv = _ok(_invoice(client, ledger, product, tcs_section_id=_section_id(db_session, SCRAP_2025)))
+    assert db_session.query(Invoice.ledger_pan).filter(Invoice.id == inv["id"]).scalar() == "ABCDE1234F"
+    plain = _ok(_invoice(client, ledger, product))
+    assert db_session.query(Invoice.ledger_pan).filter(Invoice.id == plain["id"]).scalar() is None
+    db_session.query(Buyer).filter(Buyer.id == ledger).update({"gst": "", "pan": "ZZZZZ9999Z"})
+    db_session.commit()
+    report = _ok(client.get("/api/reports/tcs-collected", params={"tax_year": 2026}))
+    assert [r["buyer_pan"] for r in report["rows"]] == ["ABCDE1234F"]
 
 
 def test_quotation_quotes_tcs_and_conversion_copies_it(client, db_session, company):

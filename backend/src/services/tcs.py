@@ -84,6 +84,19 @@ def successor_section(db: Session, section_id: int | None, on_date: date) -> Tax
         return None
     if tcs_section_in_force(db, section_id, on_date) is not None:
         return original
+    if original.legacy_code == "206C(1)" and original.nature and "timber" in original.nature.lower():
+        # 1961 Sl. No. (iii) forest lease and (iv) any other mode are both timber at 2%;
+        # the 2025 table has a single timber row.
+        timber = [
+            row for row in db.query(TaxWithholdingSection).filter(
+                TaxWithholdingSection.kind == original.kind,
+                TaxWithholdingSection.legacy_code == original.legacy_code,
+                in_force_on(on_date),
+            ).all()
+            if row.nature and "timber" in row.nature.lower()
+        ]
+        if len(timber) == 1:
+            return timber[0]
     candidates = (
         db.query(TaxWithholdingSection)
         .filter(
