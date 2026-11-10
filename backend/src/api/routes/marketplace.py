@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from src.api.deps import get_active_company, get_current_user, require_company_role, require_platform_admin
+from src.api.pagination import MAX_PAGE
 from src.core.analytics import distinct_id_for, track
 from src.core.validation import normalize_gstin
 from src.db.session import get_db
@@ -474,7 +475,7 @@ def _to_order_out(db: Session, order: MarketplaceOrder) -> OrderOut:
 def list_orders(
     side: str | None = None,
     state: str | None = None,
-    page: int = Query(default=1, ge=1),
+    page: int = Query(default=1, ge=1, le=MAX_PAGE),
     page_size: int = Query(default=25, ge=1, le=100),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),

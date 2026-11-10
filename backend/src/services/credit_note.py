@@ -5,6 +5,7 @@ from fastapi import HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from src.core.document_limits import QUANTITY_STORAGE_CUTOFF
 from src.models.buyer import Buyer as Ledger
 from src.models.credit_note import CreditNote, CreditNoteInvoiceRef, CreditNoteItem
 from src.models.inventory import Inventory
@@ -72,9 +73,15 @@ def _change_inventory_quantity(
         db.add(inventory)
         db.flush()
 
-    inventory.quantity += quantity_delta
-    if inventory.quantity < 0:
+    new_quantity = Decimal(str(inventory.quantity)) + quantity_delta
+    if new_quantity < 0:
         raise HTTPException(status_code=400, detail=f"Insufficient inventory while {context}")
+    if new_quantity >= Decimal(str(QUANTITY_STORAGE_CUTOFF)):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Stock for {inventory.product.name} can't go above 999,999,999.999.",
+        )
+    inventory.quantity = new_quantity
 
 
 def _credited_on_line(db: Session, invoice_item_id: int, company_id: int | None) -> Decimal:

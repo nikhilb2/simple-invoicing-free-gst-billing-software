@@ -1,5 +1,5 @@
 import math
-from datetime import date, timedelta
+from datetime import date, datetime, time
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -8,6 +8,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
 from src.api.deps import get_active_company, get_current_user
+from src.api.pagination import MAX_PAGE
 from src.core.analytics import distinct_id_for, track
 from src.db.session import get_db
 from src.models.company import CompanyProfile
@@ -59,7 +60,7 @@ def create_credit_note_endpoint(
 @router.get("", response_model=PaginatedCreditNoteOut, include_in_schema=False)
 @router.get("/", response_model=PaginatedCreditNoteOut)
 def list_credit_notes(
-    page: int = Query(1, ge=1),
+    page: int = Query(1, ge=1, le=MAX_PAGE),
     page_size: int = Query(20, ge=1, le=500),
     ledger_id: Optional[int] = Query(None),
     invoice_id: Optional[int] = Query(None),
@@ -118,8 +119,8 @@ def list_credit_notes(
 
     if date_to:
         # Whole-day semantics: credit_note_date is a timestamp, so the end of the
-        # selected day is midnight of the day after date_to, as email_logs does.
-        q = q.filter(CreditNote.credit_note_date < date_to + timedelta(days=1))
+        # selected day is its last microsecond. Adding a day would overflow at date.max.
+        q = q.filter(CreditNote.credit_note_date <= datetime.combine(date_to, time.max))
 
     total = q.count()
     total_pages = math.ceil(total / page_size) if total else 1

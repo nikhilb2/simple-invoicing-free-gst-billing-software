@@ -16,6 +16,7 @@ import weasyprint
 from src.services.pdf_render import safe_url_fetcher
 
 from src.api.deps import get_active_company, get_current_user, require_company_role
+from src.api.pagination import MAX_PAGE
 from src.core.analytics import distinct_id_for, track
 from src.db.session import get_db
 from src.models.buyer import Buyer as Ledger
@@ -727,7 +728,7 @@ _LEDGER_SORT_ORDERS = {
 @router.get("", response_model=PaginatedLedgerOut, include_in_schema=False)
 @router.get("/", response_model=PaginatedLedgerOut)
 def list_ledgers(
-    page: int = Query(1, ge=1),
+    page: int = Query(1, ge=1, le=MAX_PAGE),
     page_size: int = Query(20, ge=1, le=500),
     search: str = Query(""),
     sort: str = Query("name", pattern="^(name|-name|newest|balance_desc)$"),
@@ -941,7 +942,7 @@ def get_tax_ledger(
     from_date: date | None = Query(None),
     to_date: date | None = Query(None),
     voucher_type: str | None = Query(None, pattern="^(sales|purchase)$"),
-    gst_rate: float | None = Query(None, ge=0),
+    gst_rate: float | None = Query(None, ge=0, allow_inf_nan=False),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
     active_company: CompanyProfile = Depends(get_active_company),
@@ -1594,7 +1595,7 @@ def download_tax_ledger_csv(
     from_date: date = Query(...),
     to_date: date = Query(...),
     voucher_type: str | None = Query(None, pattern="^(sales|purchase)$"),
-    gst_rate: float | None = Query(None, ge=0),
+    gst_rate: float | None = Query(None, ge=0, allow_inf_nan=False),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
     active_company: CompanyProfile = Depends(get_active_company),
@@ -1644,7 +1645,7 @@ def download_tax_ledger_pdf(
     from_date: date = Query(...),
     to_date: date = Query(...),
     voucher_type: str | None = Query(None, pattern="^(sales|purchase)$"),
-    gst_rate: float | None = Query(None, ge=0),
+    gst_rate: float | None = Query(None, ge=0, allow_inf_nan=False),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
     active_company: CompanyProfile = Depends(get_active_company),

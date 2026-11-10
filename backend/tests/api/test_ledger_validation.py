@@ -61,3 +61,8 @@ def test_create_strips_required_text(client):
     assert created["name"] == "Trimmed Ledger"
     assert created["address"] == "42 Trim Street"
     assert created["phone_number"] == "+91 9111111111"
+
+
+def test_tax_ledger_rejects_an_infinite_gst_rate(client):
+    response = client.get("/api/ledgers/tax-ledger/", params={"gst_rate": "inf"})
+    assert response.status_code == 422

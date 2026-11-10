@@ -32,6 +32,7 @@ from src.schemas.invoice import (
     PaginatedInvoiceOut,
 )
 from src.api.deps import get_active_company, get_current_user
+from src.api.pagination import MAX_PAGE
 from src.core.analytics import distinct_id_for, track
 from src.services.financial_year import get_active_fy, get_fy_for_date
 from src.services.gst_tax_service import india_today
@@ -288,7 +289,7 @@ def _apply_invoice_filters(
 @router.get("", response_model=PaginatedInvoiceOut, include_in_schema=False)
 @router.get("/", response_model=PaginatedInvoiceOut)
 def list_invoices(
-    page: int = Query(1, ge=1),
+    page: int = Query(1, ge=1, le=MAX_PAGE),
     page_size: int = Query(20, ge=1, le=500),
     search: str = Query(""),
     show_cancelled: bool = Query(False),
@@ -617,7 +618,7 @@ def _sort_due_invoices(invoices: list[Invoice], payment_summaries, sort: _Invoic
 
 @router.get("/dues", response_model=PaginatedInvoiceOut)
 def list_due_invoices(
-    page: int = Query(1, ge=1),
+    page: int = Query(1, ge=1, le=MAX_PAGE),
     page_size: int = Query(20, ge=1, le=500),
     search: str = Query(""),
     ledger_id: int | None = Query(None),

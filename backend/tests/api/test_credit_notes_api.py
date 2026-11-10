@@ -734,3 +734,15 @@ def test_editing_an_invoice_after_its_credit_note_is_cancelled_works(client, db_
         "items": [{"product_id": product_id, "quantity": 10, "unit_price": 100}],
     })
     assert response.status_code == 200, response.text
+
+
+def test_date_to_at_the_end_of_the_supported_range_does_not_overflow(client, seeded):
+    """date(9999, 12, 31) + one day overflows Python's date range; the final
+    day must still be listable instead of returning a 500."""
+    result = _list(client, date_to="9999-12-31")
+    assert _numbers(result) == ["CN-2025-099", "CN-2026-001", "DN-2026-001"]
+
+
+def test_page_beyond_the_supported_range_returns_422(client, seeded):
+    response = client.get("/api/credit-notes/", params={"page": 9223372036854775807})
+    assert response.status_code == 422

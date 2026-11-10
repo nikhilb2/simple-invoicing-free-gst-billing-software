@@ -1,5 +1,5 @@
 import math
-from datetime import date, timedelta
+from datetime import date, datetime, time
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from src.api.deps import get_active_company, require_company_role
+from src.api.pagination import MAX_PAGE
 from src.db.session import get_db
 from src.models.company import CompanyProfile
 from src.models.email_log import EmailLog
@@ -42,7 +43,7 @@ class PaginatedEmailLogs(BaseModel):
 
 @router.get("/", response_model=PaginatedEmailLogs)
 def list_email_logs(
-    page: int = Query(default=1, ge=1),
+    page: int = Query(default=1, ge=1, le=MAX_PAGE),
     page_size: int = Query(default=20, ge=1, le=100),
     email_type: Optional[str] = Query(default=None),
     status: Optional[str] = Query(default=None),
@@ -69,7 +70,7 @@ def list_email_logs(
         query = query.filter(EmailLog.sent_at >= from_date)
 
     if to_date:
-        query = query.filter(EmailLog.sent_at < to_date + timedelta(days=1))
+        query = query.filter(EmailLog.sent_at <= datetime.combine(to_date, time.max))
 
     total = query.count()
     total_pages = max(1, math.ceil(total / page_size))

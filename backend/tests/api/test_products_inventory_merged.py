@@ -380,6 +380,52 @@ class TestCSVImport:
         assert data["created"] == 0  # Rows with errors are skipped
         assert len(data["errors"]) == 2
 
+    def test_import_csv_extra_cells_errors_and_keeps_other_rows(self, client):
+        """A row with more cells than the header errors, instead of failing
+        the whole import with a 500, and the good rows still import (Issue #749)."""
+        csv_content = (
+            "Item Name,Item Code\n"
+            "Widget,W-1,oops\n"
+            "Gadget,G-1\n"
+        )
+
+        res = client.post(
+            "/api/products/import-csv",
+            files={"file": ("test.csv", csv_content.encode("utf-8"), "text/csv")},
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert data["created"] == 1
+        assert data["updated"] == 0
+        assert data["errors"] == [
+            {
+                "row": 2,
+                "message": "This row has more cells than the header row. Check for an unquoted comma, for example in Description.",
+            }
+        ]
+
+        items = client.get("/api/products/with-inventory?search=Gadget").json()["items"]
+        assert len(items) == 1
+        assert items[0]["sku"] == "G-1"
+        assert client.get("/api/products/?search=Widget").json()["items"] == []
+
+    def test_import_csv_fewer_cells_still_work(self, client):
+        """Fewer cells than the header still import with missing cells blank
+        (Issue #749)."""
+        csv_content = (
+            "Item Name,Item Code,Selling Price\n"
+            "Only Name,IMP040\n"
+        )
+
+        res = client.post(
+            "/api/products/import-csv",
+            files={"file": ("test.csv", csv_content.encode("utf-8"), "text/csv")},
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert data["created"] == 1
+        assert data["errors"] == []
+
     def test_import_csv_empty_file(self, client):
         res = client.post(
             "/api/products/import-csv",
