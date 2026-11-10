@@ -7,7 +7,7 @@ import logging
 from decimal import Decimal
 from typing import Set
 from sqlalchemy.orm import Session
-from sqlalchemy import and_
+from sqlalchemy import and_, or_
 
 from src.core.document_limits import QUANTITY_STORAGE_CUTOFF
 from src.models.bom import BillOfMaterial
@@ -182,15 +182,27 @@ def get_bom_requirements(
     Deliberately does NOT recurse into producable sub-components — if a component
     is itself producable the user must produce it as a separate step first. This
     prevents double-deduction (consuming both B and B's raw-materials in one hit).
+
+    Components that do not keep stock (``maintain_inventory`` off, e.g. labour or
+    packing charges) are left out, so production neither checks nor deducts them,
+    the same way invoices skip them.
     """
     requirements: dict[int, Decimal] = {}
 
-    bom_entries = db.query(BillOfMaterial).filter(
-        and_(
-            BillOfMaterial.company_id == company_id,
-            BillOfMaterial.product_id == product_id,
+    bom_entries = (
+        db.query(BillOfMaterial)
+        # Outer join: a BOM row whose component product is gone must still be
+        # required, so the availability check reports it instead of skipping it.
+        .outerjoin(Product, Product.id == BillOfMaterial.component_product_id)
+        .filter(
+            and_(
+                BillOfMaterial.company_id == company_id,
+                BillOfMaterial.product_id == product_id,
+                or_(Product.id.is_(None), Product.maintain_inventory.is_(True)),
+            )
         )
-    ).all()
+        .all()
+    )
 
     for bom in bom_entries:
         component_id = bom.component_product_id

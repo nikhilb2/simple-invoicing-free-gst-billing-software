@@ -198,3 +198,68 @@ def test_bom_update_rejects_overflowing_quantity(client, db_session, quantity):
         json={"quantity_required": quantity},
     )
     assert response.status_code == 422, response.text
+
+
+def test_produce_skips_components_that_do_not_keep_stock(client, db_session):
+    """A BOM component with maintain_inventory off (labour, packing, a service)
+    is neither checked nor deducted, the same way invoices skip it (issue #788)."""
+    company = CompanyProfile(name="BOM Non-stock Co", address="123 Test St")
+    db_session.add(company)
+    db_session.flush()
+
+    finished = Product(
+        company_id=company.id,
+        sku="BOMNSFIN01",
+        name="Finished",
+        price=Decimal("10"),
+        is_producable=True,
+    )
+    widget = Product(
+        company_id=company.id,
+        sku="BOMNSWID01",
+        name="Widget",
+        price=Decimal("2"),
+    )
+    labour = Product(
+        company_id=company.id,
+        sku="BOMNSLAB01",
+        name="Labour",
+        price=Decimal("5"),
+        maintain_inventory=False,
+    )
+    db_session.add_all([finished, widget, labour])
+    db_session.flush()
+    db_session.add_all([
+        BillOfMaterial(
+            company_id=company.id,
+            product_id=finished.id,
+            component_product_id=widget.id,
+            quantity_required=Decimal("2"),
+        ),
+        BillOfMaterial(
+            company_id=company.id,
+            product_id=finished.id,
+            component_product_id=labour.id,
+            quantity_required=Decimal("1"),
+        ),
+        Inventory(company_id=company.id, product_id=widget.id, quantity=Decimal("100")),
+    ])
+    db_session.commit()
+
+    response = client.post(
+        "/api/inventory/produce",
+        json={"product_id": finished.id, "quantity": 1},
+    )
+    assert response.status_code == 200, response.text
+
+    db_session.expire_all()
+
+    def stock(product_id):
+        return db_session.query(Inventory).filter(
+            Inventory.company_id == company.id,
+            Inventory.product_id == product_id,
+        ).first()
+
+    assert stock(widget.id).quantity == Decimal("98")
+    assert stock(finished.id).quantity == Decimal("1")
+    assert stock(labour.id) is None
