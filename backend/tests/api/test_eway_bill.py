@@ -560,6 +560,14 @@ def test_generate_writes_a_valid_unit_code(client, invoice):
     assert resp.json()["billLists"][0]["itemList"][0]["qtyUnit"] == "NOS"
 
 
+def test_generate_maps_a_litres_product_to_ltr_like_gstr1(client, db, invoice, product):
+    product.unit = "Litres"
+    db.flush()
+    resp = client.post(f"/api/invoices/{invoice.id}/eway-bill/generate", json=_valid_form())
+    assert resp.status_code == 200
+    assert resp.json()["billLists"][0]["itemList"][0]["qtyUnit"] == "LTR"
+
+
 # ── Default transporter ──
 
 def test_generate_saving_over_an_existing_transporter_clears_the_old_default(client, db, company, invoice):

@@ -639,10 +639,15 @@ def test_default_thresholds_follow_rule_138():
     ("pcs", "PCS"),
     ("Kg", "KGS"),
     ("Litre", "LTR"),
+    ("Litres", "LTR"),
+    ("Bag", "BAG"),
     ("Dozen", "DOZ"),
-    ("Hours", "NOS"),  # unmapped falls back
+    ("Hours", "OTH"),  # unmapped falls back to OTH, not NOS
+    ("Ounce", "OTH"),  # GST has no ounce code
+    ("BAG", "BAG"),  # already a NIC code, and not in the GSTR-1 mapping
+    ("QTL", "QTL"),  # already a NIC code, and not in the GSTR-1 mapping
     ("CTN", "CTN"),  # already a NIC code, and not in the GSTR-1 mapping
-    (None, "NOS"),
+    (None, "OTH"),
 ])
 def test_generate_maps_units_to_nic_codes(db_session, invoice, invoice_items, company, product_with_hsn, unit, expected):
     product_with_hsn.unit = unit

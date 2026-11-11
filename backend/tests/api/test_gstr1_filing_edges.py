@@ -140,6 +140,15 @@ def test_a_sale_fully_returned_in_its_period_leaves_no_rows(client, seller):
     assert _by_field(_validate(client), "B2CS") == []
 
 
+def test_a_litres_product_files_ltr_in_the_hsn_summary(client, seller):
+    oil = _create_product(client, "UQC-1", "Oil", hsn_sac="1508", unit="Litres")
+    _sale(client, _create_ledger(client, "Walk-in"), oil)
+
+    data = _export(client)
+
+    assert [(row["hsn_sc"], row["uqc"]) for row in data["hsn"]["hsn_b2c"]] == [("1508", "LTR")]
+
+
 def test_a_period_with_only_cancelling_rows_drops_the_sections(client, seller):
     widget = _create_product(client, "S-1", "Widget", hsn_sac="8471")
     _note(client, [_sale(client, _create_ledger(client, "Walk-in"), widget)])
