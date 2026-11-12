@@ -39,6 +39,11 @@ def get_dashboard_metrics(
     company_id = active_company.id
     today = date.today()
     month_start = today.replace(day=1)
+    next_month_start = (
+        date(today.year + 1, 1, 1)
+        if today.month == 12
+        else date(today.year, today.month + 1, 1)
+    )
 
     # --- Catalog ---------------------------------------------------------
     catalog_row = (
@@ -104,7 +109,12 @@ def get_dashboard_metrics(
             func.coalesce(
                 func.sum(
                     case(
-                        ((Invoice.voucher_type == "sales") & (Invoice.invoice_date >= month_start), Invoice.total_amount),
+                        (
+                            (Invoice.voucher_type == "sales")
+                            & (Invoice.invoice_date >= month_start)
+                            & (Invoice.invoice_date < next_month_start),
+                            Invoice.total_amount,
+                        ),
                         else_=0,
                     )
                 ),
@@ -171,7 +181,12 @@ def get_dashboard_metrics(
             func.coalesce(
                 func.sum(
                     case(
-                        ((Payment.voucher_type == "receipt") & (Payment.date >= month_start), Payment.amount),
+                        (
+                            (Payment.voucher_type == "receipt")
+                            & (Payment.date >= month_start)
+                            & (Payment.date < next_month_start),
+                            Payment.amount,
+                        ),
                         else_=0,
                     )
                 ),

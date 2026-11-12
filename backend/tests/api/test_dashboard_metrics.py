@@ -1,7 +1,10 @@
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 
+import pytest
+
 from src.models.invoice import Invoice, InvoiceItem
+from src.models.payment import Payment
 from src.models.product import Product
 
 
@@ -144,3 +147,49 @@ def test_dashboard_top_products_ranks_net_revenue_before_taking_five(client, db_
         expected.append((product, revenue))
 
     assert [(row["product_id"], row["revenue"]) for row in _top_products(client)] == expected
+
+
+@pytest.mark.parametrize("today,next_month_start", [
+    (date(2026, 11, 12), datetime(2026, 12, 1)),
+    (date(2026, 12, 12), datetime(2027, 1, 1)),
+    (date(2028, 2, 12), datetime(2028, 3, 1)),
+])
+def test_dashboard_current_month_stops_at_next_month(
+    client, db_session, monkeypatch, today, next_month_start
+):
+    class FixedDate(date):
+        @classmethod
+        def today(cls):
+            return today
+
+    monkeypatch.setattr("src.api.routes.dashboard.date", FixedDate)
+    product = _create_product(client, "DASH-MONTH", "Monthly Widget", 100)
+    company_id = db_session.get(Product, product).company_id
+    month_start = datetime(today.year, today.month, 1)
+
+    for timestamp, amount in [
+        (month_start - timedelta(microseconds=1), 10),
+        (month_start, 20),
+        (next_month_start - timedelta(microseconds=1), 30),
+        (next_month_start, 40),
+        (next_month_start + timedelta(days=3), 50),
+    ]:
+        db_session.add(Invoice(
+            company_id=company_id, created_by=1, voucher_type="sales",
+            invoice_date=timestamp, total_amount=amount,
+        ))
+        db_session.add(Payment(
+            company_id=company_id, created_by=1, voucher_type="receipt",
+            date=timestamp, amount=amount / 2,
+        ))
+    db_session.commit()
+
+    response = client.get("/api/dashboard/metrics")
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["sales"]["this_month_sales"] == 50
+    assert data["payments"]["this_month_received"] == 25
+    assert data["charts"]["monthly"][-1]["sales"] == 50
+    assert data["charts"]["monthly"][-1]["receipts"] == 25
+    assert data["sales"]["total_sales"] == 150
+    assert data["payments"]["received_total"] == 75
