@@ -5,7 +5,7 @@ from typing import List, Literal
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
 from src.core.document_limits import MONEY_LIMIT, QUANTITY_LIMIT
-from src.schemas.invoice import InvoiceCreate, _validate_discount_value
+from src.schemas.invoice import InvoiceCreate, _check_tcs_amount, _check_tcs_rate, _validate_discount_value
 from src.schemas.ledger_address import ShippingAddressInline
 
 DocumentType = Literal["quotation", "proforma"]
@@ -31,8 +31,7 @@ def _check_places(value: float | None, places: int) -> float | None:
 
 
 class QuotationItemCreate(BaseModel):
-    """A line that is priced but not fulfilled. Deliberately has no serial_numbers
-    and no gst_rate: serials are picked at conversion, and tax follows the product."""
+    """A priced line. No serial_numbers or gst_rate: serials are picked at conversion, tax follows the product."""
 
     product_id: int
     quantity: float = Field(lt=QUANTITY_LIMIT, allow_inf_nan=False)
@@ -71,12 +70,28 @@ class QuotationFields(BaseModel):
     shipping_address_same_as_billing: bool = True
     shipping_address_id: int | None = None
     new_shipping_address: ShippingAddressInline | None = None
+    # TCS (#769). The section must be a TCS row in force on the document date. A rate
+    # left out is suggested for the buyer; an amount left out is base x rate. Typed
+    # values always win: the app suggests, the user decides.
+    tcs_section_id: int | None = None
+    tcs_rate: float | None = Field(default=None, allow_inf_nan=False)
+    tcs_amount: float | None = Field(default=None, allow_inf_nan=False)
     items: List[QuotationItemCreate]
 
     @field_validator("discount_value", mode="after")
     @classmethod
     def _check_discount_value(cls, value: float | None, info: ValidationInfo) -> float | None:
         return _check_places(_validate_discount_value(value, info), 2)
+
+    @field_validator("tcs_rate")
+    @classmethod
+    def _tcs_rate_in_range(cls, value: float | None) -> float | None:
+        return _check_tcs_rate(value)
+
+    @field_validator("tcs_amount")
+    @classmethod
+    def _tcs_amount_in_range(cls, value: float | None) -> float | None:
+        return _check_tcs_amount(value)
 
     @model_validator(mode="after")
     def _check_validity(self):
@@ -166,6 +181,11 @@ class QuotationOut(BaseModel):
     sgst_amount: float
     igst_amount: float
     total_amount: float
+    tcs_section_id: int | None = None
+    tcs_section_ref: str | None = None
+    tcs_rate: float | None = None
+    tcs_base_amount: float = 0
+    tcs_amount: float = 0
     status_note: str | None = None
     accepted_at: datetime | None = None
     declined_at: datetime | None = None

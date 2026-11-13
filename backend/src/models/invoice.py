@@ -32,6 +32,8 @@ class Invoice(Base):
     ledger_address = Column("buyer_address", String, nullable=True)
     ledger_gst = Column("buyer_gst", String, nullable=True)
     ledger_phone = Column("buyer_phone", String, nullable=True)
+    # The buyer's PAN when TCS was applied; later ledger edits leave it alone.
+    ledger_pan = Column("buyer_pan", String(10), nullable=True)
     company_name = Column(String, nullable=True)
     company_address = Column(String, nullable=True)
     company_gst = Column(String, nullable=True)
@@ -67,6 +69,13 @@ class Invoice(Base):
     round_off_amount = Column(Numeric(5, 2), nullable=False, default=0)
     discount_type = Column(String(20), nullable=True)
     discount_value = Column(Numeric(10, 2), nullable=True)
+    # TCS collected on the sale (#769). Copies of the section and rate as they stood
+    # when the document was saved; never part of taxable_amount or the GST columns.
+    tcs_section_id = Column(Integer, ForeignKey("tax_withholding_sections.id"), nullable=True)
+    tcs_section_ref = Column(String(64), nullable=True)
+    tcs_rate = Column(Numeric(7, 3), nullable=True)
+    tcs_base_amount = Column(Numeric(10, 2), nullable=False, default=0, server_default=text("0"))
+    tcs_amount = Column(Numeric(10, 2), nullable=False, default=0, server_default=text("0"))
     financial_year_id = Column(Integer, ForeignKey("financial_years.id"), nullable=True)
     shipping_address = Column(Text, nullable=True)
     shipping_address_label = Column(String(255), nullable=True)

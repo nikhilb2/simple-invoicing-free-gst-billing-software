@@ -32,6 +32,7 @@ import TaxLedgerPage from './pages/TaxLedgerPage';
 import Gstr1FilingPage from './pages/Gstr1FilingPage';
 import Gstr3bWorksheetPage from './pages/Gstr3bWorksheetPage';
 import TdsReportPage from './pages/TdsReportPage';
+import TcsCollectedPage from './pages/TcsCollectedPage';
 import CashBankPage from './pages/CashBankPage';
 import CashBankAccountsPage from './pages/CashBankAccountsPage';
 import CompanyPage from './pages/CompanyPage';
@@ -249,6 +250,7 @@ function AppRoutes() {
       <Route path="/analytics/products/:productId" element={<Protected><CompanyRequired><Layout><Suspense fallback={<div className="empty-state">Loading analytics…</div>}><ProductPerformancePage /></Suspense></Layout></CompanyRequired></Protected>} />
       <Route path="/day-book" element={<Protected><CompanyRequired><Layout><DayBookPage /></Layout></CompanyRequired></Protected>} />
       <Route path="/tax-ledger" element={<Protected><CompanyRequired><Layout><TaxLedgerPage /></Layout></CompanyRequired></Protected>} />
+      <Route path="/reports/tcs-collected" element={<Protected><CompanyRequired><Layout><TcsCollectedPage /></Layout></CompanyRequired></Protected>} />
       <Route path="/gstr1" element={<Protected><CompanyRequired><Layout><Gstr1FilingPage /></Layout></CompanyRequired></Protected>} />
       <Route path="/gstr3b" element={<Protected><CompanyRequired><Layout><Gstr3bWorksheetPage /></Layout></CompanyRequired></Protected>} />
       <Route path="/tds" element={<Protected><CompanyRequired><Layout><TdsReportPage /></Layout></CompanyRequired></Protected>} />

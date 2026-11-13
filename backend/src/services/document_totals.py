@@ -7,6 +7,9 @@ through ``InvoiceProcessor.calculate_totals``.
 
 :mod:`src.services.invoice_discounts` inverts the discount and round-off arithmetic
 below for reporting, so any change here must be mirrored there.
+
+``total_amount = taxable + tax - discount + tcs + round-off``. TCS (#769) is added after
+the invoice discount and before the round-off, and never touches the GST figures.
 """
 
 from decimal import Decimal, ROUND_HALF_UP
@@ -16,6 +19,7 @@ from fastapi import HTTPException
 from src.core.document_limits import MONEY_LIMIT
 from src.models.company import CompanyProfile
 from src.services.gst_tax_service import money as _money
+from src.services.tcs import TcsCharge, tcs_amount_for, tcs_base
 
 
 def require_money_fits(subject: str, *amounts: Decimal) -> None:
@@ -50,17 +54,44 @@ def snapshot_company_fields(document, company: CompanyProfile | None) -> None:
     document.company_terms_text = "\n".join(f"{t.serial_number}. {t.content}" for t in terms) if terms else None
 
 
+def _apply_tcs(document, net_total: Decimal, gross_total: Decimal, tcs: TcsCharge | None) -> Decimal:
+    """Store the document's TCS copy and return the amount to add to its total."""
+    if tcs is None:
+        if hasattr(document, "tcs_amount"):
+            document.tcs_section_id = None
+            document.tcs_section_ref = None
+            document.tcs_rate = None
+            document.tcs_base_amount = 0
+            document.tcs_amount = 0
+        return Decimal("0")
+
+    taxable_total = Decimal(str(document.taxable_amount or 0))
+    base = tcs_base(net_total, gross_total, taxable_total, tcs.base_kind)
+    amount = tcs.amount if tcs.amount is not None else tcs_amount_for(base, tcs.rate)
+    document.tcs_section_id = tcs.section_id
+    document.tcs_section_ref = tcs.section_ref
+    document.tcs_rate = float(tcs.rate)
+    document.tcs_base_amount = float(base)
+    document.tcs_amount = float(amount)
+    return amount
+
+
 def apply_discount_and_round_off(
     document,
     raw_total: Decimal,
     discount_type: str | None,
     discount_value: float | None,
+    *,
+    tcs: TcsCharge | None = None,
 ) -> None:
-    """Take a document-level discount off ``raw_total``, then round it if asked.
+    """Take a document-level discount off ``raw_total``, add TCS, then round it if asked.
 
-    ``raw_total`` is taxable plus tax. Reads ``document.apply_round_off`` and sets
-    the discount fields, ``round_off_amount`` and ``total_amount``.
+    ``raw_total`` is taxable plus tax. Reads ``document.apply_round_off`` and
+    ``document.taxable_amount``, and sets the discount fields, the TCS fields,
+    ``round_off_amount`` and ``total_amount``. With ``tcs`` None the TCS fields are
+    cleared and the total is what it was before TCS existed.
     """
+    gross_total = raw_total
     document.discount_type = discount_type
     document.discount_value = discount_value
     if discount_type and discount_value is not None and discount_value > 0:
@@ -70,6 +101,10 @@ def apply_discount_and_round_off(
             discount_amount = _money(Decimal(str(discount_value)))
         discount_amount = min(discount_amount, raw_total)
         raw_total = _money(raw_total - discount_amount)
+
+    tcs_amount = _apply_tcs(document, raw_total, gross_total, tcs)
+    if tcs_amount:
+        raw_total = _money(raw_total + tcs_amount)
 
     if document.apply_round_off:
         rounded_total = raw_total.quantize(Decimal("1"), rounding=ROUND_HALF_UP)

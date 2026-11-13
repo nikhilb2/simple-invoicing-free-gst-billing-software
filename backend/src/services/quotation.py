@@ -61,6 +61,7 @@ from src.services.gst_tax_service import (
 from src.services.invoice_creation import create_invoice_record
 from src.services.invoice_processor import InvoiceProcessor
 from src.services.series import generate_next_number
+from src.services.tcs import copied_tcs_fields, resolve_tcs
 
 DEFAULT_VALIDITY_DAYS = 30
 
@@ -297,17 +298,31 @@ def _apply_payload(
     ))
     quotation.taxable_amount = float(taxable_total)
     tax_total = assign_invoice_tax_totals(quotation, items, interstate_supply=interstate)
+    # Quotations quote TCS like the invoice they become, so the buyer sees the amount
+    # payable, and conversion copies it across (#769).
+    tcs = resolve_tcs(
+        db,
+        tcs_section_id=payload.tcs_section_id,
+        tcs_rate=payload.tcs_rate,
+        tcs_amount=payload.tcs_amount,
+        company=company,
+        ledger=ledger,
+        document_date=quotation.quotation_date or india_today(),
+        already_has_tcs=quotation.tcs_section_id is not None,
+    )
     apply_discount_and_round_off(
         quotation,
         _money(taxable_total + tax_total),
         payload.discount_type,
         payload.discount_value,
+        tcs=tcs,
     )
     require_money_fits(
         "The total of this document",
         taxable_total,
         tax_total,
         Decimal(str(quotation.total_amount)),
+        Decimal(str(quotation.tcs_amount or 0)),
     )
 
 
@@ -433,6 +448,7 @@ def duplicate_quotation(db: Session, original: Quotation, *, created_by: int, co
         "shipping_address_same_as_billing": shipping_id is None and new_address is None,
         "shipping_address_id": shipping_id,
         "new_shipping_address": new_address,
+        **copied_tcs_fields(db, original, today, company),
         "items": [
             QuotationItemCreate(
                 product_id=item.product_id,
@@ -726,6 +742,7 @@ def build_conversion_draft(db: Session, quotation: Quotation, *, company: Compan
         discount_value=float(quotation.discount_value) if quotation.discount_value is not None else None,
         shipping_address_same_as_billing=shipping_id is None,
         shipping_address_id=shipping_id,
+        **copied_tcs_fields(db, quotation, today, company),
         items=[
             InvoiceItemCreate(
                 product_id=item.product_id,

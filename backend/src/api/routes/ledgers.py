@@ -117,6 +117,7 @@ def _serialize_ledger(db: Session, ledger: Ledger, company_id: int | None = None
     gst=ledger.gst,
     pan=ledger.pan,
     party_type=ledger.party_type,
+    tcs_declaration_received=bool(ledger.tcs_declaration_received),
     opening_balance=float(opening_balance_payment.amount) if opening_balance_payment else None,
     phone_number=ledger.phone_number,
     email=ledger.email,
@@ -281,11 +282,14 @@ def _ledger_balances(
   for ledger_id, payment_tds, receipt_tds in _tds_totals_by_ledger(db, ledger_ids, company_id=company_id):
     balances[ledger_id] = balances.get(ledger_id, 0.0) + float(payment_tds) - float(receipt_tds)
 
+  # A sales note's TCS share (#769) sits outside line_total but reverses TCS the
+  # invoice charged, so it credits the customer too; purchase notes carry none.
+  credit_note_amount = CreditNoteItem.line_total + func.coalesce(CreditNoteItem.tcs_amount, 0)
   credit_note_rows = (
     db.query(
       CreditNote.ledger_id,
-      func.coalesce(func.sum(case((Invoice.voucher_type == "purchase", CreditNoteItem.line_total), else_=0)), 0),
-      func.coalesce(func.sum(case((Invoice.voucher_type != "purchase", CreditNoteItem.line_total), else_=0)), 0),
+      func.coalesce(func.sum(case((Invoice.voucher_type == "purchase", credit_note_amount), else_=0)), 0),
+      func.coalesce(func.sum(case((Invoice.voucher_type != "purchase", credit_note_amount), else_=0)), 0),
     )
     .join(CreditNoteItem, CreditNoteItem.credit_note_id == CreditNote.id)
     .join(Invoice, Invoice.id == CreditNoteItem.invoice_id)
@@ -673,6 +677,7 @@ def create_ledger(
     gst=gst,
     pan=payload.pan,
     party_type=payload.party_type,
+    tcs_declaration_received=bool(payload.tcs_declaration_received),
     phone_number=payload.phone_number.strip(),
     email=payload.email.strip() if payload.email else None,
     website=payload.website.strip() if payload.website else None,
@@ -1244,6 +1249,8 @@ def update_ledger(
     ledger.gst = gst
     ledger.pan = payload.pan
     ledger.party_type = payload.party_type
+    if payload.tcs_declaration_received is not None:
+        ledger.tcs_declaration_received = payload.tcs_declaration_received
     ledger.phone_number = payload.phone_number.strip()
     ledger.email = payload.email.strip() if payload.email else None
     ledger.website = payload.website.strip() if payload.website else None

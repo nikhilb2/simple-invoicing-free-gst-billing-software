@@ -128,15 +128,17 @@ def _item_discount_totals(db: Session, invoice_ids: list[int], tax_inclusive_by_
 def invoice_discount_amount(invoice: Invoice) -> Decimal:
     """Recover the invoice-level discount by inverting the processor's totals.
 
-    ``_apply_totals`` ends with ``total_amount = raw_total + round_off`` in both
-    the round-off and non-round-off branches (``round_off`` being 0 in the
-    latter), where ``raw_total`` is already net of the invoice discount and
-    ``raw_total`` before the discount is ``taxable_amount + total_tax_amount``.
-    Rearranged, the discount falls straight out.
+    ``_apply_totals`` ends with ``total_amount = raw_total + tcs + round_off`` in
+    both the round-off and non-round-off branches (``round_off`` being 0 in the
+    latter, ``tcs`` 0 on an invoice without TCS), where ``raw_total`` is already
+    net of the invoice discount and ``raw_total`` before the discount is
+    ``taxable_amount + total_tax_amount``. Rearranged, the discount falls
+    straight out.
     """
     discount = (
         _dec(invoice.taxable_amount)
         + _dec(invoice.total_tax_amount)
+        + _dec(getattr(invoice, "tcs_amount", 0))
         + _dec(invoice.round_off_amount)
         - _dec(invoice.total_amount)
     )

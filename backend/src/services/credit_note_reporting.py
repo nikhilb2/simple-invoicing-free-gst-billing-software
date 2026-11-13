@@ -84,7 +84,9 @@ def get_credit_note_ledger_summary(
             entry_order.append(credit_note.id)
 
         bucket = entry_buckets[credit_note.id]
-        amount = float(item.line_total or 0)
+        # The line's TCS share (#769) is credited to the party with it. getattr for
+        # the SimpleNamespaces the tests build.
+        amount = float(item.line_total or 0) + float(getattr(item, "tcs_amount", 0) or 0)
         invoice_label = invoice.invoice_number or f"#{invoice.id}"
 
         if invoice_label not in bucket["seen_invoice_numbers"]:

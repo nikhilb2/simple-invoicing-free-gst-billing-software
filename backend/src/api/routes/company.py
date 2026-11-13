@@ -84,7 +84,7 @@ def _create_company_profile(db: Session, payload: CompanyProfileUpdate) -> Compa
         gst=payload.gst.strip().upper(),
         pan=payload.pan,
         tan=payload.tan,
-        enable_purchase_tds=_checked_purchase_tds(payload.enable_purchase_tds, payload.tan),
+        enable_purchase_tds=_checked_purchase_tds(bool(payload.enable_purchase_tds), payload.tan),
         phone_number=payload.phone_number.strip(),
         currency_code=payload.currency_code.strip().upper() if payload.currency_code else "INR",
         email=payload.email.strip() if payload.email else None,
@@ -101,6 +101,7 @@ def _create_company_profile(db: Session, payload: CompanyProfileUpdate) -> Compa
         eway_always_show_button=payload.eway_always_show_button,
         show_pay_qr_on_invoice=payload.show_pay_qr_on_invoice,
         show_upi_pay_button=payload.show_upi_pay_button,
+        enable_tcs=bool(payload.enable_tcs),
     )
     db.add(profile)
     db.flush()
@@ -208,6 +209,7 @@ def _company_to_out(company: CompanyProfile) -> CompanyProfileOut:
         eway_always_show_button=company.eway_always_show_button,
         show_pay_qr_on_invoice=company.show_pay_qr_on_invoice,
         show_upi_pay_button=company.show_upi_pay_button,
+        enable_tcs=bool(company.enable_tcs),
         terms=[
             CompanyTermOut(
                 id=t.id,
@@ -396,9 +398,9 @@ def upsert_company_profile(
         profile.pan = payload.pan
     if "tan" in payload.model_fields_set:
         profile.tan = payload.tan
-    if "enable_purchase_tds" in payload.model_fields_set or profile.enable_purchase_tds:
+    if payload.enable_purchase_tds is not None or profile.enable_purchase_tds:
         profile.enable_purchase_tds = _checked_purchase_tds(
-            payload.enable_purchase_tds if "enable_purchase_tds" in payload.model_fields_set else profile.enable_purchase_tds,
+            payload.enable_purchase_tds if payload.enable_purchase_tds is not None else bool(profile.enable_purchase_tds),
             profile.tan,
         )
     profile.phone_number = payload.phone_number.strip()
@@ -420,6 +422,9 @@ def upsert_company_profile(
             setattr(profile, field, getattr(payload, field))
     profile.show_pay_qr_on_invoice = payload.show_pay_qr_on_invoice
     profile.show_upi_pay_button = payload.show_upi_pay_button
+    # Like the eway_* fields: a client that does not know the setting keeps it.
+    if payload.enable_tcs is not None:
+        profile.enable_tcs = payload.enable_tcs
     db.commit()
     db.refresh(profile)
 

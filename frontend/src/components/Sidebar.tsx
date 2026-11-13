@@ -25,7 +25,6 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
   const { isAdmin, canManagePlatform, userEmail, logout } = useAuth();
   const { collapsed, toggleCollapsed, openSection, toggleSection, openSectionFor } = useSidebarStore();
   const location = useLocation();
-  const entries = visiblePrimaryNav(isAdmin, canManagePlatform);
   const currentSection = sectionIdForPath(location.pathname);
 
   // Same key as the route guard, so saving the company (which invalidates it)
@@ -36,6 +35,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
     retry: false,
   });
   const setupRequired = isCompanySetupRequired(companyQuery.data, companyQuery.error, companyQuery.isLoading);
+  const entries = visiblePrimaryNav(isAdmin, canManagePlatform, companyQuery.data?.enable_tcs === true);
 
   // Escape-to-close lives in Layout, which owns the drawer state.
 

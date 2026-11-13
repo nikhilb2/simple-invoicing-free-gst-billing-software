@@ -28,7 +28,6 @@ class LedgerAddressOut(BaseModel):
 
 
 class ShippingAddressInline(BaseModel):
-    """Represents a new shipping address entered inline during invoicing.
-    It will be auto-saved to ledger_addresses and snapshotted onto the invoice."""
+    """A new shipping address: saved to the ledger and copied onto the invoice."""
     label: str
     address: str

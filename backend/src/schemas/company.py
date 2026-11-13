@@ -43,8 +43,10 @@ class CompanyProfileBase(BaseModel):
     gst: str = ""
     pan: str | None = None
     tan: str | None = None
-    # Off by default (#770). Turning it on needs a TAN.
-    enable_purchase_tds: bool = False
+    # Off by default (#770). Turning it on needs a TAN. None in a request means
+    # "leave it as it is"; responses always carry a bool. Optional rather than
+    # defaulted, which keeps it short in the MCP tool schema.
+    enable_purchase_tds: bool | None = None
     phone_number: str = ""
     currency_code: str | None = None
     email: str | None = None
@@ -63,6 +65,10 @@ class CompanyProfileBase(BaseModel):
     eway_always_show_button: bool = True
     show_pay_qr_on_invoice: bool = False
     show_upi_pay_button: bool = False
+    # Optional TCS on sales invoices (#769). Off by default.
+    # None in a request means "leave it as it is"; responses always carry a bool.
+    # Optional rather than defaulted, which keeps it short in the MCP tool schema.
+    enable_tcs: bool | None = None
 
 
 class CompanyProfileUpdate(CompanyProfileBase):
@@ -90,6 +96,8 @@ class CompanyProfileUpdate(CompanyProfileBase):
 
 class CompanyProfileOut(CompanyProfileBase):
     id: int
+    enable_purchase_tds: bool = False
+    enable_tcs: bool = False
     logo_data: str | None = None
     logo_mime_type: str | None = None
     terms: list[CompanyTermOut] = []

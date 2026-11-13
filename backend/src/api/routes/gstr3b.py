@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from src.api.deps import get_active_company, get_current_user
 from src.core.analytics import distinct_id_for, track
+from src.core.csv_safety import csv_text as _csv_text
 from src.db.session import get_db
 from src.models.company import CompanyProfile
 from src.models.user import User
@@ -59,12 +60,6 @@ def _worksheet(db: Session, period: ReturnPeriod, company: CompanyProfile) -> Gs
 def _filename(worksheet: Gstr3bWorksheetOut, extension: str) -> str:
     # "worksheet" stays in the name so a saved file cannot pass for a return.
     return f"gstr3b_worksheet_{worksheet.from_date}_{worksheet.to_date}.{extension}"
-
-
-def _csv_text(value: str | None) -> str:
-    """Stop free text from running as a formula when the file opens in a spreadsheet."""
-    text = value or ""
-    return f"'{text}" if text[:1] in ("=", "+", "-", "@") else text
 
 
 def _csv_amount(value: float | None) -> str:
