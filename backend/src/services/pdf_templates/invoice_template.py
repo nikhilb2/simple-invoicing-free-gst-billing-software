@@ -16,6 +16,7 @@ from .builders import (
     _build_pdf_tax_breakup_rows,
     _build_pdf_tax_header_cells,
     _build_pdf_tax_row_cells,
+    _build_tcs_html,
     _e,
     _fmt_currency,
     _pdf_display_quantity,
@@ -605,6 +606,7 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
       {tax_breakup_rows}
       <p>Total tax: {_fmt_currency(float(invoice.total_tax_amount or 0), currency)}</p>
       {invoice_discount_label}
+      {_build_tcs_html(invoice, currency)}
       {round_off_html}
       <p class="eyebrow" style="margin-top: 10px;">Total due</p>
       <p class="invoice-sheet__total-value">{_fmt_currency(float(invoice.total_amount), currency)}</p>

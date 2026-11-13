@@ -20,7 +20,9 @@ import { createDueDateFormState, formatInvoiceDateLabel, resolveDueDate, type Du
 import { readInvoiceComposerPrefs, updateInvoiceComposerPrefs } from '../../utils/invoiceComposerPrefs.ts';
 import { useFY } from '../../context/FYContext';
 import { useShortcuts } from '../../context/ShortcutsContext';
-import { fetchInvoiceById, fetchInvoiceComposerData, fetchLedgerAddresses } from '../../features/invoices/api';
+import { fetchInvoiceById, fetchInvoiceComposerData, fetchLedgerAddresses, fetchTcsSections } from '../../features/invoices/api';
+import { EMPTY_TCS_FORM, buildTcsPayload, findTcsSection, reconcileTcsSection, tcsFormForCopy, tcsFormFromDocument, tcsFormOnBuyerChange, tcsTotalsInput, type TcsFormState } from './tcsForm';
+import TcsFields from './components/TcsFields';
 import { createQuotation, fetchConversionDraft, fetchQuotationById, updateQuotation } from '../../features/quotations/api';
 import { quotationQueryKeys } from '../../features/quotations/queryKeys';
 import {
@@ -82,6 +84,12 @@ export default function InvoicesPage() {
   const [invoiceDiscountType, setInvoiceDiscountType] = useState<'percentage' | 'net'>(initialPrefs.invoiceDiscountType);
   const [invoiceDiscountValue, setInvoiceDiscountValue] = useState('');
   const [supplierInvoiceNumber, setSupplierInvoiceNumber] = useState('');
+  /* TCS (#769): section, rate and amount as picked. The rate and amount follow
+     the suggestion and the computed value until they are typed over. */
+  const [tcsForm, setTcsForm] = useState<TcsFormState>(EMPTY_TCS_FORM);
+  /** The document being edited, duplicated or converted already carries TCS, so the block stays even if the company setting is off. */
+  const [tcsHadSaved, setTcsHadSaved] = useState(false);
+  const [tcsNotice, setTcsNotice] = useState('');
   const [referenceNotes, setReferenceNotes] = useState('');
   const [paymentMode, setPaymentMode] = useState('cash');
   const [paymentReference, setPaymentReference] = useState('');
@@ -338,15 +346,44 @@ export default function InvoicesPage() {
       discountValue: Number(item.discount_value),
     }];
   });
+  const tcsVisible = (voucherType === 'sales' || isQuote) && Boolean(company?.enable_tcs || tcsHadSaved);
+  const { data: tcsSections } = useQuery({
+    queryKey: ['tcs-sections', invoiceDate],
+    queryFn: () => fetchTcsSections(invoiceDate),
+    enabled: tcsVisible && Boolean(invoiceDate),
+    staleTime: 5 * 60 * 1000,
+  });
+  const tcsSection = tcsVisible ? findTcsSection(tcsForm, tcsSections) : null;
+  const tcsInput = tcsSection ? tcsTotalsInput(tcsForm, tcsSection, selectedLedger) : null;
+  // A new buyer is suggested their own rate again (PAN or none) unless the rate was typed by hand.
+  const previousBuyerRef = useRef(selectedLedger);
+  useEffect(() => {
+    const previous = previousBuyerRef.current;
+    previousBuyerRef.current = selectedLedger;
+    if (previous?.id === selectedLedger?.id) return;
+    setTcsForm((current) => tcsFormOnBuyerChange(current, tcsSection, previous, selectedLedger));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedLedger?.id]);
   const {
-    invoiceDiscountAmount, afterDiscountTotal,
+    invoiceDiscountAmount, afterDiscountTotal, tcsAmount: tcsPreviewAmount,
     roundOffAmount: roundOffPreviewAmount, total: projectedTotalAmount,
   } = computeInvoiceTotals(totalLines, {
     taxInclusive,
     invoiceDiscount: { type: invoiceDiscountType, value: Number(invoiceDiscountValue) },
     applyRoundOff,
     interstateSupply: composerInterstateSupply,
+    tcs: tcsInput,
   });
+
+  /* A section chosen for one date may not be in force on another. */
+  useEffect(() => {
+    if (!tcsSections) return;
+    const result = reconcileTcsSection(tcsForm, tcsSections);
+    if (result.cleared) {
+      setTcsForm(result.form);
+      setTcsNotice('That TCS section is not in force on this date, so it was cleared. Choose another if TCS applies.');
+    }
+  }, [tcsSections, tcsForm]);
 
   const resolvedDueDate = resolveDueDate({
     mode: dueDateMode,
@@ -658,6 +695,9 @@ export default function InvoicesPage() {
     // Per-invoice, never remembered: a carried-over discount would silently
     // reduce the next invoice's total.
     setInvoiceDiscountValue('');
+    setTcsForm(EMPTY_TCS_FORM);
+    setTcsHadSaved(false);
+    setTcsNotice('');
     setStockShortage(null);
     setPaymentMode('cash');
     setPaymentReference('');
@@ -719,6 +759,9 @@ export default function InvoicesPage() {
     setReferenceNotes(quotation.reference_notes ?? '');
     setTaxInclusive(quotation.tax_inclusive);
     setApplyRoundOff(quotation.apply_round_off);
+    setTcsForm(tcsFormFromDocument(quotation));
+    setTcsHadSaved(quotation.tcs_section_id != null);
+    setTcsNotice('');
     setInvoiceDiscountType((quotation.discount_type as 'percentage' | 'net') || 'percentage');
     setInvoiceDiscountValue(quotation.discount_value != null ? String(quotation.discount_value) : '');
     setInvoiceDate(quotation.quotation_date);
@@ -753,6 +796,11 @@ export default function InvoicesPage() {
     setReferenceNotes(invoice.reference_notes ?? '');
     setTaxInclusive(invoice.tax_inclusive ?? false);
     setApplyRoundOff(invoice.apply_round_off ?? false);
+    // The server leaves TCS out of the draft when the company has turned it off.
+    setTcsForm(tcsFormFromDocument(invoice));
+    // The invoice is new: TCS shows and is sent only while the company has TCS on.
+    setTcsHadSaved(false);
+    setTcsNotice('');
     setInvoiceDiscountType(invoice.discount_type || 'percentage');
     setInvoiceDiscountValue(invoice.discount_value != null ? String(invoice.discount_value) : '');
     const dates = conversionDateDefaults(readInvoiceComposerPrefs());
@@ -798,6 +846,7 @@ export default function InvoicesPage() {
         apply_round_off: applyRoundOff,
         discount_type: invoiceDiscountType || null,
         discount_value: invoiceDiscountValue ? Number(invoiceDiscountValue) : null,
+        ...(tcsVisible ? buildTcsPayload(tcsForm, tcsSection, selectedLedger, tcsHadSaved) : {}),
         shipping_address_same_as_billing: shippingSameAsBilling,
         shipping_address_id: (!shippingSameAsBilling && selectedShippingAddressId !== null) ? selectedShippingAddressId : null,
         new_shipping_address: (!shippingSameAsBilling && selectedShippingAddressId === null && newShippingAddress.trim())
@@ -841,6 +890,9 @@ export default function InvoicesPage() {
     setReferenceNotes(invoice.voucher_type === 'sales' ? (invoice.reference_notes ?? '') : '');
     setTaxInclusive(invoice.tax_inclusive ?? false);
     setApplyRoundOff(invoice.apply_round_off ?? false);
+    setTcsForm(tcsFormFromDocument(invoice));
+    setTcsHadSaved(invoice.tcs_section_id != null);
+    setTcsNotice('');
     setInvoiceDiscountType((invoice.discount_type as 'percentage' | 'net') || 'percentage');
     setInvoiceDiscountValue(invoice.discount_value != null ? String(invoice.discount_value) : '');
     setSelectedLedgerId(String(invoice.ledger_id));
@@ -901,6 +953,10 @@ export default function InvoicesPage() {
     setReferenceNotes(invoice.voucher_type === 'sales' ? (invoice.reference_notes ?? '') : '');
     setTaxInclusive(invoice.tax_inclusive ?? false);
     setApplyRoundOff(invoice.apply_round_off ?? false);
+    setTcsForm(invoice.voucher_type === 'sales' ? tcsFormForCopy(invoice, Boolean(company?.enable_tcs)) : EMPTY_TCS_FORM);
+    // A duplicate is a new invoice: it carries TCS only while the company has TCS on.
+    setTcsHadSaved(false);
+    setTcsNotice('');
     setInvoiceDiscountType((invoice.discount_type as 'percentage' | 'net') || 'percentage');
     setInvoiceDiscountValue(invoice.discount_value != null ? String(invoice.discount_value) : '');
     setSelectedLedgerId(String(invoice.ledger_id));
@@ -1031,6 +1087,7 @@ export default function InvoicesPage() {
         apply_round_off: applyRoundOff,
         discount_type: invoiceDiscountType || null,
         discount_value: invoiceDiscountValue ? Number(invoiceDiscountValue) : null,
+        ...(tcsVisible && voucherType === 'sales' ? buildTcsPayload(tcsForm, tcsSection, selectedLedger, tcsHadSaved) : {}),
         ...(voucherType === 'sales' ? {
           place_of_supply: placeOfSupply || null,
           shipping_address_same_as_billing: shippingSameAsBilling,
@@ -1925,6 +1982,26 @@ export default function InvoicesPage() {
                     </div>
                   );
                 })}
+              </div>
+            ) : null}
+
+            {/* TCS sits by the line items, not under Advanced options: a company that
+                has switched TCS on must see it on every sales invoice and quotation. */}
+            {tcsVisible ? (
+              <div className="field-grid" data-testid="tcs-block">
+                <TcsFields
+                  idPrefix="invoice"
+                  form={tcsForm}
+                  onChange={(next) => { setTcsNotice(''); setTcsForm(next); }}
+                  sections={tcsSections}
+                  section={tcsSection}
+                  buyer={selectedLedger}
+                  previewAmount={tcsPreviewAmount}
+                  currencyCode={activeCurrencyCode}
+                  notice={tcsNotice}
+                  totalAmount={projectedTotalAmount}
+                  invoiceValue={projectedTotalAmount - (tcsPreviewAmount ?? 0)}
+                />
               </div>
             ) : null}
 

@@ -91,7 +91,9 @@ def section_in_force(section: TaxWithholdingSection, on_date: date) -> bool:
 def section_base(section: TaxWithholdingSection, invoice: Invoice) -> Decimal:
     """The base the section is worked out on: before GST, or the gross bill."""
     if section.base == "gross":
-        return money(invoice.total_amount)
+        # TCS the seller collected (#769) rides on total_amount but is not part
+        # of the bill the TDS is deducted on.
+        return money(Decimal(str(invoice.total_amount or 0)) - Decimal(str(getattr(invoice, "tcs_amount", 0) or 0)))
     return money(invoice.taxable_amount)
 
 

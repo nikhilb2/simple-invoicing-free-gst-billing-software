@@ -27,9 +27,11 @@ from src.services.gst_tax_service import (
     assign_invoice_tax_totals,
     assign_item_tax_split,
     default_place_of_supply,
+    india_today,
     invoice_is_interstate,
     money as _money,
 )
+from src.services.tcs import buyer_pan, resolve_tcs
 from src.services.inventory_service import InventoryManager
 from src.services.serial_service import SerialManager
 from src.core.config import settings
@@ -520,6 +522,20 @@ class InvoiceProcessor:
         invoice.tax_inclusive = payload.tax_inclusive
         invoice.apply_round_off = payload.apply_round_off
 
+        # Checked before stock moves, so a bad section is a clean 400.
+        tcs = resolve_tcs(
+            self.db,
+            tcs_section_id=payload.tcs_section_id,
+            tcs_rate=payload.tcs_rate,
+            tcs_amount=payload.tcs_amount,
+            company=company,
+            ledger=ledger,
+            document_date=invoice.invoice_date.date() if invoice.invoice_date else india_today(),
+            voucher_type=payload.voucher_type,
+            already_has_tcs=invoice.tcs_section_id is not None,
+        )
+        invoice.ledger_pan = buyer_pan(ledger) if tcs is not None else None
+
         if regenerate_number:
             invoice.invoice_number = generate_next_number(
                 self.db,
@@ -608,13 +624,14 @@ class InvoiceProcessor:
         )
         raw_total = _money(taxable_total + tax_total)
 
-        # Apply invoice-level discount and round off
-        apply_discount_and_round_off(invoice, raw_total, payload.discount_type, payload.discount_value)
+        # Apply invoice-level discount, TCS and round off
+        apply_discount_and_round_off(invoice, raw_total, payload.discount_type, payload.discount_value, tcs=tcs)
         require_money_fits(
             "The invoice totals and discount",
             taxable_total,
             tax_total,
             Decimal(str(invoice.total_amount)),
+            Decimal(str(invoice.tcs_amount or 0)),
             Decimal(str(payload.discount_value)) if payload.discount_value is not None else Decimal("0"),
         )
 

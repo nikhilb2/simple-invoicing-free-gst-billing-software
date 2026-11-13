@@ -29,6 +29,7 @@ from src.services.invoice_payments import (
     open_amounts_by_ledger,
 )
 from src.services.mail import send_email
+from src.services.pdf_templates.builders import tcs_label
 from src.services.share_documents import (
     RESOURCE_INVOICE,
     RESOURCE_STATEMENT,
@@ -174,12 +175,19 @@ async def send_invoice_email(
     inv_number = invoice.invoice_number or f"#{invoice.id}"
     inv_date = invoice.invoice_date.strftime("%d %b %Y") if invoice.invoice_date else "N/A"
 
+    tcs_amount = float(getattr(invoice, "tcs_amount", 0) or 0)
     template = _jinja_env.get_template("invoice_email.html")
     html_body = template.render(
         company_name=invoice.company_name or (company.name if company else ""),
         company_email=invoice.company_email or (company.email if company else None),
         company_phone=invoice.company_phone or (company.phone_number if company else None),
         company_address=invoice.company_address or (company.address if company else None),
+        tcs_label=(
+            tcs_label(getattr(invoice, "tcs_rate", None), getattr(invoice, "tcs_section_ref", None))
+            if tcs_amount
+            else None
+        ),
+        tcs_amount=_fmt(tcs_amount) if tcs_amount else None,
         invoice_number=inv_number,
         invoice_date=inv_date,
         due_date=None,  # due_date column is not yet mapped in the Python Invoice model

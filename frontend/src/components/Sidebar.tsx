@@ -1,10 +1,13 @@
 import { useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { ChevronsLeft, ChevronRight, LogOut } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
 import { Link, NavLink, useLocation } from 'react-router-dom';
 import BrandMark from './BrandMark';
 import SidebarFYSwitcher from './SidebarFYSwitcher';
 import { SETTINGS_ENTRY, sectionIdForPath, visiblePrimaryNav, type NavLeaf } from '../config/navigation';
+import { fetchCompanyProfile } from '../features/invoices/api';
+import { invoiceQueryKeys } from '../features/invoices/queryKeys';
 import { useAuth } from '../context/AuthContext';
 import { useSidebarStore } from '../store/useSidebarStore';
 
@@ -21,7 +24,8 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
   const { isAdmin, canManagePlatform, userEmail, logout } = useAuth();
   const { collapsed, toggleCollapsed, openSection, toggleSection, openSectionFor } = useSidebarStore();
   const location = useLocation();
-  const entries = visiblePrimaryNav(isAdmin, canManagePlatform);
+  const companyQuery = useQuery({ queryKey: invoiceQueryKeys.company, queryFn: fetchCompanyProfile });
+  const entries = visiblePrimaryNav(isAdmin, canManagePlatform, companyQuery.data?.enable_tcs === true);
   const currentSection = sectionIdForPath(location.pathname);
 
   // Escape-to-close lives in Layout, which owns the drawer state.

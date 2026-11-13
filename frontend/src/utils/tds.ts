@@ -60,19 +60,7 @@ export function validateTdsAllocations(
   return null;
 }
 
-type SectionLabelInput = Pick<TaxWithholdingSection, 'section_ref' | 'nature' | 'rate_individual_huf' | 'rate_other'>;
-
-/** e.g. "s.393(1) Sl. No. 6(iii) — Professional fees (10%)". */
-export function sectionOptionLabel(section: SectionLabelInput): string {
-  const ref = `s.${section.section_ref}`;
-  const rates = [section.rate_individual_huf, section.rate_other].filter((r): r is number => typeof r === 'number');
-  const rate = rates.length === 0
-    ? ''
-    : rates[0] === rates[rates.length - 1] || rates.length === 1
-      ? ` (${rates[0]}%)`
-      : ` (${rates[0]}% / ${rates[1]}%)`;
-  return `${ref} — ${section.nature}${rate}`;
-}
+export { sectionOptionLabel } from './withholdingSections';
 
 /**
  * Whether an allocation row shows the TDS fields. Receipts always may; a

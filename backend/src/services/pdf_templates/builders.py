@@ -51,6 +51,25 @@ def _build_item_discount_html(item: InvoiceItem, currency: str | None, *, tax_in
     return f"<br><span class=\"muted-text\">{label}</span>"
 
 
+def tcs_label(rate, section_ref: str | None) -> str:
+    """Wording for the TCS line, e.g. ``TCS @ 2% (s.394(1) Sl. No. 4)``."""
+    label = "TCS"
+    if rate is not None and float(rate) > 0:
+        label += f" @ {_fmt_rate(float(rate))}%"
+    if section_ref:
+        label += f" (s.{section_ref})"
+    return label
+
+
+def _build_tcs_html(doc, currency: str | None) -> str:
+    """Totals-box line for tax collected at source; empty when the document has none."""
+    amount = float(getattr(doc, "tcs_amount", 0) or 0)
+    if amount == 0:
+        return ""
+    label = _e(tcs_label(getattr(doc, "tcs_rate", None), getattr(doc, "tcs_section_ref", None)))
+    return f"<p>{label}: {_fmt_currency(amount, currency)}</p>"
+
+
 def _build_invoice_discount_html(invoice: Invoice, currency: str | None) -> str:
     """Totals-box line naming the invoice-level discount and the amount it took off."""
     raw_value = float(invoice.discount_value or 0)
