@@ -1,6 +1,11 @@
 """Tests for the sales analytics endpoints."""
 
+import csv
 from datetime import datetime, timedelta
+from decimal import Decimal
+from io import StringIO
+
+import pytest
 
 
 def _create_product(client, sku, name, price, *, stock=1000, **extra):
@@ -644,6 +649,63 @@ class TestProfitLoss:
 
 
 class TestCsvExports:
+    @pytest.mark.parametrize("quantity", ["1234567", "1000000", "123456.75", "1234567.125", "2.5", "0.001"])
+    def test_quantities_keep_decimal_precision(self, client, quantity):
+        product = _create_product(client, "CSV-QTY", "Widget", 10, stock=5000000,
+                                  purchase_price=6, allow_decimal=True)
+        ledger = _create_ledger(client, "Acme")
+        _create_invoice(
+            client, ledger,
+            [{"product_id": product, "quantity": float(quantity), "unit_price": 10, "gst_rate": 18}],
+            invoice_date=datetime(2026, 4, 10, 12, 0),
+        )
+        params = {"from_date": "2026-04-01", "to_date": "2026-04-30"}
+
+        sales = client.get("/api/analytics/sales-by-product/csv", params=params)
+        assert sales.status_code == 200, sales.text
+        sales_rows = list(csv.reader(StringIO(sales.content.decode("utf-8-sig"))))
+        product_row = next(row for row in sales_rows if row and row[0] == "Widget")
+        totals_row = next(row for row in sales_rows if row and row[0] == "Totals")
+        expected_stock = format(Decimal("5000000") - Decimal(quantity), "f")
+        assert product_row[2] == quantity
+        assert product_row[8] == expected_stock
+        assert totals_row[2] == quantity
+
+        profit_loss = client.get("/api/analytics/profit-loss/csv", params=params)
+        assert profit_loss.status_code == 200, profit_loss.text
+        profit_rows = list(csv.reader(StringIO(profit_loss.content.decode("utf-8-sig"))))
+        product_row = next(row for row in profit_rows if row and row[0] == "Widget")
+        totals_row = next(row for row in profit_rows if row and row[0] == "Totals")
+        month_row = next(row for row in profit_rows if row and row[0] == "Apr 26")
+        assert product_row[2] == quantity
+        assert totals_row[2] == quantity
+        assert month_row[1] == quantity
+
+    def test_untracked_stock_stays_blank(self, client):
+        product = _create_product(client, "CSV-SERVICE", "Service", 10,
+                                  maintain_inventory=False, allow_decimal=True)
+        ledger = _create_ledger(client, "Acme")
+        _create_invoice(client, ledger, [{"product_id": product, "quantity": 2.5, "unit_price": 10, "gst_rate": 18}],
+                        invoice_date=datetime(2026, 4, 10, 12, 0))
+
+        res = client.get("/api/analytics/sales-by-product/csv", params={"from_date": "2026-04-01", "to_date": "2026-04-30"})
+        assert res.status_code == 200, res.text
+        rows = list(csv.reader(StringIO(res.content.decode("utf-8-sig"))))
+        product_row = next(row for row in rows if row and row[0] == "Service")
+        assert product_row[2] == "2.5"
+        assert product_row[8] == ""
+
+    @pytest.mark.parametrize("report", ["sales-by-product", "profit-loss"])
+    def test_empty_csv_quantity_totals_are_zero(self, client, report):
+        res = client.get(f"/api/analytics/{report}/csv", params={"from_date": "2026-04-01", "to_date": "2026-04-30"})
+        assert res.status_code == 200, res.text
+        rows = list(csv.reader(StringIO(res.content.decode("utf-8-sig"))))
+        totals_row = next(row for row in rows if row and row[0] == "Totals")
+        assert totals_row[2] == "0"
+        if report == "profit-loss":
+            month_row = next(row for row in rows if row and row[0] == "Apr 26")
+            assert month_row[1] == "0"
+
     def test_monthly_csv(self, client):
         product = _create_product(client, "CSV-1", "Widget", 100)
         ledger = _create_ledger(client, "Acme")

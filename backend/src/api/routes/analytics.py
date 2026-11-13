@@ -318,6 +318,12 @@ def _profit_loss_report(
     )
 
 
+def _csv_quantity(value: float) -> str:
+    # Quantities are stored to three decimal places. Avoid :g's six-digit
+    # precision and scientific notation while keeping whole numbers compact.
+    return f"{value:.3f}".rstrip("0").rstrip(".")
+
+
 def _csv_response(buffer: StringIO, filename: str) -> StreamingResponse:
     # utf-8-sig: the BOM is what makes Excel read the currency symbols correctly.
     csv_bytes = buffer.getvalue().encode("utf-8-sig")
@@ -491,19 +497,19 @@ def download_sales_by_product_csv(
         writer.writerow([
             row.name,
             row.sku or "",
-            f"{row.quantity_sold:g}",
+            _csv_quantity(row.quantity_sold),
             f"{row.sales_amount:.2f}",
             f"{row.average_selling_price:.2f}",
             f"{row.total_revenue:.2f}",
             f"{row.total_gst:.2f}",
             row.invoice_count,
-            f"{row.current_stock:g}" if row.current_stock is not None else "",
+            _csv_quantity(row.current_stock) if row.current_stock is not None else "",
         ])
     writer.writerow([])
     writer.writerow([
         "Totals",
         "",
-        f"{report.totals.quantity_sold:g}",
+        _csv_quantity(report.totals.quantity_sold),
         f"{report.totals.sales_amount:.2f}",
         "",
         f"{report.totals.total_revenue:.2f}",
@@ -673,7 +679,7 @@ def download_profit_loss_csv(
         writer.writerow([
             row.name,
             row.sku or "",
-            f"{row.quantity_sold:g}",
+            _csv_quantity(row.quantity_sold),
             f"{row.average_selling_price:.2f}",
             f"{row.purchase_price:.2f}",
             f"{row.sales_amount:.2f}",
@@ -682,7 +688,7 @@ def download_profit_loss_csv(
             f"{row.margin_pct:.2f}",
         ])
     writer.writerow([
-        "Totals", "", f"{report.totals.quantity_sold:g}", "", "",
+        "Totals", "", _csv_quantity(report.totals.quantity_sold), "", "",
         f"{report.totals.revenue:.2f}",
         f"{report.totals.cogs:.2f}",
         f"{report.totals.gross_profit:.2f}",
@@ -695,7 +701,7 @@ def download_profit_loss_csv(
     for row in report.monthly_rows:
         writer.writerow([
             row.label,
-            f"{row.quantity:g}",
+            _csv_quantity(row.quantity),
             f"{row.revenue:.2f}",
             f"{row.cogs:.2f}",
             f"{row.gross_profit:.2f}",
