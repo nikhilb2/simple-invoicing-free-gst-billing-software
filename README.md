@@ -10,7 +10,7 @@ Make GST invoices, quotations, credit notes and e-way bills, and download them a
 
 A free, open-source **invoice maker** and **Tally alternative** for shops, traders, manufacturers, freelancers and service businesses.
 
-**[Try the hosted app](https://app.simpleinvoicings.com/register)** (first month free, nothing to install) · **[Self-host it free](#quick-start)** · **[User guide](https://guide.simpleinvoicings.com)** · **[Website](https://simpleinvoicings.com)**
+**[Try the hosted app](https://app.simpleinvoicings.com/register)** (free, nothing to install) · **[Self-host it free](#quick-start)** · **[User guide](https://guide.simpleinvoicings.com)** · **[Website](https://simpleinvoicings.com)**
 
 [![GitHub stars](https://img.shields.io/github/stars/nikhilb2/simple-invoicing-free-gst-billing-software?style=social)](https://github.com/nikhilb2/simple-invoicing-free-gst-billing-software/stargazers)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -101,8 +101,8 @@ These show a made-up demo business.
 Simple Invoicing covers the everyday work of a small GST-registered business: billing, stock, party ledgers and the GSTR-1 file. How it differs from the usual GST billing apps:
 
 - **Open source (MIT).** Every line of code is here. You can read it, change it and run it yourself.
-- **Free to self-host.** Run your own copy on your own server with Docker, with no licence fee and no limit on users or invoices. Or use the [hosted app](https://app.simpleinvoicings.com/register), where the first month is free.
-- **No per-user pricing on the hosted plans.** Add staff with Admin, Manager or Staff roles at no extra cost per seat.
+- **Free to self-host.** Run your own copy on your own server with Docker, with no licence fee and no limit on users or invoices. Or use the [hosted app](https://app.simpleinvoicings.com/register), which is free on shared hosting.
+- **No per-user pricing.** On dedicated hosting or your own server, add staff with Admin, Manager or Staff roles at no extra cost per seat.
 - **Works in the browser.** Use it on Windows, Mac, Linux, Android or iPhone. There is nothing to install on the hosted version.
 - **Your data stays yours.** Export invoices, ledgers, products and reports as CSV, JSON or PDF at any time.
 - **Built for AI assistants.** Ask Claude or ChatGPT about unpaid invoices, profit or stock through the built-in MCP server.
@@ -371,7 +371,7 @@ Want to work on one of these, or something else? Open an issue to talk it throug
 ## FAQ
 
 **Is Simple Invoicing free?**
-Yes, to self-host. The software is open source under the MIT licence, so you can run your own copy free, for any number of users and invoices. The [hosted version](https://app.simpleinvoicings.com/register) is free for the first month, with no credit card needed, and then paid plans start at Rs 299 a month.
+Yes. The software is open source under the MIT licence, so you can run your own copy free, for any number of users and invoices. The [hosted version](https://app.simpleinvoicings.com/register) is also free on shared hosting, for as long as you want, with no credit card needed. If you want your own dedicated server instead, that costs Rs 299 a month for one company and one user.
 
 **Can I make GST invoices in PDF?**
 Yes. Each tax invoice shows HSN/SAC codes, the CGST, SGST or IGST breakup, your logo, bank details and an optional pay-by-UPI QR code. You can download the PDF, email it or share it on WhatsApp.
