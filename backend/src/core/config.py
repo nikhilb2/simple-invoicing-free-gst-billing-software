@@ -76,14 +76,14 @@ class Settings(BaseSettings):
     )
     SHARE_AD_WEBSITE: str = "https://simpleinvoicings.com"
     # Comma-separated trust chips; blank hides the row.
-    SHARE_AD_CHIPS: str = "1 month free,No credit card,GST-ready"
+    SHARE_AD_CHIPS: str = "Free hosted plan,No credit card,GST-ready"
     SHARE_AD_CTA_LABEL: str = "Chat on WhatsApp"
-    SHARE_AD_FOOTNOTE: str = "Try free for 1 month"
+    SHARE_AD_FOOTNOTE: str = "Free to use"
     # The price, split so the panel can typeset the amount large and the period
     # small beside it. Blank the amount and the whole price line goes.
-    SHARE_AD_PRICE: str = "Rs. 299"
-    SHARE_AD_PRICE_PERIOD: str = "/month"
-    SHARE_AD_PRICE_PREFIX: str = "only"
+    SHARE_AD_PRICE: str = "Free"
+    SHARE_AD_PRICE_PERIOD: str = ""
+    SHARE_AD_PRICE_PREFIX: str = ""
     # Both published on simpleinvoicings.com. Each line renders only when set,
     # so blanking either one degrades cleanly rather than leaving dead UI.
     SHARE_AD_PHONE: str = "+91 98710 52105"
