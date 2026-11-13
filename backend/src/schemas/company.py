@@ -16,9 +16,25 @@ class CompanyTermOut(BaseModel):
 class CompanyTermCreate(BaseModel):
     content: str
 
+    @field_validator("content")
+    @classmethod
+    def validate_content_not_blank(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Term must not be blank")
+        return normalized
+
 
 class CompanyTermUpdate(BaseModel):
     content: str
+
+    @field_validator("content")
+    @classmethod
+    def validate_content_not_blank(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Term must not be blank")
+        return normalized
 
 
 class CompanyProfileBase(BaseModel):
