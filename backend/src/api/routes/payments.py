@@ -20,6 +20,7 @@ from src.services.financial_year import get_active_fy, get_fy_for_date
 from src.services.invoice_payments import sync_payment_allocations
 from src.services.share_documents import get_payment as get_shared_payment, render_receipt_pdf
 from src.services.company_access import company_scope
+from src.services.pdf_templates.builders import _fmt_inr
 
 router = APIRouter()
 
@@ -389,12 +390,11 @@ def delete_payment(
 def _re(text: str | None) -> str:
     return escape(str(text or ""))
 
-
 def _fmt_amt(value: float, currency_code: str | None = None) -> str:
     code = currency_code or "INR"
     try:
         if code == "INR":
-            return f"\u20b9{value:,.2f}"
+            return _fmt_inr(value, "INR")
         elif code == "EUR":
             return f"\u20ac{value:,.2f}"
         elif code == "GBP":

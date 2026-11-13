@@ -7,6 +7,7 @@ from html import escape
 from src.models.buyer import Buyer as Ledger
 from src.models.company import CompanyProfile
 from src.schemas.ledger import DayBookEntry, LedgerStatementEntry
+from src.services.pdf_templates.builders import _fmt_inr
 
 
 def _e(text: str | None) -> str:
