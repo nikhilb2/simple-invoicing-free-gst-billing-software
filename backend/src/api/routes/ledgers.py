@@ -2382,7 +2382,7 @@ def _hsn_section(
                 "num": len(rows) + 1,
                 "uqc": uqc,
                 "rt": rate,
-                "qty": 0.0 if is_service else _round_amount(data["qty"]),
+                "qty": 0.0 if is_service else round(data["qty"], 3) + 0.0,
                 "txval": _round_amount(data["txval"]),
                 "iamt": _round_amount(data["iamt"]),
                 "camt": _round_amount(data["camt"]),
@@ -2807,43 +2807,26 @@ def gstr1_summary(
         cn_summary.igst += cn_igst
         cn_summary.total_tax += cn_cgst + cn_sgst + cn_igst
 
-    # HSN summary
-    hsn_map: dict[str, dict] = {}
+    # Use the exported Table 12 rows so units, rates and buyer categories agree.
     filed_sales = _filed_sales(invoices)
-    for inv in filed_sales:
-        for item in inv.items:
-            hsn = item.hsn_sac or "----"
-            if hsn not in hsn_map:
-                hsn_map[hsn] = {"taxable": 0.0, "cgst": 0.0, "sgst": 0.0, "igst": 0.0, "qty": 0.0}
-            hsn_map[hsn]["taxable"] += float(item.taxable_amount or 0)
-            hsn_map[hsn]["cgst"] += float(item.cgst_amount or 0)
-            hsn_map[hsn]["sgst"] += float(item.sgst_amount or 0)
-            hsn_map[hsn]["igst"] += float(item.igst_amount or 0)
-            hsn_map[hsn]["qty"] += float(item.quantity or 0)
-
-    # Table 12 is net of credit notes, whichever period the invoice fell in.
-    for cn in credit_notes:
-        for item in cn.items:
-            iamt, camt, samt = _note_item_heads(cn, item)
-            hsn = _note_item_hsn(item) or "----"
-            row = hsn_map.setdefault(hsn, {"taxable": 0.0, "cgst": 0.0, "sgst": 0.0, "igst": 0.0, "qty": 0.0})
-            row["taxable"] -= float(item.taxable_amount or 0)
-            row["cgst"] -= camt
-            row["sgst"] -= samt
-            row["igst"] -= iamt
-            row["qty"] -= _note_item_qty(cn, item)
-
+    hsn_section = _hsn_section(db, filed_sales, credit_notes, _note_invoices(db, credit_notes), to_date)
     hsn_items: list[Gstr1HsnSummaryItem] = []
-    for hsn, data in sorted(hsn_map.items()):
-        hsn_items.append(Gstr1HsnSummaryItem(
-            hsn_code=hsn,
-            quantity=data["qty"],
-            taxable_value=data["taxable"],
-            cgst=data["cgst"],
-            sgst=data["sgst"],
-            igst=data["igst"],
-            total_tax=data["cgst"] + data["sgst"] + data["igst"],
-        ))
+    for section, rows in hsn_section.items():
+        category = {"hsn_b2b": "B2B", "hsn_b2c": "B2C", "data": None}[section]
+        for row in rows:
+            hsn_items.append(Gstr1HsnSummaryItem(
+                hsn_code=row["hsn_sc"],
+                description=row["desc"],
+                uqc=row["uqc"],
+                gst_rate=row["rt"],
+                category=category,
+                quantity=row["qty"],
+                taxable_value=row["txval"],
+                cgst=row["camt"],
+                sgst=row["samt"],
+                igst=row["iamt"],
+                total_tax=_round_amount(row["camt"] + row["samt"] + row["iamt"]),
+            ))
 
     total_sales = sum(1 for inv in invoices if inv.voucher_type == "sales")
     zero_rate_invoices, zero_rate_value = _zero_rate_sales(filed_sales)

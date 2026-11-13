@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from typing import Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from src.core.document_limits import MONEY_LIMIT
@@ -283,6 +284,8 @@ class Gstr1HsnSummaryItem(BaseModel):
     hsn_code: str
     description: str | None = None
     uqc: str = "NOS"
+    gst_rate: float = 0.0
+    category: Literal["B2B", "B2C"] | None = None
     quantity: float = 0.0
     taxable_value: float = 0.0
     cgst: float = 0.0

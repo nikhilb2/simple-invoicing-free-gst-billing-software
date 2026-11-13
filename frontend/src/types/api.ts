@@ -811,6 +811,8 @@ export type Gstr1HsnSummaryItem = {
   hsn_code: string;
   description?: string | null;
   uqc: string;
+  gst_rate: number;
+  category: 'B2B' | 'B2C' | null;
   quantity: number;
   taxable_value: number;
   cgst: number;

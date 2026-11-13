@@ -4,6 +4,7 @@ import api, { getApiErrorMessage, getBlobErrorMessage } from '../api/client';
 import StatusToasts from '../components/StatusToasts';
 import ScopeBar, { Metric } from '../components/ScopeBar';
 import DateRangePresets from '../components/DateRangePresets';
+import Gstr1HsnSummary from '../components/Gstr1HsnSummary';
 import { useFY } from '../context/FYContext';
 import type { CompanyProfile, Gstr1Summary, Gstr1ValidationResult } from '../types/api';
 import formatCurrency from '../utils/formatting';
@@ -486,66 +487,7 @@ function Gstr1SummaryView({
         </article>
       </section>
 
-      <section className="content-grid content-grid--single">
-        <article className="panel stack">
-          <div className="panel__header">
-            <div>
-              <p className="eyebrow">HSN-wise summary</p>
-              <h2 className="nav-panel__title">Commodity breakdown</h2>
-            </div>
-            <div className="status-chip">{summary.hsn_summary.length} codes</div>
-          </div>
-
-          <div className="table-wrap" style={{ maxHeight: 420, overflow: 'auto' }}>
-            <table className="invoice-feed-table">
-              <caption className="sr-only">HSN/SAC-wise summary</caption>
-              <thead>
-                <tr>
-                  <th scope="col">HSN/SAC</th>
-                  <th scope="col" className="text-right">Qty</th>
-                  <th scope="col" className="text-right">Taxable Value</th>
-                  <th scope="col" className="text-right">CGST</th>
-                  <th scope="col" className="text-right">SGST</th>
-                  <th scope="col" className="text-right">IGST</th>
-                  <th scope="col" className="text-right">Total Tax</th>
-                </tr>
-              </thead>
-              <tbody>
-                {summary.hsn_summary.map((item) => (
-                  <tr key={item.hsn_code}>
-                    <td className="text-xs" style={{ fontFamily: 'monospace' }}>
-                      {item.hsn_code}
-                    </td>
-                    <td className="text-right">{item.quantity}</td>
-                    <td className="text-right">
-                      {formatCurrency(item.taxable_value, activeCurrencyCode)}
-                    </td>
-                    <td className="text-right">
-                      {formatCurrency(item.cgst, activeCurrencyCode)}
-                    </td>
-                    <td className="text-right">
-                      {formatCurrency(item.sgst, activeCurrencyCode)}
-                    </td>
-                    <td className="text-right">
-                      {formatCurrency(item.igst, activeCurrencyCode)}
-                    </td>
-                    <td className="text-right">
-                      {formatCurrency(item.total_tax, activeCurrencyCode)}
-                    </td>
-                  </tr>
-                ))}
-                {summary.hsn_summary.length === 0 && (
-                  <tr>
-                    <td colSpan={7} className="text-xs text-center muted-text">
-                      No HSN data
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </article>
-      </section>
+      <Gstr1HsnSummary rows={summary.hsn_summary} currency={activeCurrencyCode} />
     </>
   );
 }

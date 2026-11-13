@@ -548,3 +548,70 @@ def test_a_note_on_a_line_gst_does_not_list_says_how_to_fix_it(client, seller, d
     assert "84733000 is not on GST's HSN/SAC list" in error["message"]
     assert f"edit {sold['invoice_number']} to correct the HSN" in error["message"]
     assert client.get("/api/ledgers/tax-ledger/gstr1/export-json", params=_period()).status_code == 200
+
+
+# The preview must use the same grouping and net rows as the downloaded Table 12.
+def _assert_hsn_summary_matches_export(client):
+    summary = _summary(client)["hsn_summary"]
+    section = _export(client).get("hsn", {})
+    expected = []
+    for key, rows in section.items():
+        category = {"hsn_b2b": "B2B", "hsn_b2c": "B2C", "data": None}[key]
+        expected.extend({
+            "hsn_code": row["hsn_sc"], "description": row["desc"],
+            "uqc": row["uqc"], "gst_rate": row["rt"], "category": category,
+            "quantity": row["qty"], "taxable_value": row["txval"],
+            "cgst": row["camt"], "sgst": row["samt"], "igst": row["iamt"],
+            "total_tax": round(row["camt"] + row["samt"] + row["iamt"], 2),
+        } for row in rows)
+    assert summary == expected
+    return summary
+
+
+def test_hsn_preview_keeps_units_rates_and_buyers_separate(client, seller):
+    litres = _create_product(client, "HSN-L", "Oil litres", hsn_sac="1508", unit="Litres", allow_decimal=True)
+    kilos = _create_product(client, "HSN-K", "Oil kilos", hsn_sac="1508", unit="Kg", allow_decimal=True)
+    walk_in = _create_ledger(client, "Walk in")
+    business = _ledger_with_gst(client, "Business", MAHARASHTRA_BUYER)
+    _sale(client, walk_in, litres, items=[_line(litres, 20, 100, gst_rate=5)])
+    _sale(client, walk_in, kilos, items=[_line(kilos, 3.125, 100, gst_rate=5)])
+    _sale(client, walk_in, litres, items=[_line(litres, 2, 100, gst_rate=18)])
+    _sale(client, business, litres, items=[_line(litres, 4, 100, gst_rate=5)])
+
+    rows = _assert_hsn_summary_matches_export(client)
+    assert len(rows) == 4
+    assert {(r["category"], r["gst_rate"], r["uqc"], r["quantity"]) for r in rows} == {
+        ("B2B", 5, "LTR", 4), ("B2C", 5, "LTR", 20),
+        ("B2C", 5, "KGS", 3.125), ("B2C", 18, "LTR", 2),
+    }
+
+
+def test_hsn_preview_nets_prior_period_notes_by_unit_and_buyer(client, seller, db_session):
+    product = _create_product(client, "HSN-N", "Oil", hsn_sac="1508", unit="Litres")
+    buyer = _ledger_with_gst(client, "Business", MAHARASHTRA_BUYER)
+    sold = _sale(client, buyer, product, items=[_line(product, 3, 100, gst_rate=5)])
+    _move_out_of_period(db_session, sold)
+    _note(client, [sold], note_type="return", items=[{
+        "invoice_id": sold["id"], "invoice_item_id": sold["items"][0]["id"], "quantity": 1,
+    }])
+    [row] = _assert_hsn_summary_matches_export(client)
+    assert (row["category"], row["uqc"], row["quantity"]) == ("B2B", "LTR", -1)
+
+
+def test_hsn_preview_omits_fully_returned_and_zero_value_rows(client, seller):
+    product = _create_product(client, "HSN-R", "Oil", hsn_sac="1508", unit="Litres")
+    buyer = _create_ledger(client, "Walk in")
+    sold = _sale(client, buyer, product)
+    _note(client, [sold], note_type="return", items=[{
+        "invoice_id": sold["id"], "invoice_item_id": sold["items"][0]["id"], "quantity": 1,
+    }])
+    _sale(client, buyer, product, items=[_line(product, 2, 0, gst_rate=0)])
+    assert _assert_hsn_summary_matches_export(client) == []
+
+
+def test_hsn_preview_service_quantity_matches_export(client, seller):
+    service = _create_product(client, "HSN-S", "Consulting", hsn_sac="998311", maintain_inventory=False)
+    buyer = _create_ledger(client, "Walk in")
+    _sale(client, buyer, service, items=[_line(service, 2, 100)])
+    [row] = _assert_hsn_summary_matches_export(client)
+    assert (row["uqc"], row["quantity"]) == ("NA", 0)
