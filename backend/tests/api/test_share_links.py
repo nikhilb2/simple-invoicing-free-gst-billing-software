@@ -450,10 +450,20 @@ def test_the_panel_prices_the_product(client, db_session, monkeypatch):
     invoice = _invoice(db_session, company, ledger)
     token = _create_link(client, company, "invoice", invoice.id).json()["token"]
 
+    # The default is the free hosted plan: the amount alone, no prefix or period.
     body = client.get(f"/s/{token}").text
-    assert "only" in body
-    assert "Rs. 299" in body
-    assert "/month" in body
+    assert '<span class="amount">Free</span>' in body
+    assert '<span class="lead">' not in body
+    assert '<span class="period">' not in body
+
+    # A deployment can still set a paid price with a lead-in and a period.
+    monkeypatch.setattr(settings, "SHARE_AD_PRICE", "Rs. 299")
+    monkeypatch.setattr(settings, "SHARE_AD_PRICE_PREFIX", "only")
+    monkeypatch.setattr(settings, "SHARE_AD_PRICE_PERIOD", "/month")
+    body = client.get(f"/s/{token}").text
+    assert '<span class="lead">only</span>' in body
+    assert '<span class="amount">Rs. 299</span>' in body
+    assert '<span class="period">/month</span>' in body
 
     # Blank the amount and the whole line goes, prefix and period with it.
     monkeypatch.setattr(settings, "SHARE_AD_PRICE", "")
@@ -819,7 +829,7 @@ def test_ad_block_degrades_field_by_field(client, db_session, monkeypatch):
     # The WhatsApp button goes through this app so the press can be counted --
     # the page runs no JavaScript -- and comes out at the configured chat.
     assert f'href="/s/{token}/whatsapp"' in body
-    assert "1 month free" in body
+    assert "Free hosted plan" in body
 
     # Blanking the phone removes the button rather than leaving an empty tel:.
     monkeypatch.setattr(settings, "SHARE_AD_PHONE", "")
@@ -835,7 +845,7 @@ def test_ad_block_degrades_field_by_field(client, db_session, monkeypatch):
 
     # Blank chips drop the row entirely.
     monkeypatch.setattr(settings, "SHARE_AD_CHIPS", "")
-    assert "1 month free" not in client.get(f"/s/{token}").text
+    assert "Free hosted plan" not in client.get(f"/s/{token}").text
 
     # And the whole block can be switched off.
     monkeypatch.setattr(settings, "SHARE_AD_ENABLED", False)
