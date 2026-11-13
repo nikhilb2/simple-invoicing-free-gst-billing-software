@@ -30,4 +30,5 @@ class InvoiceSeriesUpdate(BaseModel):
     year_format: Literal["YYYY", "MM-YYYY", "FY"] = "YYYY"
     separator: str = "-"
     pad_digits: Literal[2, 3, 4] = 3
-    next_sequence: Optional[int] = Field(default=None, ge=1)
+    # Leave room for issuing numbers to increment the PostgreSQL Integer counter.
+    next_sequence: Optional[int] = Field(default=None, ge=1, le=999_999_999)

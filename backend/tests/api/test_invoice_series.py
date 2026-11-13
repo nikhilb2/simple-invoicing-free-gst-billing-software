@@ -146,6 +146,80 @@ def test_update_unknown_id_returns_404(client, db_session):
     assert response.json()["detail"] == "Invoice series 999 not found"
 
 
+@pytest.mark.parametrize("next_sequence", [1_000_000_000, 2_147_483_648, 3_000_000_000])
+def test_update_rejects_counter_over_limit_without_changing_series(
+    client, db_session, next_sequence
+):
+    _seed_company(db_session, 1, "Company A")
+    series = _seed_series(db_session, 1, 1)
+
+    response = client.put("/api/invoice-series/1", json={
+        **_update_payload(), "prefix": "CHANGED", "next_sequence": next_sequence,
+    })
+    assert response.status_code == 422, response.text
+    error = response.json()["detail"][0]
+    assert error["loc"] == ["body", "next_sequence"]
+    assert error["type"] == "less_than_equal"
+    assert error["ctx"]["le"] == 999_999_999
+    db_session.refresh(series)
+    assert series.next_sequence == 1
+    assert series.prefix == "INV"
+
+    valid = client.put("/api/invoice-series/1", json=_update_payload())
+    assert valid.status_code == 200, valid.text
+    assert valid.json()["next_sequence"] == 42
+
+
+@pytest.mark.parametrize("next_sequence", [1, 999_999_999])
+def test_update_accepts_counter_boundaries(client, db_session, next_sequence):
+    _seed_company(db_session, 1, "Company A")
+    series = _seed_series(db_session, 1, 1)
+    response = client.put("/api/invoice-series/1", json={
+        **_update_payload(), "next_sequence": next_sequence,
+    })
+    assert response.status_code == 200, response.text
+    assert response.json()["next_sequence"] == next_sequence
+    db_session.refresh(series)
+    assert series.next_sequence == next_sequence
+
+
+@pytest.mark.parametrize("counter", [{}, {"next_sequence": None}])
+def test_update_without_counter_keeps_current_value(client, db_session, counter):
+    _seed_company(db_session, 1, "Company A")
+    series = _seed_series(db_session, 1, 1)
+    series.next_sequence = 42
+    db_session.commit()
+    response = client.put("/api/invoice-series/1", json={"prefix": "INV", **counter})
+    assert response.status_code == 200, response.text
+    assert response.json()["next_sequence"] == 42
+
+
+def test_invoice_allocation_can_increment_counter_at_settings_limit(client, db_session):
+    _seed_company(db_session, 1, "Company A")
+    series = _seed_series(db_session, 1, 1)
+    response = client.put("/api/invoice-series/1", json={
+        "prefix": "INV", "include_year": False, "next_sequence": 999_999_999,
+    })
+    assert response.status_code == 200, response.text
+    product = client.post("/api/products/", json={
+        "sku": "COUNTER", "name": "Service", "price": 1, "gst_rate": 0,
+        "maintain_inventory": False,
+    })
+    assert product.status_code == 200, product.text
+    ledger = client.post("/api/ledgers/", json={
+        "name": "Customer", "address": "1 Market St", "phone_number": "1234567890",
+    })
+    assert ledger.status_code == 200, ledger.text
+    invoice = client.post("/api/invoices/", json={
+        "voucher_type": "sales", "ledger_id": ledger.json()["id"],
+        "items": [{"product_id": product.json()["id"], "quantity": 1, "unit_price": 1, "gst_rate": 0}],
+    })
+    assert invoice.status_code == 200, invoice.text
+    assert invoice.json()["invoice_number"] == "INV-999999999"
+    db_session.refresh(series)
+    assert series.next_sequence == 1_000_000_000
+
+
 def test_update_other_company_series_returns_404(client, db_session):
     _seed_company(db_session, 1, "Company A")
     _seed_company(db_session, 2, "Company B")
