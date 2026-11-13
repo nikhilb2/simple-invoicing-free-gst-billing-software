@@ -432,7 +432,10 @@ def export_invoices_csv(
         writer.writerow(_CSV_COLUMNS)
         for invoice in invoices:
             summary = payment_summaries.get(invoice.id)
-            payment_status = summary.payment_status if summary else "unpaid"
+            if invoice.status == "cancelled":
+                payment_status = "cancelled"
+            else:
+                payment_status = summary.payment_status if summary else "unpaid"
             invoice_date = invoice.invoice_date.date().isoformat() if invoice.invoice_date else ""
             writer.writerow([
                 invoice.invoice_number or "",
