@@ -17,6 +17,7 @@ import ModalCloseButton from '../components/ModalCloseButton';
 import formatCurrency, { formatDate } from '../utils/formatting';
 import { remainingAmount, validateAllocations } from '../utils/validateAllocations';
 import { showTdsFields, totalTds, validateTdsAllocations } from '../utils/tds';
+import { domIdPart } from '../utils/domId';
 import TdsAllocationFields from '../components/TdsAllocationFields';
 import { useFY } from '../context/FYContext';
 import { useEscapeClose } from '../hooks/useEscapeClose';
@@ -483,9 +484,9 @@ export default function LedgerViewPage() {
 
                     {isSelected ? (
                       <div className="field" style={{ marginLeft: '28px' }}>
-                        <label htmlFor={`allocation-${input.title}-${invoice.id}`}>Allocated amount</label>
+                        <label htmlFor={`allocation-${domIdPart(input.title)}-${invoice.id}`}>Allocated amount</label>
                         <input
-                          id={`allocation-${input.title}-${invoice.id}`}
+                          id={`allocation-${domIdPart(input.title)}-${invoice.id}`}
                           className="input"
                           type="number"
                           min={Number(existingAllocation?.tds_amount || 0) > 0 ? '0' : '0.01'}
@@ -504,7 +505,7 @@ export default function LedgerViewPage() {
                         invoice={invoice}
                         paymentDate={input.paymentDate}
                         currencyCode={activeCurrencyCode}
-                        idPrefix={`allocation-${input.title}-${invoice.id}`}
+                        idPrefix={`allocation-${domIdPart(input.title)}-${invoice.id}`}
                         onChange={(patch) => input.onChange(
                           (input.allocations ?? []).map((allocation) =>
                             allocation.invoice_id === invoice.id ? { ...allocation, ...patch } : allocation,

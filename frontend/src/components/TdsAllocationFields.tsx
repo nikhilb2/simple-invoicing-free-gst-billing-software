@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import api from '../api/client';
 import type { OutstandingInvoice, PaymentInvoiceAllocation, TaxWithholdingSection, TdsSuggestion } from '../types/api';
 import formatCurrency from '../utils/formatting';
-import { deductionDate, isFullySettled, overSettlement, sectionOptionLabel } from '../utils/tds';
+import { deductionDate, isFullySettled, overSettlement } from '../utils/tds';
+import { sectionOptionLabels } from '../utils/withholdingSections';
 
 // Sections change rarely and are the same for every row on a date: fetch once per date.
 const sectionsByDate = new Map<string, Promise<TaxWithholdingSection[]>>();
@@ -91,6 +92,7 @@ export default function TdsAllocationFields({
   const cash = Number(allocation.allocated_amount || 0);
   const over = overSettlement(invoice.remaining_amount, cash, tds);
   const settled = isFullySettled(invoice.remaining_amount, cash, tds);
+  const sectionLabels = sectionOptionLabels(sections);
 
   return (
     <div className="stack" style={{ marginLeft: '28px', gap: '8px' }}>
@@ -104,7 +106,7 @@ export default function TdsAllocationFields({
         >
           <option value="">Select section</option>
           {sections.map((section) => (
-            <option key={section.id} value={section.id}>{sectionOptionLabel(section)}</option>
+            <option key={section.id} value={section.id}>{sectionLabels.get(section.id)}</option>
           ))}
         </select>
         {sectionError ? <p className="field-warning">{sectionError}</p> : null}

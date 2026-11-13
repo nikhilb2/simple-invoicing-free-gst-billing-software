@@ -9,6 +9,20 @@ export type InvoiceTotalLine = {
 
 type Discount = { type?: string; value?: number };
 
+/**
+ * TCS on the invoice (#769), mirroring document_totals._apply_tcs and services/tcs.py.
+ * `rate` is a percentage. `amount`, when set, is what the user typed as collected and
+ * wins over base x rate. `base` is the section's base column: 'gross' is taxable + GST
+ * - invoice discount; 'taxable' is the pre-GST share of that.
+ */
+export type TcsInput = { rate: number; base?: 'gross' | 'taxable'; amount?: number | null };
+
+export function tcsBaseAmount(afterDiscountTotal: number, totalAmount: number, taxableAmount: number, base: TcsInput['base'] = 'gross'): number {
+  if (base !== 'taxable') return roundMoney(afterDiscountTotal);
+  if (totalAmount <= 0) return 0;
+  return roundMoney(afterDiscountTotal * taxableAmount / totalAmount);
+}
+
 /** ROUND_HALF_UP, including negative values; tolerate binary error at a tie. */
 export function roundMoney(value: number): number {
   const magnitude = Math.abs(value);
@@ -61,8 +75,11 @@ export function computeInvoiceTotals(lines: InvoiceTotalLine[], {
   invoiceDiscount = {},
   applyRoundOff = false,
   interstateSupply = true,
+  tcs = null,
 }: {
   taxInclusive: boolean; invoiceDiscount?: Discount; applyRoundOff?: boolean; interstateSupply?: boolean;
+  /** Null or left out: no TCS, and the result has no TCS fields. */
+  tcs?: TcsInput | null;
 }) {
   const calculated = lines.map((line) => computeLineTotal({ ...line, taxInclusive, interstateSupply }));
   const taxableAmount = roundMoney(calculated.reduce((sum, line) => sum + line.taxableAmount, 0));
@@ -70,11 +87,25 @@ export function computeInvoiceTotals(lines: InvoiceTotalLine[], {
   const totalAmount = roundMoney(taxableAmount + taxAmount);
   const invoiceDiscountAmount = Math.min(discountAmount(totalAmount, invoiceDiscount), totalAmount);
   const afterDiscountTotal = roundMoney(totalAmount - invoiceDiscountAmount);
+  // TCS goes on after the invoice discount and before the round-off, so the total
+  // is still a whole rupee: total = taxable + tax - discount + tcs + round-off.
+  let tcsFields: { tcsBaseAmount: number; tcsAmount: number } | undefined;
+  let beforeRoundOff = afterDiscountTotal;
+  if (tcs) {
+    const tcsBase = tcsBaseAmount(afterDiscountTotal, totalAmount, taxableAmount, tcs.base);
+    const rate = Number.isFinite(tcs.rate) ? tcs.rate : 0;
+    const tcsAmount = tcs.amount != null && Number.isFinite(tcs.amount)
+      ? roundMoney(tcs.amount)
+      : roundMoney(tcsBase * rate / 100);
+    tcsFields = { tcsBaseAmount: tcsBase, tcsAmount };
+    beforeRoundOff = roundMoney(afterDiscountTotal + tcsAmount);
+  }
   const total = applyRoundOff
-    ? Math.sign(afterDiscountTotal) * Math.round(Math.abs(afterDiscountTotal))
-    : afterDiscountTotal;
+    ? Math.sign(beforeRoundOff) * Math.round(Math.abs(beforeRoundOff))
+    : beforeRoundOff;
   return {
     taxableAmount, taxAmount, totalAmount, invoiceDiscountAmount, afterDiscountTotal,
-    roundOffAmount: roundMoney(total - afterDiscountTotal), total,
+    ...tcsFields,
+    roundOffAmount: roundMoney(total - beforeRoundOff), total,
   };
 }

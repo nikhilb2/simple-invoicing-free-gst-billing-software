@@ -2,7 +2,7 @@ from datetime import datetime
 from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import List, Optional
 
-from src.core.document_limits import MONEY_STORAGE_CUTOFF
+from src.core.document_limits import MONEY_LIMIT, MONEY_STORAGE_CUTOFF
 
 
 PAYMENT_VOUCHER_TYPES = ("receipt", "payment", "opening_balance")
@@ -16,8 +16,17 @@ class PaymentInvoiceAllocationCreate(BaseModel):
     # TDS kept back on this invoice (#768, #770). Not cash, so it does not count
     # towards the receipt/payment amount; with allocated_amount it settles the
     # invoice. A non-zero amount needs a TDS section in force on the invoice date.
-    tds_amount: float = Field(default=0, ge=0, lt=MONEY_STORAGE_CUTOFF, allow_inf_nan=False)
+    # None (left out) means no TDS. The range lives in the validator, not in
+    # Field(ge/lt), which keeps the MCP tool schema short.
+    tds_amount: float | None = Field(default=None, allow_inf_nan=False)
     tds_section_id: int | None = None
+
+    @field_validator("tds_amount")
+    @classmethod
+    def _tds_amount_in_range(cls, value: float | None) -> float | None:
+        if value is not None and not (0 <= value < MONEY_STORAGE_CUTOFF):
+            raise ValueError(f"tds_amount must be at least 0 and below {MONEY_LIMIT:,}")
+        return value
 
 
 class PaymentInvoiceAllocationOut(BaseModel):

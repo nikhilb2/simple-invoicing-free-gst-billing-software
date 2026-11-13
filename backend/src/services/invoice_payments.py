@@ -36,7 +36,12 @@ def _credit_totals_by_invoice(db: Session, invoice_ids: list[int]) -> dict[int, 
         return {}
 
     rows = (
-        db.query(CreditNoteItem.invoice_id, func.coalesce(func.sum(CreditNoteItem.line_total), 0))
+        # A note's TCS share sits outside line_total; with it, a full credit note
+        # settles the whole of a TCS invoice (#769).
+        db.query(
+            CreditNoteItem.invoice_id,
+            func.coalesce(func.sum(CreditNoteItem.line_total + func.coalesce(CreditNoteItem.tcs_amount, 0)), 0),
+        )
         .join(CreditNote, CreditNote.id == CreditNoteItem.credit_note_id)
         .filter(
             CreditNote.status == "active",

@@ -27,6 +27,7 @@ from .builders import (
     _build_pdf_tax_breakup_rows,
     _build_pdf_tax_header_cells,
     _build_pdf_tax_row_cells,
+    _build_tcs_html,
     _e,
     _fmt_currency,
     _pdf_display_quantity,
@@ -497,6 +498,7 @@ def _build_quotation_html(
       {_build_pdf_tax_breakup_rows(quotation, currency)}
       <p>Total estimated GST: {_fmt_currency(float(quotation.total_tax_amount or 0), currency)}</p>
       {_build_invoice_discount_html(quotation, currency)}
+      {_build_tcs_html(quotation, currency)}
       {round_off_html}
       <p class="eyebrow" style="margin-top: 10px;">{title} total</p>
       <p class="sheet__total-value">{_fmt_currency(float(quotation.total_amount or 0), currency)}</p>

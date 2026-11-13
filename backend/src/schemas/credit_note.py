@@ -1,7 +1,11 @@
 from datetime import date, datetime
 from decimal import Decimal
-from typing import List, Literal, Optional
-from pydantic import BaseModel, Field, field_validator, model_validator
+from typing import Annotated, List, Literal, Optional
+from pydantic import BaseModel, BeforeValidator, Field, field_validator, model_validator
+
+
+# A note built in memory has no tcs_amount until it is flushed; read that as zero.
+ZeroIfNone = Annotated[float, BeforeValidator(lambda v: 0 if v is None else v)]
 
 
 class CreditNoteItemCreate(BaseModel):
@@ -96,6 +100,7 @@ class CreditNoteItemOut(BaseModel):
     taxable_amount: float
     tax_amount: float
     line_total: float
+    tcs_amount: ZeroIfNone = 0
 
     class Config:
         from_attributes = True
@@ -116,6 +121,7 @@ class CreditNoteOut(BaseModel):
     cgst_amount: float
     sgst_amount: float
     igst_amount: float
+    tcs_amount: ZeroIfNone = 0
     total_amount: float
     credit_note_date: Optional[datetime] = None
     created_at: datetime

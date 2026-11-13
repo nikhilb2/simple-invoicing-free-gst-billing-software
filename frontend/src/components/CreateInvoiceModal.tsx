@@ -4,7 +4,7 @@ import ConfirmDialog from './ConfirmDialog';
 import ModalCloseButton from './ModalCloseButton';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import api, { getApiErrorMessage } from '../api/client';
-import type { InvoiceCreate, Invoice, Ledger, Product } from '../types/api';
+import type { InvoiceCreate, Invoice, Ledger, Product, TaxWithholdingSection } from '../types/api';
 import { useFY } from '../context/FYContext';
 import formatCurrency from '../utils/formatting';
 import { computeInvoiceTotals, computeLineTotal, type InvoiceTotalLine } from '../utils/invoiceTotals';
@@ -18,6 +18,9 @@ import ProductCombobox from './ProductCombobox';
 import LedgerCombobox from './LedgerCombobox';
 import { readStockShortage, type StockShortage } from '../features/invoices/stockShortage';
 import SerialChips from '../pages/invoices/components/SerialChips';
+import TcsFields from '../pages/invoices/components/TcsFields';
+import { fetchTcsSections } from '../features/invoices/api';
+import { EMPTY_TCS_FORM, buildTcsPayload, findTcsSection, reconcileTcsSection, tcsTotalsInput, type TcsFormState } from '../pages/invoices/tcsForm';
 
 type ModalInvoiceFormItem = {
   id: number;
@@ -74,6 +77,11 @@ export default function CreateInvoiceModal({
   const [companyGst, setCompanyGst] = useState<string | null>(null);
   const [pristineSnapshot, setPristineSnapshot] = useState<string | null>(null);
   const [confirmingDiscard, setConfirmingDiscard] = useState(false);
+  /* TCS (#769), as on the full invoice form. Only for sales, only when the company has it on. */
+  const [enableTcs, setEnableTcs] = useState(false);
+  const [tcsForm, setTcsForm] = useState<TcsFormState>(EMPTY_TCS_FORM);
+  const [tcsSections, setTcsSections] = useState<TaxWithholdingSection[] | undefined>(undefined);
+  const [tcsNotice, setTcsNotice] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -83,13 +91,14 @@ export default function CreateInvoiceModal({
         const [productsRes, ledgersRes, companyRes] = await Promise.all([
           api.get<{ items: Product[] }>('/products/', { params: { page_size: 500 } }),
           api.get<{ items: Ledger[] }>('/ledgers/', { params: { page_size: 500 } }),
-          api.get<{ currency_code: string | null; gst: string | null }>('/company/'),
+          api.get<{ currency_code: string | null; gst: string | null; enable_tcs?: boolean }>('/company/'),
         ]);
         if (cancelled) return;
         setProducts(productsRes.data.items);
         setLedgers(ledgersRes.data.items);
         setCurrencyCode(companyRes.data.currency_code || 'INR');
         setCompanyGst(companyRes.data.gst || null);
+        setEnableTcs(companyRes.data.enable_tcs === true);
 
       } catch (err) {
         onError(getApiErrorMessage(err, 'Unable to load form data'));
@@ -117,8 +126,29 @@ export default function CreateInvoiceModal({
       discountValue: Number(item.discount_value),
     }];
   });
-  const { total: totalAmount } = computeInvoiceTotals(totalLines, {
+  const tcsVisible = enableTcs && voucherType === 'sales';
+  useEffect(() => {
+    if (!tcsVisible || !invoiceDate) return undefined;
+    let cancelled = false;
+    setTcsSections(undefined);
+    fetchTcsSections(invoiceDate)
+      .then((sections) => { if (!cancelled) setTcsSections(sections); })
+      .catch(() => { /* The section list stays empty; the invoice can still be saved without TCS. */ });
+    return () => { cancelled = true; };
+  }, [tcsVisible, invoiceDate]);
+  /* A section chosen for one date may not be in force on another. */
+  useEffect(() => {
+    if (!tcsSections) return;
+    const result = reconcileTcsSection(tcsForm, tcsSections);
+    if (result.cleared) {
+      setTcsForm(result.form);
+      setTcsNotice('That TCS section is not in force on this date, so it was cleared. Choose another if TCS applies.');
+    }
+  }, [tcsSections, tcsForm]);
+  const tcsSection = tcsVisible ? findTcsSection(tcsForm, tcsSections) : null;
+  const { total: totalAmount, tcsAmount: tcsPreviewAmount } = computeInvoiceTotals(totalLines, {
     taxInclusive, interstateSupply: composerInterstateSupply,
+    tcs: tcsSection ? tcsTotalsInput(tcsForm, tcsSection, selectedLedger) : null,
   });
 
   function addItem() {
@@ -168,6 +198,8 @@ export default function CreateInvoiceModal({
         reference_notes: voucherType === 'sales' ? (referenceNotes.trim() || null) : null,
         tax_inclusive: taxInclusive,
         place_of_supply: voucherType === 'sales' ? (placeOfSupply || null) : null,
+        // No keys at all unless TCS is in play, so the payload is as before for everyone else.
+        ...(tcsVisible ? buildTcsPayload(tcsForm, tcsSection, selectedLedger, false) : {}),
         items: items.map((item) => {
           const product = products.find((p) => p.id === Number(item.productId));
           return {
@@ -359,6 +391,21 @@ export default function CreateInvoiceModal({
                       placeholder="PO number or customer reference"
                     />
                   </div>
+                ) : null}
+
+                {tcsVisible ? (
+                  <TcsFields
+                    idPrefix="modal-inv"
+                    form={tcsForm}
+                    onChange={(next) => { setTcsNotice(''); setTcsForm(next); }}
+                    sections={tcsSections}
+                    section={tcsSection}
+                    buyer={selectedLedger}
+                    previewAmount={tcsPreviewAmount}
+                    currencyCode={currencyCode}
+                    notice={tcsNotice}
+                    invoiceValue={totalAmount - (tcsPreviewAmount ?? 0)}
+                  />
                 ) : null}
               </div>
 
