@@ -99,10 +99,26 @@ export default function LedgerQuickCreateModal() {
             <p className="eyebrow">Quick add</p>
             <h2 id="ledger-modal-title" className="nav-panel__title">Create ledger</h2>
           </div>
-          <ModalCloseButton onClick={closeLedgerCreateModal} label="Close create ledger" />
+          {/* Save lives in the pinned header, not under fourteen fields. At the
+              bottom it sat below the panel's scroll edge, out of sight and out of
+              reach of the walkthrough's highlight, and new users never found it. */}
+          <div className="panel__header-actions">
+            <button
+              type="submit"
+              form="ledger-quick-create-form"
+              data-tour="save-customer"
+              className="button button--primary"
+              disabled={ledgerSubmitting}
+              title="Save ledger"
+              aria-label="Save ledger"
+            >
+              {ledgerSubmitting ? 'Saving...' : 'Save'}
+            </button>
+            <ModalCloseButton onClick={closeLedgerCreateModal} label="Close create ledger" disabled={ledgerSubmitting} />
+          </div>
         </div>
 
-        <form className="stack" onSubmit={handleSubmit}>
+        <form id="ledger-quick-create-form" className="stack" onSubmit={handleSubmit}>
           <div className="field">
             <label htmlFor="modal-ledger-name">Name *</label>
             <input
@@ -261,15 +277,6 @@ export default function LedgerQuickCreateModal() {
               onChange={(event) => setLedgerForm((current) => ({ ...current, ifsc_code: event.target.value }))}
               placeholder="HDFC0001234"
             />
-          </div>
-
-          <div className="button-row">
-            <button type="button" className="button button--ghost" onClick={closeLedgerCreateModal} title="Cancel ledger creation" aria-label="Cancel ledger creation">
-              Cancel
-            </button>
-            <button data-tour="save-customer" className="button button--primary" disabled={ledgerSubmitting} title="Save ledger" aria-label="Save ledger">
-              {ledgerSubmitting ? 'Saving ledger...' : 'Save ledger'}
-            </button>
           </div>
         </form>
       </div>

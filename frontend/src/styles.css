@@ -3171,6 +3171,17 @@ a.invoice-row {
   margin-bottom: 0;
 }
 
+/* Save beside the close button in a pinned modal header. Not a .button-row:
+   on phones those stack full width, which pushed the close button onto a row
+   of its own under a page-wide Save. This pair stays on one line. */
+.panel__header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
 .modal-panel--invoice-preview {
   width: min(980px, 100%);
 }

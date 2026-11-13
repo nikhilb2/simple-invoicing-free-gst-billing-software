@@ -122,10 +122,25 @@ export default function ProductQuickCreateModal() {
             <p className="eyebrow">Quick add</p>
             <h2 id="product-modal-title" className="nav-panel__title">Create product</h2>
           </div>
-          <ModalCloseButton onClick={closeProductCreateModal} label="Close create product" />
+          {/* Save sits in the pinned header so it is visible at any scroll depth,
+              and the walkthrough can always highlight it. */}
+          <div className="panel__header-actions">
+            <button
+              type="submit"
+              form="product-quick-create-form"
+              data-tour="save-product"
+              className="button button--primary"
+              disabled={productSubmitting}
+              title="Save product"
+              aria-label="Save product"
+            >
+              {productSubmitting ? 'Saving...' : 'Save'}
+            </button>
+            <ModalCloseButton onClick={closeProductCreateModal} label="Close create product" disabled={productSubmitting} />
+          </div>
         </div>
 
-        <form className="stack" onSubmit={handleSubmit}>
+        <form id="product-quick-create-form" className="stack" onSubmit={handleSubmit}>
           <div className="field">
             <label htmlFor="modal-product-name">Product name</label>
             <input
@@ -282,15 +297,6 @@ export default function ProductQuickCreateModal() {
               Each unit gets its own IMEI or serial number — for phones, appliances, anything with a warranty.
               Receive the units on a purchase entry once the product is saved.
             </small>
-          </div>
-
-          <div className="button-row">
-            <button type="button" className="button button--ghost" onClick={closeProductCreateModal} title="Cancel product creation" aria-label="Cancel product creation">
-              Cancel
-            </button>
-            <button data-tour="save-product" className="button button--primary" disabled={productSubmitting} title="Save product" aria-label="Save product">
-              {productSubmitting ? 'Saving product...' : 'Save product'}
-            </button>
           </div>
         </form>
       </div>
