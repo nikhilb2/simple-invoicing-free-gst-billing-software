@@ -360,6 +360,9 @@ See the [Makefile](Makefile) for all available commands.
 
 **Next**
 
+- [ ] Type your own invoice number ([#832](https://github.com/nikhilb2/simple-invoicing-free-gst-billing-software/issues/832))
+- [ ] Invoices without GST for businesses that are not GST-registered ([#833](https://github.com/nikhilb2/simple-invoicing-free-gst-billing-software/issues/833))
+- [ ] Services as items without a unit ([#834](https://github.com/nikhilb2/simple-invoicing-free-gst-billing-software/issues/834))
 - [ ] Recurring invoices
 - [ ] An audit log of who changed what
 - [ ] Excel (.xlsx) export
