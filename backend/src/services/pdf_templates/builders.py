@@ -130,7 +130,10 @@ def _amount_in_words_indian(amount: float, currency_code: str | None = None) -> 
         rupee_words = ' '.join(parts) if parts else 'Zero'
         result = f'{rupee_words} {currency_label}'
         if paise:
-            result += f' and {_two(paise)} Paise'
+            if not currency_code or currency_code == 'INR':
+                result += f' and {_two(paise)} Paise'
+            else:
+                result += f' and {paise:02d}/100'
         return result + ' Only'
     except Exception:
         return ''
