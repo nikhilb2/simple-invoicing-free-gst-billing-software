@@ -5,7 +5,8 @@ Covers the float-precision rounding bug that could drop a rupee from totals
 """
 
 from src.services.pdf_templates.ledger_template import _fmt_inr
-
+from src.api.routes.payments import _fmt_amt
+from src.services.pdf_templates.builders import _fmt_currency
 
 def test_fmt_inr_rounds_float_just_below_whole_rupee():
     # 6490.999999999999 must not become ₹6,490.00
@@ -35,3 +36,22 @@ def test_fmt_inr_zero_and_positive():
 
 def test_fmt_inr_non_inr_currency():
     assert _fmt_inr(1234.5, currency="USD") == "1,234.50 USD"
+
+def test_fmt_currency_inr_indian_grouping_and_negative_sign():
+    assert _fmt_currency(1234567.5, "INR") == "₹12,34,567.50"
+    assert _fmt_currency(-500, "INR") == "-₹500.00"
+    assert _fmt_currency(-1234567.5, "INR") == "-₹12,34,567.50"
+
+
+def test_fmt_currency_non_inr_preserves_western_grouping():
+    assert _fmt_currency(1234567.5, "USD") == "$1,234,567.50"
+    assert _fmt_currency(1234567.5, "EUR") == "€1,234,567.50"
+    assert _fmt_currency(1234567.5, "GBP") == "£1,234,567.50"
+    assert _fmt_currency(1234567.5) == "$1,234,567.50"
+
+
+def test_fmt_amt_inr_indian_grouping_and_negative_sign():
+    assert _fmt_amt(1234567.5, "INR") == "₹12,34,567.50"
+    assert _fmt_amt(-500, "INR") == "-₹500.00"
+    assert _fmt_amt(1234567.5) == "₹12,34,567.50"
+    assert _fmt_amt(1234567.5, "USD") == "$1,234,567.50"
