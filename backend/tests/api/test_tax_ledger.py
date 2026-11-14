@@ -2482,6 +2482,15 @@ def test_gstr1_period_before_may_2025_writes_one_hsn_list(db_session):
     assert set(march["hsn"]) == {"data"}
     assert set(may["hsn"]) == {"hsn_b2c"}
 
+    summary = gstr1_summary(from_date=date(2025, 3, 1), to_date=date(2025, 3, 31),
+                            db=db_session, _=user, active_company=company)
+    [row] = summary.hsn_summary
+    assert row.category is None
+    assert (row.hsn_code, row.uqc, row.gst_rate, row.quantity) == (
+        march["hsn"]["data"][0]["hsn_sc"], march["hsn"]["data"][0]["uqc"],
+        march["hsn"]["data"][0]["rt"], march["hsn"]["data"][0]["qty"],
+    )
+
 
 def test_gstr1_csv_lists_notes_as_negative_rows_and_summary_counts_cancelled(db_session):
     user, ledger, company = _unregistered(db_session)
