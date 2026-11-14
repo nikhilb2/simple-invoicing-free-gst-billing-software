@@ -27,6 +27,17 @@ def _check_vehicle_type(value: str | None) -> str | None:
     return value
 
 
+def _check_transporter_name(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip()
+    if not normalized:
+        raise ValueError("Transporter name must not be blank")
+    if len(normalized) > 100:
+        raise ValueError("Transporter name must be at most 100 characters")
+    return normalized
+
+
 class TransporterProfileCreate(BaseModel):
     transporter_name: str = Field(min_length=1, max_length=100)
     transporter_gstin: str | None = None
@@ -34,6 +45,7 @@ class TransporterProfileCreate(BaseModel):
     vehicle_type: str = "R"
     is_default: bool = False
 
+    check_transporter_name = field_validator("transporter_name")(_check_transporter_name)
     check_transporter_gstin = field_validator("transporter_gstin")(_check_transporter_id)
     check_transport_mode = field_validator("transport_mode")(_check_transport_mode)
     check_vehicle_type = field_validator("vehicle_type")(_check_vehicle_type)
@@ -46,6 +58,7 @@ class TransporterProfileUpdate(BaseModel):
     vehicle_type: str | None = None
     is_default: bool | None = None
 
+    check_transporter_name = field_validator("transporter_name")(_check_transporter_name)
     check_transporter_gstin = field_validator("transporter_gstin")(_check_transporter_id)
     check_transport_mode = field_validator("transport_mode")(_check_transport_mode)
     check_vehicle_type = field_validator("vehicle_type")(_check_vehicle_type)
