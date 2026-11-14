@@ -58,6 +58,7 @@ from src.services.quotation import (
     update_quotation,
 )
 from src.services.share_documents import render_quotation_pdf
+from src.api.search import contains_pattern
 
 logger = logging.getLogger(__name__)
 
@@ -173,8 +174,8 @@ def list_quotations(
     if date_to is not None:
         query = query.filter(Quotation.quotation_date <= date_to)
     if search.strip():
-        term = f"%{search.strip()}%"
-        query = query.filter(or_(Quotation.quotation_number.ilike(term), Quotation.ledger_name.ilike(term)))
+        term = contains_pattern(search)
+        query = query.filter(or_(Quotation.quotation_number.ilike(term, escape="\"), Quotation.ledger_name.ilike(term, escape="\")))
 
     today = india_today()
     expired = and_(

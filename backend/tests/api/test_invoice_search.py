@@ -345,3 +345,10 @@ def test_serial_subquery_is_scoped_even_without_the_company_filter(
     ).all()
 
     assert invoice_b["id"] not in [invoice.id for invoice in matched]
+
+
+def test_search_escapes_special_chars_via_helper():
+    from src.api.search import contains_pattern
+    assert contains_pattern("50%") == "%50\%%"
+    assert contains_pattern("_") == "%\_%"
+    assert contains_pattern("a\b") == "%a\\b%"

@@ -45,6 +45,7 @@ from src.services.gst_tax_service import b2cl_limit, gstr1_section, invoice_fili
 from src.services.uqc import hsn_uqc
 from src.core.validation import GSTIN_REGEX, GSTR1_DOCUMENT_NUMBER_RULE, HSN_SAC_REGEX, is_gst_rate_slab, is_gstr1_document_number, is_known_hsn_sac
 from src.services.company_access import company_scope, legacy_default_company
+from src.api.search import contains_pattern
 
 router = APIRouter()
 
@@ -744,13 +745,7 @@ def list_ledgers(
         # Escape LIKE wildcards so a term such as 50% matches literally
         # instead of matching every ledger. Phone numbers match on the raw
         # stored text only in this first version, not on digits only.
-        escaped = (
-            search.strip()
-            .replace("\\", "\\\\")
-            .replace("%", "\\%")
-            .replace("_", "\\_")
-        )
-        pattern = f"%{escaped}%"
+        pattern = contains_pattern(search)
         query = query.filter(
             or_(
                 Ledger.name.ilike(pattern, escape="\\"),

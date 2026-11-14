@@ -652,3 +652,24 @@ def test_csv_import_skips_overflowing_rows_and_saves_largest_valid_values(client
     assert result["updated"] == 0
     assert [e["row"] for e in result["errors"]] == [2, 3, 4, 5]
     assert [p["sku"] for p in client.get("/api/products/").json()["items"]] == ["VALID"]
+
+
+def test_search_products_escapes_percent(client):
+    # Create products with % and without
+    client.post("/api/products/", json={"name": "50% Off Item", "sku": "OFF50", "price": 100, "gst_rate": 18})
+    client.post("/api/products/", json={"name": "Regular Item", "sku": "REG1", "price": 50, "gst_rate": 18})
+    response = client.get("/api/products/?search=50%")
+    assert response.status_code == 200
+    names = [p["name"] for p in response.json()["items"]]
+    assert "50% Off Item" in names
+    assert "Regular Item" not in names
+
+
+def test_search_products_escapes_underscore(client):
+    client.post("/api/products/", json={"name": "Under_Score", "sku": "US1", "price": 10, "gst_rate": 0})
+    client.post("/api/products/", json={"name": "Normal", "sku": "N1", "price": 10, "gst_rate": 0})
+    response = client.get("/api/products/?search=_")
+    assert response.status_code == 200
+    names = [p["name"] for p in response.json()["items"]]
+    assert "Under_Score" in names
+    assert "Normal" not in names

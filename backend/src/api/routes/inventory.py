@@ -19,6 +19,7 @@ from src.core.analytics import distinct_id_for, track
 from src.core.document_limits import QUANTITY_STORAGE_CUTOFF
 from src.services import bom_service
 from src.services.serial_service import SerialManager
+from src.api.search import contains_pattern
 
 router = APIRouter()
 
@@ -169,9 +170,9 @@ def list_inventory(
         query = query.filter(Product.maintain_inventory.is_(maintain_inventory))
 
     if search.strip():
-        term = f"%{search.strip()}%"
+        term = contains_pattern(search)
         query = query.filter(
-            Product.name.ilike(term) | Product.sku.ilike(term)
+            Product.name.ilike(term, escape="\") | Product.sku.ilike(term, escape="\")
         )
 
     if sort_by == "name":

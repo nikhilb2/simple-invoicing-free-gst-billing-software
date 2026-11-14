@@ -27,6 +27,7 @@ from src.api.deps import get_active_company, get_current_user
 from src.api.pagination import MAX_PAGE
 from src.services.serial_service import SerialManager
 from src.services.company_access import company_scope
+from src.api.search import contains_pattern
 
 router = APIRouter()
 
@@ -190,7 +191,7 @@ def list_serials(
         # list, so they surface only when asked for by name.
         query = query.filter(ProductSerial.status != STATUS_VOID)
     if search.strip():
-        query = query.filter(ProductSerial.serial_number.ilike(f"%{search.strip()}%"))
+        query = query.filter(ProductSerial.serial_number.ilike(contains_pattern(search), escape="\"))
 
     total = query.count()
     serials = (
