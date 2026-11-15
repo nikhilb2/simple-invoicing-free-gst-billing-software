@@ -24,6 +24,7 @@ import type {
 } from '../types/api';
 import formatCurrency, { formatDate, plural } from '../utils/formatting';
 import { backdatedNoteWarning, creditNoteDateChoice as nextCreditNoteDateChoice, shownCreditNoteDate } from '../utils/creditNoteDate';
+import { creditNoteInvoiceLabels } from '../utils/creditNoteInvoices';
 import { toIsoDate } from '../utils/dateRanges';
 import { downloadCsv } from '../utils/csv';
 import { deepLinkClass, numericParam, useDeepLinkScroll } from '../utils/deepLink';
@@ -548,7 +549,7 @@ export default function CreditNotesPage() {
           creditNote.credit_note_number,
           formatDate(creditNote.credit_note_date ?? creditNote.created_at),
           ledger?.name || `Ledger #${creditNote.ledger_id}`,
-          creditNote.invoice_ids.join(', '),
+          creditNoteInvoiceLabels(creditNote.invoice_ids, allInvoices),
           creditNote.total_amount,
         ];
       }),
@@ -994,7 +995,7 @@ export default function CreditNotesPage() {
                   </div>
 
                   <p style={{ margin: '0 0 10px', color: 'var(--text-muted)' }}>
-                    {ledger?.name || `Ledger #${creditNote.ledger_id}`} • Dated {formatDate(creditNote.credit_note_date ?? creditNote.created_at)} • Invoices {creditNote.invoice_ids.join(', ')}
+                    {ledger?.name || `Ledger #${creditNote.ledger_id}`} • Dated {formatDate(creditNote.credit_note_date ?? creditNote.created_at)} • Invoices {creditNoteInvoiceLabels(creditNote.invoice_ids, allInvoices)}
                   </p>
 
                   {creditNote.direction === 'inward' && creditNote.supplier_credit_note_number ? (
