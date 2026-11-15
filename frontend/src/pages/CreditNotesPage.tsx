@@ -23,6 +23,7 @@ import type {
   Product,
 } from '../types/api';
 import formatCurrency, { formatDate, plural } from '../utils/formatting';
+import { roundMoney } from '../utils/invoiceTotals';
 import { backdatedNoteWarning, creditNoteDateChoice as nextCreditNoteDateChoice, shownCreditNoteDate } from '../utils/creditNoteDate';
 import { creditNoteInvoiceLabels } from '../utils/creditNoteInvoices';
 import { toIsoDate } from '../utils/dateRanges';
@@ -49,10 +50,6 @@ const createCreditNoteTypeLabels: Record<'return' | 'discount', string> = {
 
 function createQuantityKey(invoiceId: number, invoiceItemId: number) {
   return `${invoiceId}:${invoiceItemId}`;
-}
-
-function roundMoney(value: number) {
-  return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
 export default function CreditNotesPage() {

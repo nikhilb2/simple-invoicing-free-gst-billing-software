@@ -119,7 +119,7 @@ describe('rounded invoice previews', () => {
 });
 
 describe('half-up money rounding', () => {
-  it.each([[1.005, 1.01], [10.075, 10.08], [-1.005, -1.01], [0, 0]])('%s rounds to %s', (value, expected) => {
+  it.each([[1.005, 1.01], [10.075, 10.08], [-1.005, -1.01], [0, 0], [4.06 / 1.12, 3.63], [5.18 / 1.12, 4.63]])('%s rounds to %s', (value, expected) => {
     expect(roundMoney(value)).toBe(expected);
   });
 });
