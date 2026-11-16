@@ -33,7 +33,7 @@ export function gstr1SeriesFormatError(
   fyLabel?: string | null,
   now: Date = new Date(),
 ): string | null {
-  if (!savedGstin.trim() || !['sales', 'credit_note'].includes(saved.voucher_type)) return null;
+  if (!savedGstin.trim() || !['sales', 'credit_note', 'delivery_challan'].includes(saved.voucher_type)) return null;
   const formatChanged = draft.prefix.trim().toUpperCase() !== saved.prefix
     || draft.suffix.trim().toUpperCase() !== saved.suffix
     || draft.include_year !== saved.include_year

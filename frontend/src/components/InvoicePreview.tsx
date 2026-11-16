@@ -216,6 +216,15 @@ export default function InvoicePreview({ invoice, onClose, onError, onPaymentRec
                   </Link>
                 </>
               ) : null}
+              {invoice.source_challan_number ? (
+                <>
+                  {' · Against challan '}
+                  <Link to={`/delivery-challans?search=${encodeURIComponent(invoice.source_challan_number)}`}>
+                    {invoice.source_challan_number}
+                  </Link>
+                  {invoice.source_challan_date ? ` dated ${formatInvoiceDateLabel(invoice.source_challan_date)}` : null}
+                </>
+              ) : null}
               {(invoice.tds_amount ?? 0) > 0 ? (
                 <>
                   {' · '}

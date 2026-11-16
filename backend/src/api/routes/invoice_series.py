@@ -17,8 +17,12 @@ router = APIRouter()
 
 
 def _reaches_gstr1(series: InvoiceSeries, company: CompanyProfile) -> bool:
-    """Only these two series reach GSTR-1, and only a company with a GSTIN files one."""
-    return series.voucher_type in ("sales", "credit_note") and bool((company.gst or "").strip())
+    """Only these series reach GSTR-1, and only a company with a GSTIN files one.
+
+    Delivery challans are not filed yet, but Rule 55 holds their numbers to the
+    same 16 characters, so settings warns about a format that is too long.
+    """
+    return series.voucher_type in ("sales", "credit_note", "delivery_challan") and bool((company.gst or "").strip())
 
 
 def _series_fy(db: Session, series: InvoiceSeries, company: CompanyProfile) -> Optional[FinancialYear]:

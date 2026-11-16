@@ -28,7 +28,7 @@ from src.mcp_server.schema import (
 )
 
 # Measured against the real spec on 2026-09-08.
-EXPECTED_OPERATIONS = 178  # Includes GET /api/tax-withholding-sections, the four /api/tds routes and the two TCS report routes
+EXPECTED_OPERATIONS = 188  # Includes GET /api/tax-withholding-sections, the four /api/tds routes and the two TCS report routes
 EXPECTED_TOOLS = 151  # generated only; `search` and `fetch` are added on top
 # The /api/quotations routes added ten operations and ten tools, and the GSTR-3B
 # worksheet three of each.
@@ -47,7 +47,10 @@ EXPECTED_TOOLS = 151  # generated only; `search` and `fetch` are added on top
 # The two /api/reports/tcs-collected routes (#769) add two operations and no
 # tool: with TDS merged the list passed its size budget, so the JSON report is
 # excluded along with its export-csv twin.
-EXPECTED_EXCLUDED = 26
+# The ten /api/delivery-challans routes (#840: eight of the challan itself, two for
+# its e-way bill) add ten operations and no tool: the whole prefix is excluded in v1,
+# the list being at its byte budget.
+EXPECTED_EXCLUDED = 36
 EXPECTED_MULTIPART_SKIPPED = 1
 
 
@@ -69,7 +72,8 @@ def test_tool_count_matches_measurement(registry):
 def test_eway_bill_routes_are_not_exposed_as_tools(registry):
     spec = app.openapi()
     eway_paths = {path for path in spec["paths"] if "eway-bill" in path}
-    assert len(eway_paths) == 5  # settings, transporters (x2), precheck, generate
+    # settings, transporters (x2), invoice precheck and generate, challan precheck and generate
+    assert len(eway_paths) == 7
     assert not [tool.name for tool in registry.specs.values() if "eway-bill" in tool.path]
 
 

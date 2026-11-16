@@ -29,6 +29,7 @@ import {
   ShoppingCart,
   Store,
   Tag,
+  Truck,
   Wallet,
   type LucideIcon,
 } from 'lucide-react';
@@ -130,6 +131,12 @@ export const PRIMARY_NAV: NavEntry[] = [
         icon: LayoutList,
       },
       { to: '/quotations', label: 'Quotations', icon: FileSignature, shortcutAction: 'go_quotations' },
+      {
+        to: '/delivery-challans',
+        label: 'Delivery Challans',
+        icon: Truck,
+        alsoTitles: [{ path: '/delivery-challans/new', title: 'New Delivery Challan' }],
+      },
       { to: '/invoice-dues', label: 'Invoice Dues', icon: AlarmClock, shortcutAction: 'go_invoice_dues' },
       // One page, both directions — the same shape as Invoices, which hosts
       // purchases behind its own voucher toggle.
@@ -409,6 +416,7 @@ export const ROUTE_TITLES: Record<string, string> = NAV_ITEMS.reduce<Record<stri
 
 /** Titles for paths with params, which can't be keyed statically. */
 const DYNAMIC_TITLES: { test: (pathname: string) => boolean; title: string }[] = [
+  { test: (p) => /^\/delivery-challans\/\d+\/edit$/.test(p), title: 'Edit Delivery Challan' },
   { test: (p) => p.startsWith('/ledgers/') && p.endsWith('/edit'), title: 'Edit Ledger' },
   { test: (p) => p.startsWith('/ledgers/'), title: 'View Ledger' },
 ];

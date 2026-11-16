@@ -33,6 +33,42 @@ INVOICE_SUB_SUPPLY_CODES = {
     SUB_SUPPLY_SKD_CKD: "SKD/CKD/Lots",
 }
 
+# Document types ("docType"). CHL is a delivery challan. From the same NIC master code
+# list as above: Document Type INV Tax Invoice, BIL Bill of Supply, BOE Bill of Entry,
+# CHL Delivery Challan, OTH Others. Sub Supply Type: 1 Supply, 2 Import, 3 Export,
+# 4 Job Work, 5 For Own Use, 6 Job work Returns, 7 Sales Return, 8 Others,
+# 9 SKD/CKD/Lots, 10 Line Sales, 11 Recipient Not Known, 12 Exhibition or Fairs.
+DOC_TYPE_TAX_INVOICE = "INV"
+DOC_TYPE_DELIVERY_CHALLAN = "CHL"
+SUB_SUPPLY_JOB_WORK = "4"
+SUB_SUPPLY_FOR_OWN_USE = "5"
+SUB_SUPPLY_OTHERS = "8"
+SUB_SUPPLY_EXHIBITION = "12"
+# What NIC allows with document type CHL on an outward movement.
+CHALLAN_SUB_SUPPLY_CODES = {
+    "4": "Job Work",
+    "5": "For Own Use",
+    "8": "Others",
+    "9": "SKD/CKD/Lots",
+    "10": "Line Sales",
+    "11": "Recipient Not Known",
+    "12": "Exhibition or Fairs",
+}
+# NIC requires subSupplyDesc with 8 (Others), and limits it to 20 characters.
+MAX_SUB_SUPPLY_DESC_LENGTH = 20
+# Challan purpose -> (subSupplyType, subSupplyDesc). The codes 4, 5, 9 and 12 are the
+# NIC master codes listed above. The other purposes have no code of their own, so they
+# take the documented "Others" path rather than a guessed code.
+CHALLAN_PURPOSE_SUB_SUPPLY = {
+    "supply_on_approval": ("8", "Supply on approval"),
+    "job_work": ("4", ""),
+    "liquid_gas": ("8", "Liquid gas"),
+    "skd_ckd_lots": ("9", ""),
+    "exhibition": ("12", ""),
+    "own_use": ("5", ""),
+    "other": ("8", "Others"),
+}
+
 # transType: 1=Regular, 2=Bill To-Ship To, 3=Bill From-Dispatch From, 4=both.
 TRANSACTION_REGULAR = "1"
 TRANSACTION_BILL_TO_SHIP_TO = "2"

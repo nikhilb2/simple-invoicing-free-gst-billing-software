@@ -63,7 +63,7 @@ describe('GSTR-1 format validation', () => {
     expect(errorFor({ suffix: '/A', separator: '/', include_year: false })).toBeNull();
   });
 
-  test.each(['sales', 'credit_note'])('checks registered %s series', voucher_type => {
+  test.each(['sales', 'credit_note', 'delivery_challan'])('checks registered %s series', voucher_type => {
     expect(errorFor({ prefix: 'INVALID_' }, { ...saved, voucher_type })).not.toBeNull();
   });
 

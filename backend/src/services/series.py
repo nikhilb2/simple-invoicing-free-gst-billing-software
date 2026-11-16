@@ -94,7 +94,7 @@ def gstr1_series_warning(
 # What a document is numbered with when its company has no series row at all.
 # Everything else keeps the historical INV- fallback; a quotation must not, or it
 # would print an invoice-style number.
-FALLBACK_PREFIXES = {"quotation": "QT", "proforma": "PI"}
+FALLBACK_PREFIXES = {"quotation": "QT", "proforma": "PI", "delivery_challan": "DC"}
 
 
 def _number_taken(db: Session, voucher_type: str, number: str, company_id: Optional[int]) -> bool:
@@ -107,12 +107,15 @@ def _number_taken(db: Session, voucher_type: str, number: str, company_id: Optio
     """
     # Import here to avoid circular imports
     from src.models.credit_note import CreditNote  # noqa: PLC0415
+    from src.models.delivery_challan import DeliveryChallan  # noqa: PLC0415
     from src.models.invoice import Invoice  # noqa: PLC0415
     from src.models.payment import Payment  # noqa: PLC0415
     from src.models.quotation import DOCUMENT_TYPES, Quotation  # noqa: PLC0415
 
     if voucher_type in DOCUMENT_TYPES:
         model, column = Quotation, Quotation.quotation_number
+    elif voucher_type == "delivery_challan":
+        model, column = DeliveryChallan, DeliveryChallan.challan_number
     elif voucher_type == "payment":
         model, column = Payment, Payment.payment_number
     elif voucher_type in ("credit_note", "debit_note"):

@@ -324,7 +324,7 @@ def test_financial_years_and_series_are_per_company(client, tenants, act_as):
     own_series = _ids(_ok(client.get("/api/invoice-series/")))
 
     # B has their own seeded year and series, and none of A's.
-    assert len(own_fys) == 1 and len(own_series) == 7
+    assert len(own_fys) == 1 and len(own_series) == 8
     assert own_fys.isdisjoint(tenants.fy_ids)
     assert own_series.isdisjoint(tenants.series_ids)
 
@@ -696,7 +696,7 @@ def test_creator_becomes_admin_with_a_seeded_financial_year(db_session, tenants)
     series = db_session.query(InvoiceSeries).filter(InvoiceSeries.financial_year_id == fy.id).all()
     assert {s.company_id for s in series} == {company_id}
     assert sorted(s.voucher_type for s in series) == [
-        "credit_note", "debit_note", "payment", "proforma", "purchase", "quotation", "sales",
+        "credit_note", "debit_note", "delivery_challan", "payment", "proforma", "purchase", "quotation", "sales",
     ]
 
 

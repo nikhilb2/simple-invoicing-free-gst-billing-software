@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Boxes, Lock, Plus, Trash2 } from 'lucide-react';
 import api, { getApiErrorCode, getApiErrorMessage } from '../../api/client';
-import type { CompanyAccount, CompanyProfile, Invoice, InvoiceCreate, Ledger, LedgerAddress, Payment, PaymentCreate, Product, Quotation, QuotationConversionDraft, QuotationFields } from '../../types/api';
+import type { CompanyAccount, CompanyProfile, Invoice, InvoiceCreate, Ledger, LedgerAddress, Payment, PaymentCreate, Product, DeliveryChallanConversionDraft, Quotation, QuotationConversionDraft, QuotationFields } from '../../types/api';
 import InvoicePreview from '../../components/InvoicePreview';
 import QuotationPreview from '../../components/QuotationPreview';
 import ScanBar, { type ScanOutcome, type ScanResolution } from '../../components/ScanBar';
@@ -25,6 +25,9 @@ import { EMPTY_TCS_FORM, buildTcsPayload, findTcsSection, reconcileTcsSection, t
 import TcsFields from './components/TcsFields';
 import { createQuotation, fetchConversionDraft, fetchQuotationById, updateQuotation } from '../../features/quotations/api';
 import { quotationQueryKeys } from '../../features/quotations/queryKeys';
+import { convertDeliveryChallan, fetchChallanConversionDraft } from '../../features/deliveryChallans/api';
+import { deliveryChallanQueryKeys } from '../../features/deliveryChallans/queryKeys';
+import { challanQuantityNotes, challanReferenceText, readChallanAlreadyInvoiced } from '../../utils/challanConversion';
 import {
   composerDocumentName,
   conversionDateDefaults,
@@ -119,6 +122,12 @@ export default function InvoicesPage() {
   const [alreadyConverted, setAlreadyConverted] = useState<{ message: string; invoiceNumber: string | null } | null>(null);
   /** The quotation changed after this conversion opened, and the save was refused. */
   const [conversionOutOfDate, setConversionOutOfDate] = useState(false);
+  /* Converting a delivery challan is a second conversion, never open together with the first. */
+  const [challanConversion, setChallanConversion] = useState<DeliveryChallanConversionDraft | null>(null);
+  const [challanAlreadyInvoiced, setChallanAlreadyInvoiced] = useState<{ message: string; invoiceNumber: string | null } | null>(null);
+  const [challanConversionOutOfDate, setChallanConversionOutOfDate] = useState(false);
+  /** Number of the delivery challan the invoice being edited was made from. */
+  const [editingFromChallan, setEditingFromChallan] = useState<string | null>(null);
   const [validUntil, setValidUntil] = useState(() => defaultValidUntil(toIsoDate(new Date())));
   /** Follows the document date until someone sets it by hand. */
   const validUntilEditedRef = useRef(false);
@@ -223,7 +232,7 @@ export default function InvoicesPage() {
   // A fresh composer starts with nobody chosen, even if the last session left a ledger in the
   // store. Opening a saved invoice or quotation sets its own ledger once it loads.
   useEffect(() => {
-    const opensSavedDocument = ['edit', 'duplicate', 'edit_quotation', 'from_quotation'].some((key) => searchParams.has(key));
+    const opensSavedDocument = ['edit', 'duplicate', 'edit_quotation', 'from_quotation', 'from_challan'].some((key) => searchParams.has(key));
     if (!opensSavedDocument) setSelectedLedgerId('');
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount only
   }, []);
@@ -311,6 +320,26 @@ export default function InvoicesPage() {
       .catch((err) => {
         setError(getApiErrorMessage(err, 'Unable to load this document for conversion.'));
         setSearchParams((prev) => { prev.delete('from_quotation'); return prev; }, { replace: true });
+      });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
+  // Handle ?from_challan=<id> — convert a delivery challan through this same composer
+  useEffect(() => {
+    const challanId = searchParams.get('from_challan');
+    if (!challanId || challanConversion) return;
+    fetchChallanConversionDraft(Number(challanId))
+      .then(startConvertingChallan)
+      .catch((err) => {
+        /* A stale link or bookmark to a challan that has since been invoiced: say where the
+           invoice is, as a save that lost the race does, rather than leave a blank form. */
+        const alreadyInvoiced = readChallanAlreadyInvoiced(err);
+        if (alreadyInvoiced) {
+          setChallanAlreadyInvoiced(alreadyInvoiced);
+        } else {
+          setError(getApiErrorMessage(err, 'Unable to load this delivery challan for conversion.'));
+        }
+        setSearchParams((prev) => { prev.delete('from_challan'); return prev; }, { replace: true });
       });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
@@ -688,6 +717,10 @@ export default function InvoicesPage() {
     setConversion(null);
     setConversionOutOfDate(false);
     setAlreadyConverted(null);
+    setChallanConversion(null);
+    setChallanConversionOutOfDate(false);
+    setChallanAlreadyInvoiced(null);
+    setEditingFromChallan(null);
     setValidUntil(defaultValidUntil(toIsoDate(new Date())));
     validUntilEditedRef.current = false;
     pendingShippingRef.current = null;
@@ -758,6 +791,9 @@ export default function InvoicesPage() {
     setEditingInvoiceId(null);
     setConversion(null);
     setConversionOutOfDate(false);
+    setChallanConversion(null);
+    setChallanConversionOutOfDate(false);
+    setEditingFromChallan(null);
     setEditingQuotation(quotation);
     setVoucherType(quotation.document_type);
     setReferenceNotes(quotation.reference_notes ?? '');
@@ -794,6 +830,10 @@ export default function InvoicesPage() {
     setConversionOutOfDate(false);
     setEditingInvoiceId(null);
     setEditingQuotation(null);
+    setChallanConversion(null);
+    setChallanConversionOutOfDate(false);
+    setChallanAlreadyInvoiced(null);
+    setEditingFromChallan(null);
     setConversion(draft);
     setVoucherType('sales');
     setSupplierInvoiceNumber('');
@@ -829,10 +869,59 @@ export default function InvoicesPage() {
     }
   }
 
-  /** Leave a quotation edit or a conversion: the URL is what would bring it back. */
+  function startConvertingChallan(draft: DeliveryChallanConversionDraft) {
+    const invoice = draft.invoice;
+    setError('');
+    setSuccess('');
+    setAlreadyConverted(null);
+    setChallanAlreadyInvoiced(null);
+    setChallanConversionOutOfDate(false);
+    setConversionOutOfDate(false);
+    setEditingInvoiceId(null);
+    setEditingFromChallan(null);
+    setEditingQuotation(null);
+    setConversion(null);
+    setChallanConversion(draft);
+    setVoucherType('sales');
+    setSupplierInvoiceNumber('');
+    setReferenceNotes(invoice.reference_notes ?? '');
+    setTaxInclusive(invoice.tax_inclusive ?? false);
+    setApplyRoundOff(invoice.apply_round_off ?? false);
+    setTcsForm(tcsFormFromDocument(invoice));
+    setTcsHadSaved(false);
+    setTcsNotice('');
+    setInvoiceDiscountType(invoice.discount_type || 'percentage');
+    setInvoiceDiscountValue(invoice.discount_value != null ? String(invoice.discount_value) : '');
+    const dates = conversionDateDefaults(readInvoiceComposerPrefs());
+    setInvoiceDate(dates.invoiceDate);
+    setDueDateMode(dates.dueDateMode);
+    setDueDate(dates.dueDate);
+    setDueDateDays(dates.dueDateDays);
+    const ledgerKey = String(invoice.ledger_id);
+    const placeChoice = invoice.place_of_supply ? { ledgerId: ledgerKey, code: invoice.place_of_supply } : null;
+    setPlaceOfSupplyChoice(placeChoice);
+    setSavedPlaceOfSupply(null);
+    const nextItems = conversionDraftToFormItems(invoice);
+    itemsRef.current = nextItems;
+    setItems(nextItems);
+    setNextItemId(nextItems.length + 1);
+    prefillShipping(invoice.ledger_id, invoice.shipping_address_id ?? null, '', '');
+    setSelectedLedgerId(ledgerKey);
+  }
+
+  /** Replaces the form with the challan as it now stands. */
+  async function reloadChallanConversion(challanId: number) {
+    try {
+      startConvertingChallan(await fetchChallanConversionDraft(challanId));
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Unable to load this delivery challan for conversion.'));
+    }
+  }
+
+  /** Leave a quotation or challan edit or a conversion: the URL is what would bring it back. */
   function clearQuotationParams() {
-    if (searchParams.has('edit_quotation') || searchParams.has('from_quotation')) {
-      setSearchParams((prev) => { prev.delete('edit_quotation'); prev.delete('from_quotation'); return prev; }, { replace: true });
+    if (['edit_quotation', 'from_quotation', 'from_challan'].some((key) => searchParams.has(key))) {
+      setSearchParams((prev) => { prev.delete('edit_quotation'); prev.delete('from_quotation'); prev.delete('from_challan'); return prev; }, { replace: true });
     }
   }
 
@@ -889,6 +978,10 @@ export default function InvoicesPage() {
     setError('');
     setSuccess('');
     setEditingInvoiceId(invoice.id);
+    setChallanConversion(null);
+    setChallanConversionOutOfDate(false);
+    setChallanAlreadyInvoiced(null);
+    setEditingFromChallan(invoice.source_challan_number ?? null);
     setVoucherType(invoice.voucher_type);
     setSupplierInvoiceNumber(invoice.supplier_invoice_number ?? '');
     setReferenceNotes(invoice.voucher_type === 'sales' ? (invoice.reference_notes ?? '') : '');
@@ -1118,6 +1211,12 @@ export default function InvoicesPage() {
         if (searchParams.has('edit')) {
           setSearchParams((prev) => { prev.delete('edit'); return prev; }, { replace: true });
         }
+      } else if (challanConversion) {
+        const res = await convertDeliveryChallan(challanConversion.challan_id, { ...payload, challan_updated_at: challanConversion.invoice.challan_updated_at });
+        setSuccess(`Invoice ${res.invoice_number} created from delivery challan ${challanConversion.challan_number}.`);
+        setPreviewInvoice(res);
+        clearQuotationParams();
+        await queryClient.invalidateQueries({ queryKey: deliveryChallanQueryKeys.all });
       } else if (conversion) {
         const res = await api.post<Invoice>(`/quotations/${conversion.quotation_id}/convert`, conversionPayload(payload, conversion));
         setSuccess(`Invoice ${res.data.invoice_number} created from ${conversion.quotation_number}. Inventory has been reduced.`);
@@ -1142,6 +1241,18 @@ export default function InvoicesPage() {
       resetInvoiceForm();
       await refreshInvoicesAfterMutation();
     } catch (err) {
+      const challanAlreadyInvoicedError = challanConversion ? readChallanAlreadyInvoiced(err) : null;
+      if (challanAlreadyInvoicedError) {
+        /* In this order: resetting the form clears the banner. */
+        resetInvoiceForm();
+        setChallanAlreadyInvoiced(challanAlreadyInvoicedError);
+        clearQuotationParams();
+        await queryClient.invalidateQueries({ queryKey: deliveryChallanQueryKeys.all });
+        return;
+      }
+      if (challanConversion && getApiErrorCode(err) === 'challan_changed') {
+        setChallanConversionOutOfDate(true);
+      }
       if (conversion && getApiErrorCode(err) === 'quotation_already_converted') {
         /* Someone got there first, or this is a stale tab. Nothing went wrong and
            there is nothing to fix on this form: say where the invoice is. */
@@ -1202,6 +1313,13 @@ export default function InvoicesPage() {
   const conversionShortfalls = conversion
     ? conversionLineShortfalls(conversion.invoice.items, items.map((item) => ({ productId: Number(item.productId), quantity: lineQuantity(item) })))
     : [];
+  const challanNotes = challanConversion
+    ? challanQuantityNotes(
+      challanConversion.challan_items,
+      items.map((item) => ({ productId: Number(item.productId), quantity: lineQuantity(item) })),
+      products,
+    )
+    : [];
   const pickerItem = pickerItemId !== null ? items.find((item) => item.id === pickerItemId) ?? null : null;
   const pickerProduct = pickerItem ? findProduct(Number(pickerItem.productId)) : undefined;
 
@@ -1241,7 +1359,8 @@ export default function InvoicesPage() {
               <h2 className="nav-panel__title">
                 {editingInvoiceId ? `Editing invoice #${editingInvoiceId}`
                   : editingQuotation ? `Editing ${editingQuotation.quotation_number}`
-                    : conversion ? `Converting ${conversion.quotation_number}` : 'Order entry'}
+                    : conversion ? `Converting ${conversion.quotation_number}`
+                      : challanConversion ? `Converting ${challanConversion.challan_number}` : 'Order entry'}
               </h2>
             </div>
             <div className="button-row" style={{ justifyContent: 'flex-end' }}>
@@ -1344,6 +1463,49 @@ export default function InvoicesPage() {
             </div>
           ) : null}
 
+          {challanAlreadyInvoiced ? (
+            <div className="summary-box" data-testid="challan-already-invoiced">
+              <p className="eyebrow">Already invoiced</p>
+              <p>{challanAlreadyInvoiced.message}</p>
+              {challanAlreadyInvoiced.invoiceNumber ? (
+                <Link to={`/invoices-view?search=${encodeURIComponent(challanAlreadyInvoiced.invoiceNumber)}`}>Open invoice</Link>
+              ) : null}
+            </div>
+          ) : null}
+
+          {challanConversion ? (
+            <div className="summary-box" data-testid="challan-conversion-banner">
+              <p className="eyebrow">Creating a tax invoice from delivery challan {challanReferenceText(challanConversion.challan_number, challanConversion.challan_date)}</p>
+              <p className="muted-text">
+                Review it and save. The challan&apos;s goods are already out of stock, so only quantity changes move stock now. Saving marks the challan as invoiced.
+              </p>
+              {challanConversionOutOfDate ? (
+                <div data-testid="challan-conversion-out-of-date">
+                  <p className="field-warning" data-warning="challan_changed">
+                    ⚠️ {challanConversion.challan_number} was changed after this was opened, so it cannot be saved from here. Loading the latest version replaces what is on this form.
+                  </p>
+                  <button type="button" className="button button--secondary" onClick={() => void reloadChallanConversion(challanConversion.challan_id)}>
+                    Load latest version
+                  </button>
+                </div>
+              ) : null}
+              {challanConversion.warnings.map((warning) => (
+                <p key={`${warning.code}-${warning.message}`} className="field-warning" data-warning={warning.code}>
+                  ⚠️ {warning.message}
+                </p>
+              ))}
+              {challanNotes.map((note) => (
+                <p key={note.productId} className="field-warning" data-testid="challan-quantity-note">⚠️ {note.message}</p>
+              ))}
+            </div>
+          ) : null}
+
+          {editingInvoiceId && editingFromChallan ? (
+            <p className="muted-text" data-testid="invoice-from-challan-note">
+              Made from delivery challan {editingFromChallan}. Saving moves stock only by what you change here.
+            </p>
+          ) : null}
+
           {editingQuotation?.status === 'accepted' ? (
             <p className="field-warning" data-testid="quotation-accepted-edit-warning">
               ⚠️ The customer accepted this version. Editing keeps it marked accepted, so reopen it first if they need to agree to the changes.
@@ -1358,14 +1520,14 @@ export default function InvoicesPage() {
                   id="invoice-voucher-type"
                   className="select"
                   value={voucherType}
-                  disabled={conversion !== null || editingQuotation !== null || editingInvoiceId !== null}
+                  disabled={conversion !== null || challanConversion !== null || editingQuotation !== null || editingInvoiceId !== null}
                   onChange={(event) => changeVoucherType(event.target.value as ComposerVoucherType)}
                 >
                   <option value="sales">Sales</option>
                   <option value="purchase">Purchase</option>
                   <option value="payment">Payment</option>
                   <option value="receipt">Receipt</option>
-                  {!editingInvoiceId && !conversion ? (
+                  {!editingInvoiceId && !conversion && !challanConversion ? (
                     <>
                       <option value="quotation">Quotation</option>
                       <option value="proforma">Proforma invoice</option>
@@ -2048,7 +2210,7 @@ export default function InvoicesPage() {
                   Cancel edit
                 </button>
               ) : null}
-              {editingQuotation || conversion ? (
+              {editingQuotation || conversion || challanConversion ? (
                 <button
                   type="button"
                   className="button button--secondary"
@@ -2058,7 +2220,7 @@ export default function InvoicesPage() {
                     setVoucherType('sales');
                   }}
                 >
-                  {conversion ? 'Cancel conversion' : 'Cancel edit'}
+                  {conversion || challanConversion ? 'Cancel conversion' : 'Cancel edit'}
                 </button>
               ) : null}
               {voucherType === 'payment' ? (

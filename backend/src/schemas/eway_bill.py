@@ -148,5 +148,9 @@ class EwayBillPreCheckResult(BaseModel):
     form_data: EwayBillFormData
     item_validation: list[EwayBillValidationError]
     threshold_warning: str | None = None
+    # "INV" for an invoice, "CHL" for a delivery challan.
+    document_type: str = "INV"
+    # Challan only: what the purpose turns into on the bill, e.g. "Job Work".
+    sub_supply_label: str | None = None
     eway_local_threshold: float = 50000
     eway_interstate_threshold: float = 50000

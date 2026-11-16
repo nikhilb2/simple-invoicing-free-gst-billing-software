@@ -119,6 +119,10 @@ def _seed_tenant(client, act_as, user, name: str, sku: str) -> dict:
         "ledger_id": ledger,
         "items": [{"product_id": product, "quantity": 1, "unit_price": 100}],
     }))
+    iso._ok(client.post("/api/delivery-challans/", json={
+        "ledger_id": ledger,
+        "items": [{"product_id": product, "quantity": 1, "unit_price": 100}],
+    }))
     return {
         "company": company,
         "ledger": ledger,
@@ -173,6 +177,7 @@ BUSINESS_TABLES = [
     "credit_note_invoice_refs", "financial_years", "invoice_series", "share_links",
     "eway_bill_transporters",
     "quotations", "quotation_items",
+    "delivery_challans", "delivery_challan_items",
 ]
 
 

@@ -87,6 +87,7 @@ export default defineConfig({
           { text: 'Send and share', link: '/sales/sending' },
           { text: 'Invoice Feed', link: '/sales/invoice-feed' },
           { text: 'Quotations and proforma', link: '/sales/quotations' },
+          { text: 'Delivery challans', link: '/sales/delivery-challans' },
           { text: 'Invoice Dues', link: '/sales/dues' },
           { text: 'Credit and debit notes', link: '/sales/credit-notes' },
           { text: 'Cash and bank', link: '/sales/cash-bank' },

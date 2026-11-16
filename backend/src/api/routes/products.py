@@ -20,6 +20,7 @@ from src.models.product import Product
 from src.models.product_serial import ProductSerial
 from src.models.production_transaction import ProductionTransaction
 from src.models.quotation import Quotation, QuotationItem
+from src.models.delivery_challan import STATUS_OPEN as CHALLAN_STATUS_OPEN, DeliveryChallan, DeliveryChallanItem
 from src.models.user import User, UserRole
 from src.schemas.product import (
     ImportCSVResult,
@@ -257,6 +258,30 @@ def update_product(
             ),
         )
 
+    if payload.track_serials and not was_tracking_serials:
+        # The challan's goods have no serials, so releasing them later (cancel or
+        # convert) would put units in stock that no serial row covers (#840).
+        open_challans = [
+            number
+            for (number,) in db.query(DeliveryChallan.challan_number)
+            .join(DeliveryChallanItem, DeliveryChallanItem.challan_id == DeliveryChallan.id)
+            .filter(
+                DeliveryChallan.company_id == active_company.id,
+                DeliveryChallan.status == CHALLAN_STATUS_OPEN,
+                DeliveryChallanItem.product_id == product_id,
+            )
+            .distinct()
+            .order_by(DeliveryChallan.challan_number)
+        ]
+        if open_challans:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"{product.name} is on open delivery challan {', '.join(open_challans)}. "
+                    "Invoice or cancel it before turning on serial numbers."
+                ),
+            )
+
     product.allow_decimal = payload.allow_decimal and not payload.track_serials
     was_tracking_inventory = bool(product.maintain_inventory)
     product.maintain_inventory = payload.maintain_inventory
@@ -355,6 +380,15 @@ def delete_product(
     )
     if has_quotation_items:
         raise HTTPException(status_code=400, detail="Cannot delete product linked to quotations")
+
+    has_challan_items = (
+        db.query(DeliveryChallanItem.id)
+        .join(DeliveryChallan, DeliveryChallanItem.challan_id == DeliveryChallan.id)
+        .filter(DeliveryChallanItem.product_id == product_id, DeliveryChallan.company_id == active_company.id)
+        .first()
+    )
+    if has_challan_items:
+        raise HTTPException(status_code=400, detail="Cannot delete product linked to delivery challans")
 
     has_serials = db.query(ProductSerial.id).filter(
         ProductSerial.company_id == active_company.id,

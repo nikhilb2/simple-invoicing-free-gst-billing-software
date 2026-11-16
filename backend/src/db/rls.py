@@ -67,6 +67,7 @@ DIRECT_TABLES: tuple[str, ...] = (
     "company_terms",
     "credit_note_items",
     "credit_notes",
+    "delivery_challans",
     "email_logs",
     "eway_bill_transporters",
     "financial_years",
@@ -95,6 +96,7 @@ DIRECT_TABLES: tuple[str, ...] = (
 CHILD_TABLES: dict[str, tuple[str, str]] = {
     "invoice_items": ("invoice_id", "invoices"),
     "quotation_items": ("quotation_id", "quotations"),
+    "delivery_challan_items": ("challan_id", "delivery_challans"),
     "credit_note_invoice_refs": ("credit_note_id", "credit_notes"),
     "payment_invoice_allocations": ("payment_id", "payments"),
     "marketplace_order_items": ("order_id", "marketplace_orders"),

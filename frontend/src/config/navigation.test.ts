@@ -395,3 +395,20 @@ describe('NAV_SHORTCUTS', () => {
     }
   });
 });
+
+describe('delivery challans in the navigation', () => {
+  it('sits under Sales, directly after Quotations', () => {
+    const sales = PRIMARY_NAV.find((entry) => entry.kind === 'section' && entry.id === 'sales');
+    const paths = sales?.kind === 'section' ? sales.children.map((child) => child.to) : [];
+    expect(paths.indexOf('/delivery-challans')).toBe(paths.indexOf('/quotations') + 1);
+  });
+
+  it('is titled, and open to everyone who can use invoices', () => {
+    expect(resolveDocumentTitle('/delivery-challans')).toBe('Delivery Challans');
+    expect(resolveDocumentTitle('/delivery-challans/new')).toBe('New Delivery Challan');
+    expect(resolveDocumentTitle('/delivery-challans/12/edit')).toBe('Edit Delivery Challan');
+    expect(pathsOf(false)).toContain('/delivery-challans');
+    expect(pathsOf(true)).toContain('/delivery-challans');
+    expect(sectionIdForPath('/delivery-challans')).toBe('sales');
+  });
+});

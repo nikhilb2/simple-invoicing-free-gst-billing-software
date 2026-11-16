@@ -63,6 +63,17 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
         if place_of_supply
         else ""
     )
+    # Read off the link, not the free-text reference, so it cannot be edited away
+    # and is not copied onto a duplicate that has no challan behind it (#840).
+    source_challan = getattr(invoice, "source_challan", None)
+    source_challan_line = ""
+    if source_challan is not None:
+        challan_date = (
+            f" dated {source_challan.challan_date:%d %b %Y}" if source_challan.challan_date else ""
+        )
+        source_challan_line = (
+            f"<p>Against delivery challan {_e(source_challan.challan_number)}{challan_date}</p>"
+        )
     tax_header_cells = _build_pdf_tax_header_cells(interstate_supply)
     table_colgroup = _build_pdf_table_colgroup(interstate_supply, show_sku=show_sku)
 
@@ -568,6 +579,7 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
       <h2>Invoice {_e(inv_number)}</h2>
       <p>Date: {inv_date}</p>
       {place_of_supply_line}
+      {source_challan_line}
       <p>Currency: {_e(currency)}</p>
     </div>
   </header>

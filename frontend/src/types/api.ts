@@ -404,6 +404,10 @@ export type Invoice = {
   /** The quotation or proforma this was converted from. */
   source_quotation_id?: number | null;
   source_quotation_number?: string | null;
+  /** The delivery challan this was converted from. */
+  source_challan_id?: number | null;
+  source_challan_number?: string | null;
+  source_challan_date?: string | null;
   // TDS (#768, #770)
   tds_amount?: number;
 };
@@ -569,6 +573,119 @@ export type QuotationConversionDraft = {
   document_type: QuotationDocumentType;
   invoice: QuotationConvert;
   warnings: QuotationConversionWarning[];
+};
+
+export type DeliveryChallanStatus = 'open' | 'invoiced' | 'cancelled';
+export type DeliveryChallanPurpose =
+  | 'supply_on_approval' | 'job_work' | 'liquid_gas' | 'skd_ckd_lots' | 'exhibition' | 'own_use' | 'other';
+
+export type DeliveryChallanItem = {
+  id: number;
+  product_id: number;
+  product_name: string | null;
+  unit: string | null;
+  hsn_sac: string | null;
+  quantity: number;
+  unit_price: number;
+  gst_rate: number;
+  taxable_amount: number;
+  tax_amount: number;
+  cgst_amount: number;
+  sgst_amount: number;
+  igst_amount: number;
+  line_total: number;
+  description: string | null;
+};
+
+export type DeliveryChallan = {
+  id: number;
+  challan_number: string;
+  status: DeliveryChallanStatus;
+  purpose: DeliveryChallanPurpose;
+  purpose_label: string;
+  challan_date: string;
+  financial_year_id: number | null;
+  ledger_id: number;
+  ledger_name: string | null;
+  ledger_address: string | null;
+  ledger_gst: string | null;
+  ledger_phone: string | null;
+  company_name: string | null;
+  company_address: string | null;
+  company_gst: string | null;
+  company_currency_code: string | null;
+  place_of_supply: string | null;
+  shipping_address: string | null;
+  shipping_address_label: string | null;
+  shipping_address_id: number | null;
+  reference_notes: string | null;
+  terms_text: string | null;
+  taxable_amount: number;
+  total_tax_amount: number;
+  cgst_amount: number;
+  sgst_amount: number;
+  igst_amount: number;
+  total_amount: number;
+  /** Days since the challan date while open; null once invoiced or cancelled. */
+  age_days: number | null;
+  invoiced_at: string | null;
+  cancelled_at: string | null;
+  created_at: string;
+  updated_at: string;
+  items: DeliveryChallanItem[];
+  /** The one live invoice made from it, if any. */
+  invoice_id: number | null;
+  invoice_number: string | null;
+  /** Every invoice ever made from it, cancelled ones included. */
+  invoices: { id: number; invoice_number: string | null; status: string }[];
+};
+
+export type DeliveryChallanItemInput = {
+  product_id: number;
+  quantity: number;
+  unit_price?: number | null;
+  gst_rate?: number | null;
+  description?: string | null;
+};
+
+export type DeliveryChallanFields = {
+  ledger_id: number;
+  /** Blank or left out on create: the next number in the DC series. */
+  challan_number?: string | null;
+  challan_date?: string;
+  purpose: DeliveryChallanPurpose;
+  place_of_supply?: string | null;
+  shipping_address_same_as_billing?: boolean;
+  shipping_address_id?: number | null;
+  new_shipping_address?: { label: string; address: string } | null;
+  reference_notes?: string | null;
+  terms_text?: string | null;
+  items: DeliveryChallanItemInput[];
+};
+export type DeliveryChallanCreate = DeliveryChallanFields;
+export type DeliveryChallanUpdate = DeliveryChallanFields;
+
+export type PaginatedDeliveryChallans = {
+  items: DeliveryChallan[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+  status_counts: Partial<Record<DeliveryChallanStatus, number>>;
+};
+
+/** An invoice, and which version of the challan it was drawn from. */
+export type DeliveryChallanConvert = InvoiceCreate & {
+  challan_updated_at?: string | null;
+};
+
+export type DeliveryChallanConversionDraft = {
+  challan_id: number;
+  challan_number: string;
+  challan_date: string;
+  invoice: DeliveryChallanConvert;
+  challan_items: { product_id: number; product_name: string | null; quantity: number }[];
+  warnings: { code: string; message: string }[];
 };
 
 export type InvoiceItemInput = {

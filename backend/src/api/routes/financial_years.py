@@ -28,6 +28,8 @@ DEFAULT_SERIES_CONFIGS = {
     # an invoice number or leave a gap in the sales series.
     "quotation": {"prefix": "QT", "suffix": "", "include_year": True, "year_format": "YYYY", "separator": "-", "pad_digits": 3},
     "proforma": {"prefix": "PI", "suffix": "", "include_year": True, "year_format": "YYYY", "separator": "-", "pad_digits": 3},
+    # Rule 55 challans number on their own series.
+    "delivery_challan": {"prefix": "DC", "suffix": "", "include_year": True, "year_format": "YYYY", "separator": "-", "pad_digits": 3},
 }
 
 

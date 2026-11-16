@@ -29,6 +29,8 @@ EXCLUDED_PATH_PREFIXES: tuple[str, ...] = (
     # Not exposed to AI assistants for now: the maintainer has not decided whether
     # they should be. See PR #379.
     "/api/eway-bill",
+    # Delivery challans (#840): not exposed to AI assistants in v1; the tool list is at its byte budget.
+    "/api/delivery-challans",
 )
 
 EXCLUDED_OPERATIONS: frozenset[tuple[str, str]] = frozenset(

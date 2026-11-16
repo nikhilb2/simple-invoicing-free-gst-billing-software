@@ -16,8 +16,12 @@ from sqlalchemy.orm import Session
 
 from src.core.eway_bill_codes import (
     AIR_MODE,
+    CHALLAN_PURPOSE_SUB_SUPPLY,
+    CHALLAN_SUB_SUPPLY_CODES,
     DISALLOWED_TEXT_REGEX,
     DOC_NO_REGEX,
+    DOC_TYPE_DELIVERY_CHALLAN,
+    DOC_TYPE_TAX_INVOICE,
     INVOICE_SUB_SUPPLY_CODES,
     MAX_ADDRESS_LENGTH,
     MAX_DESC_LENGTH,
@@ -26,6 +30,7 @@ from src.core.eway_bill_codes import (
     MAX_NAME_LENGTH,
     MAX_PLACE_LENGTH,
     MAX_SAME_PIN_DISTANCE_KM,
+    MAX_SUB_SUPPLY_DESC_LENGTH,
     MAX_TRANSPORT_DOC_NO_LENGTH,
     NIC_JSON_VERSION,
     NIC_UQC_CODES,
@@ -34,6 +39,7 @@ from src.core.eway_bill_codes import (
     ROAD_MODE,
     SHIP_MODE,
     SUB_SUPPLY_EXPORT,
+    SUB_SUPPLY_OTHERS,
     TRANSACTION_BILL_FROM_DISPATCH_FROM,
     TRANSACTION_BILL_TO_SHIP_TO,
     TRANSACTION_REGULAR,
@@ -132,6 +138,38 @@ def _split_address(address: str) -> tuple[str, str]:
     return first, rest
 
 
+def _is_challan(document) -> bool:
+    """True for a delivery challan. The public functions take a challan (duck-typed) as well as an invoice."""
+    return hasattr(document, "challan_number")
+
+
+def _noun(document) -> str:
+    return "challan" if _is_challan(document) else "invoice"
+
+
+def _doc_number(document) -> str:
+    number = document.challan_number if _is_challan(document) else document.invoice_number
+    return _s(number) or str(document.id)
+
+
+def _doc_date_value(document):
+    return document.challan_date if _is_challan(document) else document.invoice_date
+
+
+def challan_sub_supply(challan) -> tuple[str, str]:
+    """The NIC subSupplyType and subSupplyDesc a challan's purpose turns into."""
+    code, desc = CHALLAN_PURPOSE_SUB_SUPPLY.get(
+        getattr(challan, "purpose", None), (SUB_SUPPLY_OTHERS, "Others")
+    )
+    return code, desc[:MAX_SUB_SUPPLY_DESC_LENGTH]
+
+
+def _challan_sub_supply_label(challan) -> str:
+    code, desc = challan_sub_supply(challan)
+    label = CHALLAN_SUB_SUPPLY_CODES.get(code, "Others")
+    return f"{label} ({desc})" if desc else label
+
+
 def _item_hsn(item: InvoiceItem, product: Product | None) -> str:
     return _s(item.hsn_sac) or (_s(product.hsn_sac) if product else "")
 
@@ -144,18 +182,19 @@ def validate_invoice(
     """What is wrong with the invoice itself, which no form input can fix."""
     errors: list[EwayBillValidationError] = []
 
-    doc_no = _s(invoice.invoice_number) or str(invoice.id)
+    noun = _noun(invoice)
+    doc_no = _doc_number(invoice)
     if not DOC_NO_REGEX.match(doc_no):
         errors.append(EwayBillValidationError(
-            field="invoice_number",
-            message=f"Invoice number '{doc_no}' can't be used: the portal allows at most 16 "
+            field=f"{noun}_number",
+            message=f"{noun.capitalize()} number '{doc_no}' can't be used: the portal allows at most 16 "
                     "characters, and only letters, numbers, / - and .",
         ))
 
     if len(items or []) > MAX_ITEMS:
         errors.append(EwayBillValidationError(
-            field="invoice_items",
-            message=f"This invoice has {len(items)} items. The portal allows at most {MAX_ITEMS} per E-Way Bill.",
+            field=f"{noun}_items",
+            message=f"This {noun} has {len(items)} items. The portal allows at most {MAX_ITEMS} per E-Way Bill.",
         ))
 
     # HSN is mandatory on every item, and at least one has to be goods: the portal
@@ -179,8 +218,8 @@ def validate_invoice(
 
     if items and not goods_found:
         errors.append(EwayBillValidationError(
-            field="invoice_items",
-            message="An E-Way Bill needs at least one item of goods. This invoice only has services (SAC codes).",
+            field=f"{noun}_items",
+            message=f"An E-Way Bill needs at least one item of goods. This {noun} only has services (SAC codes).",
         ))
 
     return errors
@@ -196,6 +235,8 @@ def pre_check(
     """Check what data is available and what's missing before showing the form."""
     errors: list[EwayBillValidationError] = []
     missing: list[EwayBillValidationError] = []
+    is_challan = _is_challan(invoice)
+    noun = _noun(invoice)
 
     # ── Seller and buyer: what the invoice saved, so the bill matches the invoice
     # even if the master record changed later. Invoices older than the snapshot
@@ -272,7 +313,7 @@ def pre_check(
     if ships_elsewhere:
         missing.append(EwayBillValidationError(
             field="ship_to_state_code",
-            message="Filled from the invoice's shipping address. Check the delivery state, and change "
+            message=f"Filled from the {noun}'s shipping address. Check the delivery state, and change "
                     "the transaction type to Regular if the goods stay with the buyer in the same state.",
         ))
 
@@ -289,7 +330,7 @@ def pre_check(
     # Rule 138(1) applies to a consignment "exceeding" the limit.
     if invoice_value <= threshold_value:
         threshold_warning = (
-            f"This invoice (₹{invoice_value:,.2f}) does not exceed the configured "
+            f"This {noun} (₹{invoice_value:,.2f}) does not exceed the configured "
             f"{'interstate' if interstate else 'local'} E-Way Bill threshold "
             f"(₹{threshold_value:,.2f}). Generate only if required."
         )
@@ -316,6 +357,10 @@ def pre_check(
         ship_to_state_code=buyer_state_code,
         transaction_type=TRANSACTION_BILL_TO_SHIP_TO if ships_elsewhere else TRANSACTION_REGULAR,
     )
+    sub_supply_label: str | None = None
+    if is_challan:
+        form_data.sub_supply_type = challan_sub_supply(invoice)[0]
+        sub_supply_label = _challan_sub_supply_label(invoice)
 
     return EwayBillPreCheckResult(
         valid=valid,
@@ -324,6 +369,8 @@ def pre_check(
         form_data=form_data,
         item_validation=item_errors,
         threshold_warning=threshold_warning,
+        document_type=DOC_TYPE_DELIVERY_CHALLAN if is_challan else DOC_TYPE_TAX_INVOICE,
+        sub_supply_label=sub_supply_label,
         eway_local_threshold=local_threshold,
         eway_interstate_threshold=interstate_threshold,
     )
@@ -345,8 +392,11 @@ def _parse_doc_date(val: str | None) -> date | None:
         return None
 
 
-def validate_form_data(form: EwayBillFormData) -> list[EwayBillValidationError]:
+def validate_form_data(
+    form: EwayBillFormData, *, document_type: str = DOC_TYPE_TAX_INVOICE
+) -> list[EwayBillValidationError]:
     """Validate the complete form data before generating JSON."""
+    challan = document_type == DOC_TYPE_DELIVERY_CHALLAN
     errors: list[EwayBillValidationError] = []
 
     def add(field: str, message: str) -> None:
@@ -402,12 +452,13 @@ def validate_form_data(form: EwayBillFormData) -> list[EwayBillValidationError]:
     # Supply details. The file is always a Tax Invoice for an outward supply, and
     # NIC only allows these sub-supply types on one.
     if form.supply_type != "O":
-        add("supply_type", "Supply type must be Outward for a sales invoice.")
+        add("supply_type", f"Supply type must be Outward for a {'delivery challan' if challan else 'sales invoice'}.")
     if form.transaction_type not in TRANSACTION_TYPE_CODES:
         add("transaction_type", "Transaction type is required.")
-    if form.sub_supply_type not in INVOICE_SUB_SUPPLY_CODES:
-        allowed = ", ".join(INVOICE_SUB_SUPPLY_CODES.values())
-        add("sub_supply_type", f"Sub-supply type must be one of {allowed} for a tax invoice.")
+    allowed_sub_supply = CHALLAN_SUB_SUPPLY_CODES if challan else INVOICE_SUB_SUPPLY_CODES
+    if form.sub_supply_type not in allowed_sub_supply:
+        allowed = ", ".join(allowed_sub_supply.values())
+        add("sub_supply_type", f"Sub-supply type must be one of {allowed} for a {'delivery challan' if challan else 'tax invoice'}.")
 
     # What each transaction type requires of the states, from NIC's preparation tool.
     seller_state = _s(form.seller_state_code)
@@ -476,6 +527,7 @@ def validate_form_data(form: EwayBillFormData) -> list[EwayBillValidationError]:
 def validate_form_against_invoice(form: EwayBillFormData, invoice: Invoice) -> list[EwayBillValidationError]:
     """What the form can't say on its own: whether it agrees with the invoice it bills."""
     errors: list[EwayBillValidationError] = []
+    noun = _noun(invoice)
 
     # The portal wants CGST+SGST within a state and IGST across states, and the
     # tax is whatever the invoice computed, so the states have to agree with it.
@@ -485,22 +537,23 @@ def validate_form_against_invoice(form: EwayBillFormData, invoice: Invoice) -> l
         if float(invoice.igst_amount or 0) > 0 and seller_state == buyer_state:
             errors.append(EwayBillValidationError(
                 field="buyer_state_code",
-                message="This invoice charges IGST, but the seller and buyer state codes are the same. "
+                message=f"This {noun} charges IGST, but the seller and buyer state codes are the same. "
                         "IGST needs two different states.",
             ))
         if float(invoice.cgst_amount or 0) > 0 and seller_state != buyer_state:
             errors.append(EwayBillValidationError(
                 field="buyer_state_code",
-                message="This invoice charges CGST and SGST, but the seller and buyer state codes differ. "
+                message=f"This {noun} charges CGST and SGST, but the seller and buyer state codes differ. "
                         "CGST and SGST need the same state.",
             ))
 
     doc_date = _parse_doc_date(form.transport_doc_date)
-    invoice_date = invoice.invoice_date.date() if hasattr(invoice.invoice_date, "date") else invoice.invoice_date
+    raw_date = _doc_date_value(invoice)
+    invoice_date = raw_date.date() if hasattr(raw_date, "date") else raw_date
     if doc_date and invoice_date and doc_date < invoice_date:
         errors.append(EwayBillValidationError(
             field="transport_doc_date",
-            message="Transport document date can't be before the invoice date.",
+            message=f"Transport document date can't be before the {noun} date.",
         ))
 
     return errors
@@ -527,6 +580,7 @@ def generate_eway_bill_json(
     # not a re-derivation from form state codes — this keeps item rates and the
     # bill-level CGST/SGST/IGST values internally consistent.
     interstate = float(invoice.igst_amount or 0) > 0
+    is_challan = _is_challan(invoice)
 
     # ── Item list ──
     bill_items = []
@@ -562,7 +616,7 @@ def generate_eway_bill_json(
         })
 
     # ── Document date (NIC wants DD/MM/YYYY) ──
-    inv_date = invoice.invoice_date
+    inv_date = _doc_date_value(invoice)
     if hasattr(inv_date, "strftime"):
         doc_date = inv_date.strftime("%d/%m/%Y")
     else:
@@ -587,13 +641,19 @@ def generate_eway_bill_json(
     tot_inv = _money(invoice.total_amount)
     other_value = round(tot_inv - (taxable + cgst + sgst + igst), 2)
 
+    # A challan's purpose decides the sub-supply, whatever the form says.
+    if is_challan:
+        sub_supply_code, sub_supply_desc = challan_sub_supply(invoice)
+    else:
+        sub_supply_code, sub_supply_desc = form.sub_supply_type, ""
+
     bill_entry = {
         "userGstin": seller_gstin,
         "supplyType": "O",
-        "subSupplyType": int(form.sub_supply_type),
-        "subSupplyDesc": "",
-        "docType": "INV",
-        "docNo": _s(invoice.invoice_number) or str(invoice.id),
+        "subSupplyType": int(sub_supply_code),
+        "subSupplyDesc": _nic_text(sub_supply_desc, MAX_SUB_SUPPLY_DESC_LENGTH),
+        "docType": DOC_TYPE_DELIVERY_CHALLAN if is_challan else DOC_TYPE_TAX_INVOICE,
+        "docNo": _doc_number(invoice),
         "docDate": doc_date,
         "transType": int(form.transaction_type),
         # Bill From: GSTIN, name, state. Dispatch From: address, place, PIN, actual state.

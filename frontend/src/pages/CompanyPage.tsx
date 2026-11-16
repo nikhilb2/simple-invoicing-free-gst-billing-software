@@ -34,6 +34,7 @@ const VOUCHER_LABELS: Record<string, string> = {
   debit_note: 'Debit Note (purchase returns)',
   quotation: 'Quotation',
   proforma: 'Proforma Invoice',
+  delivery_challan: 'Delivery Challan',
 };
 
 const MAX_LOGO_SIZE_BYTES = 100 * 1024; // 100 KB

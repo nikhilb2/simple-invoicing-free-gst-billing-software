@@ -508,6 +508,10 @@ ALLOWED_QUOTATION_IMPORTERS = {
     "src/services/series.py",  # _number_taken
     "src/services/share_documents.py",
     "src/services/pdf_templates/quotation_template.py",
+    # Delivery challans (#840) reuse the document-date bounds, linked-invoice and
+    # warning shapes, and the shipping-address helpers rather than copying them.
+    "src/schemas/delivery_challan.py",
+    "src/services/delivery_challan.py",
 }
 
 

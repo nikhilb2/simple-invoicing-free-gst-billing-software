@@ -45,6 +45,7 @@ class InsufficientStockError(HTTPException):
         product_name: str,
         available: Decimal,
         required: Decimal,
+        document: str = "this invoice",
     ) -> None:
         self.product_id = product_id
         self.product_name = product_name
@@ -54,7 +55,7 @@ class InsufficientStockError(HTTPException):
             status_code=400,
             detail=(
                 f"Insufficient inventory for {product_name}: only "
-                f"{_plain_quantity(available)} in stock, and this invoice needs "
+                f"{_plain_quantity(available)} in stock, and {document} needs "
                 f"{_plain_quantity(required)}. Add stock for this product and try again."
             ),
         )
@@ -178,6 +179,7 @@ class InventoryManager:
         *,
         company_id: int | None,
         product_name: str,
+        document: str = "this invoice",
     ) -> None:
         """Raise HTTP 400 if there is insufficient stock for a sales item.
 
@@ -212,6 +214,7 @@ class InventoryManager:
                 product_name=product_name,
                 available=on_hand,
                 required=quantity,
+                document=document,
             )
 
     # ------------------------------------------------------------------

@@ -1,11 +1,13 @@
 import { Minus, Plus } from 'lucide-react';
 
 const MIN = 1;
-const MAX = 10;
+const DEFAULT_MAX = 10;
 
 type CopiesStepperProps = {
   value: number;
   onChange: (next: number) => void;
+  /** The most copies on offer. Defaults to 10; a delivery challan stops at 3. */
+  max?: number;
 };
 
 /**
@@ -20,8 +22,8 @@ type CopiesStepperProps = {
  * defend against -- the old input let the field go empty mid-edit and had to
  * repair itself on blur.
  */
-export default function CopiesStepper({ value, onChange }: CopiesStepperProps) {
-  const clamp = (n: number) => Math.min(MAX, Math.max(MIN, n));
+export default function CopiesStepper({ value, onChange, max = DEFAULT_MAX }: CopiesStepperProps) {
+  const clamp = (n: number) => Math.min(max, Math.max(MIN, n));
 
   return (
     <div className="copies-stepper" role="group" aria-label="Number of copies">
@@ -42,7 +44,7 @@ export default function CopiesStepper({ value, onChange }: CopiesStepperProps) {
           type="button"
           className="copies-stepper__step"
           onClick={() => onChange(clamp(value + 1))}
-          disabled={value >= MAX}
+          disabled={value >= max}
           aria-label="One copy more"
           title="One copy more"
         >

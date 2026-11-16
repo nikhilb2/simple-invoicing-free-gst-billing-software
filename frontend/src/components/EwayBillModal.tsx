@@ -52,6 +52,8 @@ type EwayBillPreCheckResult = {
   threshold_warning: string | null;
   eway_local_threshold: number;
   eway_interstate_threshold: number;
+  document_type?: 'INV' | 'CHL';
+  sub_supply_label?: string | null;
 };
 
 type TransporterProfile = {
@@ -140,11 +142,18 @@ function Field({ name, label, notes, children }: FieldProps) {
 }
 
 type Props = {
-  invoice: Invoice;
+  /** Exactly one of invoice or challan. */
+  invoice?: Invoice;
+  challan?: { id: number; challan_number: string };
   onClose: () => void;
 };
 
-export default function EwayBillModal({ invoice, onClose }: Props) {
+export default function EwayBillModal({ invoice, challan, onClose }: Props) {
+  const isChallan = !invoice && !!challan;
+  const sourceId = invoice?.id ?? challan?.id ?? 0;
+  const sourceNumber = invoice ? (invoice.invoice_number || invoice.id) : (challan?.challan_number ?? sourceId);
+  const apiBase = isChallan ? `/delivery-challans/${sourceId}` : `/invoices/${sourceId}`;
+  const [subSupplyLabel, setSubSupplyLabel] = useState<string | null>(null);
   // ── State ──
   const [step, setStep] = useState<'loading' | 'form' | 'error' | 'json-done'>('loading');
   const [loadError, setLoadError] = useState('');
@@ -173,7 +182,7 @@ export default function EwayBillModal({ invoice, onClose }: Props) {
     (async () => {
       try {
         const [preRes, transRes] = await Promise.all([
-          api.get<EwayBillPreCheckResult>(`/invoices/${invoice.id}/eway-bill/precheck`),
+          api.get<EwayBillPreCheckResult>(`${apiBase}/eway-bill/precheck`),
           api.get<TransporterProfile[]>('/eway-bill/transporters').catch(() => null),
         ]);
         if (cancelled) return;
@@ -181,6 +190,7 @@ export default function EwayBillModal({ invoice, onClose }: Props) {
         setTransporters(transporterList);
         const result = preRes.data;
         setForm(result.form_data);
+        setSubSupplyLabel(result.sub_supply_label ?? null);
         setInvoiceErrors(result.item_validation || []);
         setFieldNotes(notesFromPreCheck(result));
         setThresholdWarning(result.threshold_warning || null);
@@ -194,12 +204,14 @@ export default function EwayBillModal({ invoice, onClose }: Props) {
         setStep('form');
       } catch (err) {
         if (cancelled) return;
-        setLoadError(getApiErrorMessage(err, 'Could not load the E-Way Bill details for this invoice.'));
+        setLoadError(getApiErrorMessage(err, isChallan
+          ? 'Could not load the E-Way Bill details for this challan.'
+          : 'Could not load the E-Way Bill details for this invoice.'));
         setStep('error');
       }
     })();
     return () => { cancelled = true; };
-  }, [invoice.id]);
+  }, [apiBase, isChallan]);
 
   // ── Handlers ──
   const updateForm = (field: keyof EwayBillFormData, value: string | number | boolean | null) => {
@@ -242,7 +254,7 @@ export default function EwayBillModal({ invoice, onClose }: Props) {
         ship_to_state_code: showShipToState(form) ? form.ship_to_state_code : form.buyer_state_code,
       };
 
-      const res = await api.post(`/invoices/${invoice.id}/eway-bill/generate`, payload, {
+      const res = await api.post(`${apiBase}/eway-bill/generate`, payload, {
         responseType: 'blob',
       });
 
@@ -251,7 +263,7 @@ export default function EwayBillModal({ invoice, onClose }: Props) {
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `EWB_${invoice.invoice_number || invoice.id}.json`;
+      link.download = `EWB_${sourceNumber}.json`;
       link.click();
       window.URL.revokeObjectURL(url);
 
@@ -290,7 +302,7 @@ export default function EwayBillModal({ invoice, onClose }: Props) {
     const url = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `EWB_${invoice.invoice_number || invoice.id}.json`;
+    link.download = `EWB_${sourceNumber}.json`;
     link.click();
     window.URL.revokeObjectURL(url);
   };
@@ -300,7 +312,7 @@ export default function EwayBillModal({ invoice, onClose }: Props) {
     return (
       <div className="modal-overlay" role="dialog" aria-modal="true">
         <div className="modal-panel" style={{ textAlign: 'center', padding: '40px' }}>
-          <p style={{ fontSize: '1.1rem', color: 'var(--muted)' }}>Checking invoice data for E-Way Bill...</p>
+          <p style={{ fontSize: '1.1rem', color: 'var(--muted)' }}>{isChallan ? 'Checking challan data for E-Way Bill...' : 'Checking invoice data for E-Way Bill...'}</p>
         </div>
       </div>
     );
@@ -327,7 +339,7 @@ export default function EwayBillModal({ invoice, onClose }: Props) {
           <div className="panel__header">
             <div>
               <p className="eyebrow">E-Way Bill Generated</p>
-              <h2 className="nav-panel__title">EWB_{invoice.invoice_number || invoice.id}.json</h2>
+              <h2 className="nav-panel__title">EWB_{sourceNumber}.json</h2>
             </div>
             <div className="button-row">
               <button type="button" className="button button--secondary" onClick={handleCopyJson}>Copy JSON</button>
@@ -382,7 +394,7 @@ export default function EwayBillModal({ invoice, onClose }: Props) {
       <div className="modal-panel" style={{ width: 'min(860px, 100%)' }}>
         <div className="panel__header">
           <div>
-            <p className="eyebrow">Invoice #{invoice.invoice_number}</p>
+            <p className="eyebrow">{isChallan ? `Delivery challan #${challan?.challan_number}` : `Invoice #${invoice?.invoice_number}`}</p>
             <h2 id="eway-bill-title" className="nav-panel__title">Generate E-Way Bill</h2>
           </div>
           <ModalCloseButton onClick={onClose} label="Close E-Way Bill form" />
@@ -489,8 +501,10 @@ export default function EwayBillModal({ invoice, onClose }: Props) {
               </Field>
               <Field name="sub_supply_type" label="Sub-Supply Type" notes={fieldNotes}>
                 {(described) => (
-                  <select {...described} name="sub_supply_type" className="select" value={form.sub_supply_type} onChange={e => updateForm('sub_supply_type', e.target.value)}>
-                    {SUB_SUPPLY_TYPES.map(s => (
+                  <select {...described} name="sub_supply_type" className="select" value={form.sub_supply_type} disabled={isChallan} onChange={e => updateForm('sub_supply_type', e.target.value)}>
+                    {isChallan ? (
+                      <option value={form.sub_supply_type}>{subSupplyLabel ?? form.sub_supply_type}</option>
+                    ) : SUB_SUPPLY_TYPES.map(s => (
                       <option key={s.value} value={s.value}>{s.label}</option>
                     ))}
                   </select>

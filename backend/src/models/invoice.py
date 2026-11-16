@@ -1,6 +1,6 @@
 from sqlalchemy import Boolean, Column, Index, Integer, ForeignKey, DateTime, Numeric, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import date, datetime
 from src.db.base import Base
 
 
@@ -21,6 +21,14 @@ class Invoice(Base):
             unique=True,
             postgresql_where=text("source_quotation_id IS NOT NULL AND status = 'active'"),
             sqlite_where=text("source_quotation_id IS NOT NULL AND status = 'active'"),
+        ),
+        # At most one live invoice per delivery challan, on the same terms.
+        Index(
+            "ux_invoices_active_source_challan",
+            "source_challan_id",
+            unique=True,
+            postgresql_where=text("source_challan_id IS NOT NULL AND status = 'active'"),
+            sqlite_where=text("source_challan_id IS NOT NULL AND status = 'active'"),
         ),
     )
 
@@ -91,17 +99,30 @@ class Invoice(Base):
     # the invoice is cancelled and the quotation is then edited: it no longer describes
     # this invoice, so update_quotation clears the link.
     source_quotation_id = Column(Integer, ForeignKey("quotations.id"), nullable=True)
+    # The delivery challan this invoice was made from (#840). Never cleared: restoring
+    # a cancelled invoice releases whatever the challan holds at that moment, so the
+    # link stays right even after the challan is edited.
+    source_challan_id = Column(Integer, ForeignKey("delivery_challans.id"), nullable=True)
 
     ledger = relationship("Buyer", back_populates="invoices")
     # selectin: an invoice list reads the number off every row, and most rows have
     # none, so one IN query for the few that do rather than one query each.
     source_quotation = relationship("Quotation", lazy="selectin")
+    source_challan = relationship("DeliveryChallan", lazy="selectin")
     items = relationship("InvoiceItem", back_populates="invoice", cascade="all, delete-orphan")
     payment_allocations = relationship("PaymentInvoiceAllocation", back_populates="invoice", cascade="all, delete-orphan")
 
     @property
     def source_quotation_number(self) -> str | None:
         return self.source_quotation.quotation_number if self.source_quotation else None
+
+    @property
+    def source_challan_number(self) -> str | None:
+        return self.source_challan.challan_number if self.source_challan else None
+
+    @property
+    def source_challan_date(self) -> date | None:
+        return self.source_challan.challan_date if self.source_challan else None
 
 
 class InvoiceItem(Base):

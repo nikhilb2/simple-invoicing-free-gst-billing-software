@@ -28,6 +28,7 @@ from src.models.ledger_address import LedgerAddress
 from src.models.payment import Payment, PaymentInvoiceAllocation
 from src.models.product import Product
 from src.models.quotation import Quotation
+from src.models.delivery_challan import DeliveryChallan
 from src.models.user import User, UserRole
 from src.schemas.invoice import OutstandingInvoiceOut
 from src.schemas.ledger import DayBookEntry, DayBookOut, Gstr1B2BInvoice, Gstr1CategorySummary, Gstr1DocSummary, Gstr1HsnSummaryItem, Gstr1JsonExport, Gstr1Summary, Gstr1ValidationError, Gstr1ValidationResult, LedgerCreate, LedgerOut, LedgerStatementEntry, LedgerStatementInvoiceAllocation, LedgerStatementOut, PaginatedLedgerOut, TaxLedgerEntry, TaxLedgerOut, TaxLedgerTotals, TaxLiability, TaxLiabilityBucket
@@ -1302,6 +1303,12 @@ def delete_ledger(
         has_quotations_query = has_quotations_query.filter(Quotation.company_id == company_id)
     if has_quotations_query.first():
         raise HTTPException(status_code=400, detail="Cannot delete ledger linked to quotations")
+
+    has_challans_query = db.query(DeliveryChallan.id).filter(DeliveryChallan.ledger_id == ledger_id)
+    if company_id is not None:
+        has_challans_query = has_challans_query.filter(DeliveryChallan.company_id == company_id)
+    if has_challans_query.first():
+        raise HTTPException(status_code=400, detail="Cannot delete ledger linked to delivery challans")
 
     has_payments_query = db.query(Payment.id).filter(Payment.ledger_id == ledger_id)
     if company_id is not None:

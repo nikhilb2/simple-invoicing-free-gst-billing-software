@@ -17,9 +17,13 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session, joinedload
 
 from src.api.deps import get_active_company, get_current_user, require_company_role
+from src.core.analytics import distinct_id_for, track
+from src.core.eway_bill_codes import DOC_TYPE_DELIVERY_CHALLAN
 from src.db.session import get_db
 from src.models.buyer import Buyer
 from src.models.company import CompanyProfile
+from src.models.delivery_challan import STATUS_CANCELLED as CHALLAN_STATUS_CANCELLED
+from src.models.delivery_challan import DeliveryChallan
 from src.models.eway_bill import EwayBillTransporter
 from src.models.invoice import Invoice
 from src.models.product import Product
@@ -33,6 +37,7 @@ from src.schemas.eway_bill import (
 )
 from src.services.company_access import company_role
 from src.services.eway_bill_service import (
+    challan_sub_supply,
     clear_default_transporter,
     generate_eway_bill_json,
     get_or_create_default_transporter,
@@ -58,7 +63,7 @@ class EwayBillSettingsOut(BaseModel):
 router = APIRouter()
 
 
-def _get_products_map(db: Session, invoice: Invoice, company_id: int) -> dict[int, Product]:
+def _get_products_map(db: Session, invoice: Invoice | DeliveryChallan, company_id: int) -> dict[int, Product]:
     """Build a product_id -> Product map for items in the invoice."""
     product_ids = [item.product_id for item in (invoice.items or [])]
     if not product_ids:
@@ -98,7 +103,32 @@ def _get_eligible_invoice(db: Session, invoice_id: int, company: CompanyProfile)
     return invoice
 
 
-def _get_invoice_buyer(db: Session, invoice: Invoice, company: CompanyProfile) -> Buyer | None:
+def _get_eligible_challan(db: Session, challan_id: int, company: CompanyProfile) -> DeliveryChallan:
+    """Load a delivery challan both e-way bill routes may act on, or raise why not."""
+    if not company.eway_enabled:
+        raise HTTPException(
+            status_code=400,
+            detail="E-Way Bill generation is turned off for this company. Turn it on in Company Settings.",
+        )
+
+    challan = (
+        db.query(DeliveryChallan)
+        .options(joinedload(DeliveryChallan.items))
+        .filter(DeliveryChallan.id == challan_id, DeliveryChallan.company_id == company.id)
+        .first()
+    )
+    if not challan:
+        raise HTTPException(status_code=404, detail=f"Delivery challan {challan_id} not found")
+
+    if challan.status == CHALLAN_STATUS_CANCELLED:
+        raise HTTPException(
+            status_code=400,
+            detail="E-Way Bill can't be generated for a cancelled delivery challan.",
+        )
+    return challan
+
+
+def _get_invoice_buyer(db: Session, invoice: Invoice | DeliveryChallan, company: CompanyProfile) -> Buyer | None:
     if not invoice.ledger_id:
         return None
     return (
@@ -196,6 +226,94 @@ def eway_bill_generate(
         raise HTTPException(status_code=500, detail="Failed to generate E-Way Bill JSON")
 
     filename = f"EWB_{invoice.invoice_number or invoice.id}.json"
+    json_str = json.dumps(json_data, indent=2, ensure_ascii=False)
+
+    return Response(
+        content=json_str,
+        media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+# ── E-Way Bill from a delivery challan ──
+
+
+@router.get("/delivery-challans/{challan_id}/eway-bill/precheck", response_model=EwayBillPreCheckResult)
+def challan_eway_bill_precheck(
+    challan_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+    active_company: CompanyProfile = Depends(get_active_company),
+):
+    """Check what E-Way Bill data is available and what's missing for this delivery challan."""
+    challan = _get_eligible_challan(db, challan_id, active_company)
+    buyer = _get_invoice_buyer(db, challan, active_company)
+    products_map = _get_products_map(db, challan, active_company.id)
+
+    result = pre_check(challan, active_company, buyer, challan.items or [], products_map)
+
+    default_transporter = get_or_create_default_transporter(db, active_company.id)
+    if default_transporter:
+        result.form_data.transporter_name = default_transporter.transporter_name or ""
+        result.form_data.transporter_gstin = default_transporter.transporter_gstin or ""
+        result.form_data.transport_mode = default_transporter.transport_mode or "1"
+        result.form_data.vehicle_type = default_transporter.vehicle_type or "R"
+
+    return result
+
+
+@router.post("/delivery-challans/{challan_id}/eway-bill/generate")
+def challan_eway_bill_generate(
+    challan_id: int,
+    form_data: EwayBillFormData,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    active_company: CompanyProfile = Depends(get_active_company),
+):
+    """Generate the E-Way Bill JSON for a delivery challan (document type CHL)."""
+    challan = _get_eligible_challan(db, challan_id, active_company)
+    products_map = _get_products_map(db, challan, active_company.id)
+
+    # The purpose decides the sub-supply type, so a client-sent value is ignored.
+    sub_supply_code, _desc = challan_sub_supply(challan)
+    form_data.sub_supply_type = sub_supply_code
+
+    errors = (
+        validate_invoice(challan, challan.items or [], products_map)
+        + validate_form_data(form_data, document_type=DOC_TYPE_DELIVERY_CHALLAN)
+        + validate_form_against_invoice(form_data, challan)
+    )
+    if errors:
+        raise HTTPException(status_code=422, detail={
+            "message": "Some E-Way Bill details need fixing.",
+            "errors": [e.model_dump() for e in errors],
+        })
+
+    save_transporter = form_data.save_transporter and bool(form_data.transporter_name.strip())
+    if save_transporter and company_role(db, current_user, active_company.id) not in _TRANSPORTER_MANAGER_ROLES:
+        raise HTTPException(status_code=403, detail="Only an admin or manager can save a transporter.")
+
+    try:
+        json_data = generate_eway_bill_json(challan, challan.items or [], products_map, form_data)
+        if save_transporter:
+            save_default_transporter(db, active_company.id, form_data)
+            db.commit()
+    except Exception:
+        logger.exception("Error generating E-Way Bill JSON for a delivery challan")
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Failed to generate E-Way Bill JSON")
+
+    track(
+        "delivery_challan_eway_bill_generated",
+        distinct_id_for(current_user),
+        {
+            "challan_id": challan.id,
+            "purpose": challan.purpose,
+            "sub_supply_type": sub_supply_code,
+        },
+    )
+
+    filename = f"EWB_{challan.challan_number or challan.id}.json"
     json_str = json.dumps(json_data, indent=2, ensure_ascii=False)
 
     return Response(

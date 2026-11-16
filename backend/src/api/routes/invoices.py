@@ -48,6 +48,12 @@ from src.services.pdf_templates import (
 )
 from src.services.invoice_creation import create_invoice_record
 from src.services.invoice_processor import InvoiceProcessor, invoice_has_credit_notes
+from src.services.delivery_challan import (
+    close_challan_after_invoice_restored,
+    lock_source_challan,
+    reopen_challan_after_invoice_cancelled,
+    require_challan_restorable,
+)
 from src.services.quotation import (
     close_after_invoice_restored,
     lock_invoice,
@@ -910,7 +916,9 @@ def cancel_invoice(
         raise HTTPException(status_code=404, detail=f"Invoice {invoice_id} not found")
 
     try:
-        # Before any stock moves: conversion takes the quotation row first as well.
+        # Before any stock moves: conversion takes the challan and quotation rows
+        # first as well.
+        source_challan = lock_source_challan(db, invoice)
         invoice, source_quotation = lock_invoice_for_status_change(db, invoice)
         if invoice.status == "cancelled":
             raise HTTPException(status_code=400, detail="Invoice is already cancelled")
@@ -937,6 +945,8 @@ def cancel_invoice(
         processor.reverse_inventory(invoice)
         invoice.status = "cancelled"
         reopen_after_invoice_cancelled(source_quotation)
+        # The challan's goods are out on it again, now the invoice's are back.
+        reopen_challan_after_invoice_cancelled(db, source_challan)
         db.commit()
         db.refresh(invoice)
     except HTTPException:
@@ -976,12 +986,16 @@ def restore_invoice(
         raise HTTPException(status_code=404, detail=f"Invoice {invoice_id} not found")
 
     try:
+        source_challan = lock_source_challan(db, invoice)
         invoice, source_quotation = lock_invoice_for_status_change(db, invoice)
         if invoice.status != "cancelled":
             raise HTTPException(status_code=400, detail="Invoice is not cancelled")
         require_restorable(db, source_quotation, invoice)
+        require_challan_restorable(db, source_challan, invoice)
         processor = InvoiceProcessor(db)
         processor.restore_serials(invoice, company_id=active_company.id)
+        # Release the challan's hold before the invoice takes its own goods out.
+        close_challan_after_invoice_restored(db, source_challan)
         processor.restore_inventory(invoice, company_id=active_company.id)
         invoice.status = "active"
         close_after_invoice_restored(source_quotation)

@@ -3739,6 +3739,30 @@ a.invoice-row {
   opacity: 0.65;
 }
 
+/* Nine columns have to fit a 1366px laptop beside the sidebar without the
+   Convert button scrolling out of view. A party name with no spaces would
+   otherwise set its column's minimum width; letting it break, with a floor on
+   it and on Purpose, keeps both readable instead of squeezing Purpose to one
+   word per line. */
+.delivery-challans-table thead th,
+.delivery-challans-table tbody td {
+  padding-inline: 8px;
+}
+
+.delivery-challans-table__party {
+  min-width: 7rem;
+  overflow-wrap: anywhere;
+}
+
+.delivery-challans-table__purpose {
+  min-width: 7rem;
+}
+
+.delivery-challans-table__actions {
+  text-align: right;
+  white-space: nowrap;
+}
+
 .invoice-feed-table__invoice-number {
   font-weight: 700;
 }
