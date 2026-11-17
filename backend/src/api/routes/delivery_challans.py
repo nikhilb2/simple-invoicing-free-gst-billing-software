@@ -362,7 +362,7 @@ def convert(
             on_invoice.get(product_id, Decimal("0")) != quantity for product_id, quantity in on_challan.items()
         )
         extra_lines = len(set(on_invoice) - set(on_challan))
-        days_since_challan = (india_today() - challan.challan_date).days
+        days_since_challan = max(0, (india_today() - challan.challan_date).days)
         purpose = challan.purpose
         db.commit()
         db.refresh(invoice)

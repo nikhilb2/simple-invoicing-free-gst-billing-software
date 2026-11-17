@@ -784,4 +784,4 @@ def challan_age_days(challan: DeliveryChallan, today: date | None = None) -> int
     """Days since the challan date while open; None once invoiced or cancelled."""
     if challan.status != STATUS_OPEN or challan.challan_date is None:
         return None
-    return ((today or india_today()) - challan.challan_date).days
+    return max(0, ((today or india_today()) - challan.challan_date).days)

@@ -221,6 +221,17 @@ def test_a_back_dated_challan(setup):
     assert challan["age_days"] == 5
 
 
+def test_a_future_dated_challan_shows_zero_age(setup):
+    s = setup
+    day = india_today() + timedelta(days=5)
+    challan = create_challan(s.client, s.ledger, [(s.product, 1)], challan_date=day.isoformat())
+    assert challan["challan_date"] == day.isoformat()
+    assert challan["age_days"] == 0
+    page = ok(s.client.get("/api/delivery-challans/"))
+    by_id = {row["id"]: row for row in page["items"]}
+    assert by_id[challan["id"]]["age_days"] == 0
+
+
 @pytest.mark.parametrize("day", ["1999-12-31", "2100-01-01"])
 def test_dates_outside_the_document_range_are_refused(setup, day):
     s = setup
