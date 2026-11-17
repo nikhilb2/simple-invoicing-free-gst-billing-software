@@ -39,10 +39,14 @@ export type ChallanQuantityNote = {
   message: string;
 };
 
+/** Quantities are kept to 3 decimals; this drops floating-point noise such as 0.1 + 0.2. */
+function roundQuantity(value: number): number {
+  return Math.round(value * 1000) / 1000;
+}
+
 /** Up to 3 decimals, trailing zeros dropped: 2.5, 20, 0.125. */
 export function formatNoteQuantity(value: number): string {
-  const rounded = Math.round(value * 1000) / 1000;
-  return String(Number(rounded.toFixed(3)));
+  return String(Number(roundQuantity(value).toFixed(3)));
 }
 
 /**
@@ -60,14 +64,14 @@ export function challanQuantityNotes(
   const challanTotals = new Map<number, number>();
   const challanNames = new Map<number, string | null>();
   for (const line of challanLines) {
-    challanTotals.set(line.product_id, (challanTotals.get(line.product_id) ?? 0) + line.quantity);
+    challanTotals.set(line.product_id, roundQuantity((challanTotals.get(line.product_id) ?? 0) + line.quantity));
     if (!challanNames.has(line.product_id)) challanNames.set(line.product_id, line.product_name);
   }
 
   const invoiceTotals = new Map<number, number>();
   for (const line of invoiceLines) {
     const quantity = Number.isNaN(line.quantity) ? 0 : line.quantity;
-    invoiceTotals.set(line.productId, (invoiceTotals.get(line.productId) ?? 0) + quantity);
+    invoiceTotals.set(line.productId, roundQuantity((invoiceTotals.get(line.productId) ?? 0) + quantity));
   }
 
   const notes: ChallanQuantityNote[] = [];

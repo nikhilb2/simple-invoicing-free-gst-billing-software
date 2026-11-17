@@ -48,6 +48,19 @@ describe('challanQuantityNotes', () => {
     expect(note.message).toBe('Widget: challan 10, invoicing 12. 2 more will be reduced from stock.');
   });
 
+  it('ignores floating-point noise when the same product is on several lines', () => {
+    expect(challanQuantityNotes(
+      [{ product_id: 1, product_name: 'Widget', quantity: 0.1 }, { product_id: 1, product_name: 'Widget', quantity: 0.2 }],
+      [{ productId: 1, quantity: 0.3 }],
+      products,
+    )).toEqual([]);
+    expect(challanQuantityNotes(
+      [{ product_id: 1, product_name: 'Widget', quantity: 0.3 }],
+      [{ productId: 1, quantity: 0.1 }, { productId: 1, quantity: 0.2 }],
+      products,
+    )).toEqual([]);
+  });
+
   it('sums lines per product on both sides', () => {
     const [note] = challanQuantityNotes(
       [{ product_id: 1, product_name: 'Widget', quantity: 4 }, { product_id: 1, product_name: 'Widget', quantity: 6 }],
