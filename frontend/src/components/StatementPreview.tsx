@@ -3,7 +3,7 @@ import { Download, ExternalLink, FileSpreadsheet, Mail, Printer, Share2 } from '
 import api, { getApiErrorMessage, getBlobErrorMessage } from '../api/client';
 import { parseContentDispositionFilename } from '../utils/contentDisposition';
 import type { CompanyProfile, Ledger, LedgerStatement } from '../types/api';
-import formatCurrency from '../utils/formatting';
+import formatCurrency, { formatDate } from '../utils/formatting';
 import SendEmailModal from './SendEmailModal';
 import ShareModal from './ShareModal';
 import PreviewToolbar from './PreviewToolbar';
@@ -100,7 +100,7 @@ export default function StatementPreview({ ledger, statement, company, currencyC
           eyebrow="Statement preview"
           titleId="statement-preview-title"
           title={ledger.name}
-          meta={`${statement.from_date} to ${statement.to_date}`}
+          meta={`${formatDate(statement.from_date)} to ${formatDate(statement.to_date)}`}
           primary={{
             label: 'Share',
             icon: <Share2 size={16} aria-hidden="true" />,
@@ -182,8 +182,8 @@ export default function StatementPreview({ ledger, statement, company, currencyC
           resourceId={ledger.id}
           fromDate={statement.from_date}
           toDate={statement.to_date}
-          label={`Statement — ${statement.from_date} to ${statement.to_date}`}
-          messageLead={`Account statement${company?.name ? ` from ${company.name}` : ''} (${statement.from_date} to ${statement.to_date}) — closing balance ${formatCurrency(statement.closing_balance, currencyCode)}`}
+          label={`Statement — ${formatDate(statement.from_date)} to ${formatDate(statement.to_date)}`}
+          messageLead={`Account statement${company?.name ? ` from ${company.name}` : ''} (${formatDate(statement.from_date)} to ${formatDate(statement.to_date)}) — closing balance ${formatCurrency(statement.closing_balance, currencyCode)}`}
           phone={ledger.phone_number}
           onClose={() => setShowShareModal(false)}
         />

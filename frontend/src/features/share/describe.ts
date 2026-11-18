@@ -1,4 +1,5 @@
 import type { ShareLink } from '../../types/api';
+import { formatDate } from '../../utils/formatting';
 
 /** "2 hours ago" for the last-opened line. Intl does the pluralising. */
 export function formatRelativeTime(iso: string): string {
@@ -41,16 +42,17 @@ export function describeViews(viewCount: number, lastViewedAt: string | null): s
  * The period a statement link covers, as a row label. A link with no dates
  * is the open-ended one payment reminders reuse: it always shows the
  * ledger's current statement, so it has no fixed period to print.
+ * Dates print as DD-MM-YYYY; the link keeps its ISO values for the API.
  */
 export function describeShareLinkPeriod(link: ShareLink): string {
   if (!link.from_date && !link.to_date) {
     return 'Always current (payment reminders)';
   }
   if (link.from_date && link.to_date) {
-    return `${link.from_date} to ${link.to_date}`;
+    return `${formatDate(link.from_date)} to ${formatDate(link.to_date)}`;
   }
   if (link.from_date) {
-    return `From ${link.from_date}`;
+    return `From ${formatDate(link.from_date)}`;
   }
-  return `Until ${link.to_date}`;
+  return `Until ${formatDate(link.to_date)}`;
 }

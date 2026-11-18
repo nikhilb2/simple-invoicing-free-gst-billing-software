@@ -19,9 +19,9 @@ function link(overrides: Partial<ShareLink>): ShareLink {
 }
 
 describe('describeShareLinkPeriod', () => {
-  it('shows both dates for a dated link', () => {
+  it('shows both dates for a dated link as DD-MM-YYYY', () => {
     expect(describeShareLinkPeriod(link({ from_date: '2026-10-01', to_date: '2026-10-31' })))
-      .toBe('2026-10-01 to 2026-10-31');
+      .toBe('01-10-2026 to 31-10-2026');
   });
 
   it('names the open-ended reminder link Always current', () => {
@@ -31,9 +31,9 @@ describe('describeShareLinkPeriod', () => {
 
   it('labels a partially dated link from what it has', () => {
     expect(describeShareLinkPeriod(link({ from_date: '2026-10-01', to_date: null })))
-      .toBe('From 2026-10-01');
+      .toBe('From 01-10-2026');
     expect(describeShareLinkPeriod(link({ from_date: null, to_date: '2026-10-31' })))
-      .toBe('Until 2026-10-31');
+      .toBe('Until 31-10-2026');
   });
 });
 

@@ -1150,8 +1150,8 @@ export default function LedgerViewPage() {
           resourceId={ledger.id}
           fromDate={period.fromDate}
           toDate={period.toDate}
-          label={`Statement — ${period.fromDate} to ${period.toDate}`}
-          messageLead={`Account statement${company?.name ? ` from ${company.name}` : ''} (${period.fromDate} to ${period.toDate})${statement ? ` — closing balance ${formatCurrency(statement.closing_balance, activeCurrencyCode)}` : ''}`}
+          label={`Statement — ${formatDate(period.fromDate)} to ${formatDate(period.toDate)}`}
+          messageLead={`Account statement${company?.name ? ` from ${company.name}` : ''} (${formatDate(period.fromDate)} to ${formatDate(period.toDate)})${statement ? ` — closing balance ${formatCurrency(statement.closing_balance, activeCurrencyCode)}` : ''}`}
           phone={ledger.phone_number}
           onClose={() => setShowShareModal(false)}
         />
