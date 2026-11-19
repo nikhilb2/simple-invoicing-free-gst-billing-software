@@ -546,18 +546,29 @@ def _build_ledger_statement_data(
         ))
     entries.sort(key=_entry_order)
 
-    period_debit = sum(entry.debit for entry in entries)
-    period_credit = sum(entry.credit for entry in entries)
-    opening_debit = float(opening_totals[0]) + float(opening_payment_totals[0]) + float(opening_payment_totals[2]) + opening_credit_note_summary.purchase_credit_total + opening_tds_debit
-    opening_credit = float(opening_totals[1]) + float(opening_payment_totals[1]) + float(opening_payment_totals[3]) + opening_credit_note_summary.sales_credit_total + opening_tds_credit
+    # The totals are summed in Decimal and rounded to paise. In floats a
+    # settled account does not come back to zero (0.10 + 0.20 - 0.30 leaves
+    # -5.5e-17), and that residue reached the JSON statement, the page and the
+    # share link as a "-₹0.00" closing balance on the Cr side.
+    def _amount(value: object) -> Decimal:
+        return Decimal(str(value))
+
+    def _total(value: Decimal) -> float:
+        # Adding 0.0 turns a rounded -0.0 into 0.0.
+        return float(value.quantize(Decimal("0.01"))) + 0.0
+
+    period_debit = sum((_amount(entry.debit) for entry in entries), Decimal("0"))
+    period_credit = sum((_amount(entry.credit) for entry in entries), Decimal("0"))
+    opening_debit = _amount(float(opening_totals[0])) + _amount(float(opening_payment_totals[0])) + _amount(float(opening_payment_totals[2])) + _amount(opening_credit_note_summary.purchase_credit_total) + _amount(opening_tds_debit)
+    opening_credit = _amount(float(opening_totals[1])) + _amount(float(opening_payment_totals[1])) + _amount(float(opening_payment_totals[3])) + _amount(opening_credit_note_summary.sales_credit_total) + _amount(opening_tds_credit)
     opening_balance = opening_debit - opening_credit
     closing_balance = opening_balance + period_debit - period_credit
 
     return LedgerStatementData(
-        opening_balance=opening_balance,
-        period_debit=period_debit,
-        period_credit=period_credit,
-        closing_balance=closing_balance,
+        opening_balance=_total(opening_balance),
+        period_debit=_total(period_debit),
+        period_credit=_total(period_credit),
+        closing_balance=_total(closing_balance),
         entries=entries,
     )
 
