@@ -6,7 +6,7 @@ import ScopeBar, { Metric } from '../components/ScopeBar';
 import DateRangePresets from '../components/DateRangePresets';
 import LoadingState from '../components/LoadingState';
 import type { CompanyProfile, DayBook, DayBookEntry } from '../types/api';
-import formatCurrency, { formatDate } from '../utils/formatting';
+import formatCurrency, { formatDate, plural } from '../utils/formatting';
 import { toIsoDate } from '../utils/dateRanges';
 import { buildDayBookParams, parseDayBookFilters, resolveVoucherType } from '../utils/dayBookFilters';
 import { useFY } from '../context/FYContext';
@@ -220,7 +220,7 @@ export default function DayBookPage() {
           <p className="section-copy">A minimal Tally-style voucher register for the selected period.</p>
         </div>
         <div className="status-chip">
-          {filtered ? `${entries.length} of ${allEntries.length} vouchers` : `${allEntries.length} vouchers`}
+          {filtered ? `${entries.length} of ${plural(allEntries.length, 'voucher')}` : plural(allEntries.length, 'voucher')}
         </div>
       </section>
 

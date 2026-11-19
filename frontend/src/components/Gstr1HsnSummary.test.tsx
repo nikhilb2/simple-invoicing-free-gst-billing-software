@@ -29,6 +29,12 @@ test('shows each buyer, rate and unit row with a two-decimal quantity', () => {
   expect(html).toContain('>3.00</td>');
 });
 
+test('says "1 row", not "1 rows", for a single row', () => {
+  const html = renderToStaticMarkup(<Gstr1HsnSummary currency="INR" rows={[litres]} />);
+  expect(html).toContain('1 row');
+  expect(html).not.toContain('1 rows');
+});
+
 test('labels the combined rows from periods before the B2B/B2C split', () => {
   const html = renderToStaticMarkup(<Gstr1HsnSummary currency="INR" rows={[
     { ...litres, category: null, quantity: -0.25 },

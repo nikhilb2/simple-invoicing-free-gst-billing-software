@@ -7,6 +7,7 @@ import { freshCadence, noteScanInput, type ScanCadence } from '../features/seria
 import type { Serial } from '../features/serials/types';
 import type { Product } from '../types/api';
 import { readInvoiceComposerPrefs, updateInvoiceComposerPrefs } from '../utils/invoiceComposerPrefs.ts';
+import { plural } from '../utils/formatting';
 
 /**
  * What the backend made of a scanned code. `unknown` is a resolution, not a
@@ -64,6 +65,11 @@ function splitPastedCodes(raw: string): string[] {
     .split(/[\s,;]+/)
     .map((entry) => entry.trim())
     .filter(Boolean);
+}
+
+/** Paste button label: "Add serials" with no count, "Add 1 serial", "Add 2 serials". */
+export function pasteSerialsLabel(count: number): string {
+  return count === 0 ? 'Add serials' : `Add ${plural(count, 'serial')}`;
 }
 
 export default function ScanBar({ mode, onResolve, target = null, inputRef, disabled = false }: ScanBarProps) {
@@ -434,7 +440,7 @@ export default function ScanBar({ mode, onResolve, target = null, inputRef, disa
               onClick={() => { void handlePasteSubmit(); }}
               disabled={pasteRunning || splitPastedCodes(pasteText).length === 0}
             >
-              {pasteRunning ? 'Checking…' : `Add ${splitPastedCodes(pasteText).length || ''} serials`.trim()}
+              {pasteRunning ? 'Checking…' : pasteSerialsLabel(splitPastedCodes(pasteText).length)}
             </button>
           </div>
           {pasteResults.length > 0 ? (

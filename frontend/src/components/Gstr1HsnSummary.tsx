@@ -1,5 +1,5 @@
 import type { Gstr1HsnSummaryItem } from '../types/api';
-import formatCurrency from '../utils/formatting';
+import formatCurrency, { plural } from '../utils/formatting';
 
 export default function Gstr1HsnSummary({ rows, currency }: {
   rows: Gstr1HsnSummaryItem[];
@@ -10,7 +10,7 @@ export default function Gstr1HsnSummary({ rows, currency }: {
       <article className="panel stack">
         <div className="panel__header">
           <h2 className="nav-panel__title">HSN/SAC summary</h2>
-          <div className="status-chip">{rows.length} rows</div>
+          <div className="status-chip">{plural(rows.length, 'row')}</div>
         </div>
         <div className="table-wrap" style={{ maxHeight: 420, overflow: 'auto' }}>
           <table className="invoice-feed-table">
