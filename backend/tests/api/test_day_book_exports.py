@@ -1,7 +1,10 @@
+import csv
 from datetime import datetime
+from io import StringIO
 
 from src.models.buyer import Buyer
 from src.models.company import CompanyProfile
+from src.models.company_account import CompanyAccount
 from src.models.invoice import Invoice
 from src.models.payment import Payment
 from src.models.user import User, UserRole
@@ -99,6 +102,41 @@ def test_day_book_csv_export_downloads_expected_columns(client, db_session):
     assert any("2026-04-04,Receipt,RCPT-001,Acme Stores,Receipt #1 (bank),,400.00" in line for line in lines)
     assert lines[-1] == ",,,,Totals,1000.00,400.00"
 
+
+
+def test_day_book_labels_a_payment_without_a_party_as_an_account_entry(client, db_session):
+    _seed_day_book_rows(db_session)
+    account = CompanyAccount(company_id=1, account_type="bank", display_name="Test Bank")
+    db_session.add(account)
+    db_session.flush()
+    db_session.add(
+        Payment(
+            company_id=1,
+            ledger_id=None,
+            account_id=account.id,
+            voucher_type="payment",
+            amount=500,
+            date=datetime(2026, 4, 10, 10, 0, 0),
+            payment_number="PAY-REGISTER",
+            mode="bank",
+            created_by=1,
+            status="active",
+        )
+    )
+    db_session.commit()
+    params = {"from_date": "2026-04-01", "to_date": "2026-04-30"}
+
+    response = client.get("/api/ledgers/day-book", params=params)
+    assert response.status_code == 200, response.text
+    entry = next(row for row in response.json()["entries"] if row["reference_number"] == "PAY-REGISTER")
+    assert entry["ledger_name"] == "Account entry"
+    assert entry["account_display_name"] == "Test Bank"
+
+    export = client.get("/api/ledgers/day-book/csv", params=params)
+    assert export.status_code == 200, export.text
+    rows = csv.DictReader(StringIO(export.text.lstrip("\ufeff")))
+    payment_row = next(row for row in rows if row["Reference"] == "PAY-REGISTER")
+    assert payment_row["Ledger"] == "Account entry"
 
 
 def test_day_book_pdf_export_streams_pdf_attachment(client, db_session):

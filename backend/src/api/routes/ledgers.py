@@ -363,14 +363,18 @@ def _build_day_book_data(
       ))
     for payment in payments:
       debit, credit = _payment_debit_credit(payment)
-      payment_ledger = ledgers_by_id.get(payment.ledger_id) if payment.ledger_id is not None else None
+      if payment.ledger_id is None:
+        ledger_name = "Account entry"
+      else:
+        payment_ledger = ledgers_by_id.get(payment.ledger_id)
+        ledger_name = payment_ledger.name if payment_ledger else "Unknown ledger"
       entries.append(DayBookEntry(
         entry_id=payment.id,
         entry_type="payment",
         date=payment.date,
         voucher_type=_format_voucher_label(payment.voucher_type),
         reference_number=payment.payment_number,
-        ledger_name=payment_ledger.name if payment_ledger else "Unknown ledger",
+        ledger_name=ledger_name,
         particulars=f"{_format_voucher_label(payment.voucher_type)} #{payment.id}" + (f" ({payment.mode})" if payment.mode else ""),
         debit=debit,
         credit=credit,
