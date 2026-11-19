@@ -3185,11 +3185,11 @@ def gstr1_export_csv(
             (original.ledger_name if original else "") or "",
             ctin,
             ", ".join(_note_item_hsn(item) for item in cn.items if _note_item_hsn(item)),
-            f"{-float(cn.taxable_amount or 0):.2f}",
-            f"{-float(cn.cgst_amount or 0):.2f}",
-            f"{-float(cn.sgst_amount or 0):.2f}",
-            f"{-float(cn.igst_amount or 0):.2f}",
-            f"{-float(cn.total_amount or 0):.2f}",
+            f"{_round_amount(-float(cn.taxable_amount or 0)):.2f}",
+            f"{_round_amount(-float(cn.cgst_amount or 0)):.2f}",
+            f"{_round_amount(-float(cn.sgst_amount or 0)):.2f}",
+            f"{_round_amount(-float(cn.igst_amount or 0)):.2f}",
+            f"{_round_amount(-float(cn.total_amount or 0)):.2f}",
             pos,
         ])
 

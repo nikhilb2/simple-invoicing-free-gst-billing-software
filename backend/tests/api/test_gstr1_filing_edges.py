@@ -1,6 +1,8 @@
 """GSTR-1 export and validation at the edges of what a file can report."""
+import csv
 import json
 from datetime import timedelta
+from io import StringIO
 from types import SimpleNamespace
 
 import pytest
@@ -294,6 +296,35 @@ def test_csv_labels_a_zero_value_invoice(client, seller):
     response = client.get("/api/ledgers/tax-ledger/gstr1/export-csv", params=_period())
 
     assert "Table 13 only" in response.content.decode("utf-8-sig")
+
+
+@pytest.mark.parametrize(
+    "buyer_gstin, expected_tax",
+    [
+        ("29ABCDE1234F1ZW", ("-3.60", "-3.60", "0.00")),
+        (MAHARASHTRA_BUYER, ("0.00", "0.00", "-7.20")),
+    ],
+    ids=["intra-state", "inter-state"],
+)
+def test_csv_formats_zero_credit_note_taxes_without_minus(client, seller, buyer_gstin, expected_tax):
+    widget = _create_product(client, "S-1", "Widget", hsn_sac="8471")
+    buyer = _ledger_with_gst(client, "Buyer", buyer_gstin)
+    sold = _sale(client, buyer, widget, items=[_line(widget, 1, 40)])
+    note = _note(client, [sold])
+
+    response = client.get("/api/ledgers/tax-ledger/gstr1/export-csv", params=_period())
+
+    assert response.status_code == 200, response.text
+    contents = response.content.decode("utf-8-sig")
+    rows = csv.DictReader(StringIO(contents))
+    row = next(
+        row for row in rows
+        if row["Section"] == "CDNR" and row["Invoice Number"] == note["credit_note_number"]
+    )
+    assert row["Taxable Value"] == "-40.00"
+    assert (row["CGST"], row["SGST"], row["IGST"]) == expected_tax
+    assert row["Total Invoice Value"] == "-47.20"
+    assert "-0.00" not in contents
 
 
 # ── Which table a note goes in ─────────────────────────────────────────────────
