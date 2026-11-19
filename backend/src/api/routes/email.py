@@ -642,8 +642,10 @@ async def send_due_reminders(
         except RuntimeError:
             failed.append({"ledger_id": ledger_id, "ledger_name": ledger_name, "email": to_email})
 
+    sent_count = len(sent)
+    ledger_label = "ledger" if sent_count == 1 else "ledgers"
     return {
-        "message": f"Due reminders sent to {len(sent)} ledgers",
+        "message": f"Due reminders sent to {sent_count} {ledger_label}",
         "sent": sent,
         "skipped": skipped,
         "failed": failed,

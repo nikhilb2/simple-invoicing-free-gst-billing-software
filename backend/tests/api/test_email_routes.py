@@ -19,7 +19,7 @@ from src.services import mail
 
 
 @pytest.fixture
-def recipients(db_session, monkeypatch):
+def recipients(db_session, monkeypatch, request):
     monkeypatch.setattr(settings, "DEPLOYMENT_MODE", "single_tenant")
     user = User(
         id=1, email="test@example.com", full_name="Test Admin", hashed_password="x", role=UserRole.admin,
@@ -35,7 +35,8 @@ def recipients(db_session, monkeypatch):
     db_session.add_all([user, company, config])
     db_session.flush()
     rows = []
-    for index in range(3):
+    recipient_count = getattr(request, "param", 3)
+    for index in range(recipient_count):
         ledger = Buyer(
             company_id=company.id, name=f"Customer {index}", address="", phone_number="",
             email=f"customer{index}@example.com",
@@ -100,6 +101,23 @@ def test_single_send_still_succeeds(client, db_session, monkeypatch, recipients,
     assert db_session.query(EmailLog).one().status == "sent"
 
 
+@pytest.mark.parametrize(
+    ("recipients", "expected_message"),
+    [
+        (0, "Due reminders sent to 0 ledgers"),
+        (1, "Due reminders sent to 1 ledger"),
+    ],
+    indirect=["recipients"],
+)
+def test_bulk_reminders_message_matches_sent_count(client, monkeypatch, recipients, expected_message):
+    monkeypatch.setattr(mail, "_send_sync", MagicMock())
+
+    response = client.post("/api/email/due-reminders", json={})
+
+    assert response.status_code == 200, response.text
+    assert response.json()["message"] == expected_message
+
+
 def test_bulk_reminders_continue_after_a_failed_delivery(client, db_session, monkeypatch, recipients):
     error = smtplib.SMTPRecipientsRefused({recipients[1][2]: (550, b"recipient rejected")})
     attempted = []
@@ -115,6 +133,7 @@ def test_bulk_reminders_continue_after_a_failed_delivery(client, db_session, mon
 
     assert response.status_code == 200, response.text
     body = response.json()
+    assert body["message"] == "Due reminders sent to 2 ledgers"
     assert [row["ledger_id"] for row in body["sent"]] == [recipients[0][0], recipients[2][0]]
     assert [row["ledger_id"] for row in body["failed"]] == [recipients[1][0]]
     assert body["skipped"] == []
