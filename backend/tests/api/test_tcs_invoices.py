@@ -397,6 +397,52 @@ def test_credit_notes_in_parts_reverse_exactly_the_invoice_tcs(client, db_sessio
     assert after["credit_status"] == "fully_credited"
 
 
+def test_full_return_of_a_discounted_tcs_invoice_reverses_all_its_tcs(client, db_session, company):
+    """#797 review: TCS is shared by what the lines billed after the invoice discount.
+
+    Against the undiscounted 1,18,000 the return's 1,00,000 would reverse only
+    1,694.92 of the 2,000 TCS and leave the rest on the buyer's account.
+    """
+    ledger = _ledger(client, gst=BUYER_GSTIN)
+    product = _product(client)
+    invoice = _ok(_invoice(
+        client, ledger, product, discount_type="net", discount_value=18000,
+        tcs_section_id=_section_id(db_session, SCRAP_2025),
+    ))
+    assert (invoice["tcs_amount"], invoice["total_amount"]) == (2000, 102000)
+
+    note = _credit(client, invoice, 1)
+
+    assert note["tcs_amount"] == 2000
+    assert note["total_amount"] == 102000
+    after = _ok(client.get(f"/api/invoices/{invoice['id']}"))
+    assert after["remaining_amount"] == 0
+    assert after["credit_status"] == "fully_credited"
+
+
+def test_discounted_rounded_tcs_invoice_returned_in_parts_reverses_exactly_its_tcs(client, db_session, company):
+    ledger = _ledger(client, gst=BUYER_GSTIN)
+    product = _product(client, price=333.33)
+    invoice = _ok(_invoice(
+        client, ledger, product, quantity=3, unit_price=333.33,
+        discount_type="percentage", discount_value=7.5, apply_round_off=True,
+        tcs_section_id=_section_id(db_session, SCRAP_2025),
+    ))
+    assert invoice["round_off_amount"] != 0
+
+    first = _credit(client, invoice, 1)
+    assert _ok(client.get(f"/api/invoices/{invoice['id']}"))["credit_status"] == "partially_credited"
+    second = _credit(client, invoice, 2)
+
+    reversed_tcs = Decimal(str(first["tcs_amount"])) + Decimal(str(second["tcs_amount"]))
+    assert reversed_tcs == Decimal(str(invoice["tcs_amount"]))
+    credited = Decimal(str(first["total_amount"])) + Decimal(str(second["total_amount"]))
+    assert credited == Decimal(str(invoice["total_amount"]))
+    after = _ok(client.get(f"/api/invoices/{invoice['id']}"))
+    assert after["remaining_amount"] == 0
+    assert after["credit_status"] == "fully_credited"
+
+
 # ── Copies ───────────────────────────────────────────────────────────────────
 
 
