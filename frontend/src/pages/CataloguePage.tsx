@@ -24,6 +24,7 @@ import SerialHistoryDrawer from './catalogue/SerialHistoryDrawer';
 import ImportModal from './catalogue/ImportModal';
 import { exportCatalogueCsv, exportCataloguePdf } from './catalogue/exports';
 import { isLowStock, isSerialFilter, rowEditFrom } from './catalogue/types';
+import { pageAfterOutOfRange } from '../utils/pagination';
 import type {
   CatalogueRow,
   PaginatedCatalogue,
@@ -140,6 +141,12 @@ export default function CataloguePage() {
         },
       });
       if (latestRequest.current !== requestId) return;
+
+      const lastPage = pageAfterOutOfRange(page, response.data.total_pages);
+      if (lastPage !== null) {
+        setParams({ page: lastPage === 1 ? null : String(lastPage) });
+        return;
+      }
 
       setRows(response.data.items);
       setTotal(response.data.total);

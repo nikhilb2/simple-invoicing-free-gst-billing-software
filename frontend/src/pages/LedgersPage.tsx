@@ -27,6 +27,7 @@ import PageSizeSelect, { readStoredPageSize, storePageSize } from '../components
 import SearchInput from '../components/SearchInput';
 import { exportLedgersCsv } from './ledgers/exports';
 import { buildLedgerListParams, parseLedgerListFilters } from '../utils/ledgerListFilters';
+import { pageAfterOutOfRange } from '../utils/pagination';
 
 /** Monogram for the row avatar — first letters of the first two words. */
 function ledgerInitials(name: string): string {
@@ -114,6 +115,11 @@ export default function LedgersPage() {
           params: { page, page_size: pageSize, search: debouncedSearch, sort },
         });
         if (cancelled) return;
+        const lastPage = pageAfterOutOfRange(page, res.data.total_pages);
+        if (lastPage !== null) {
+          updateLedgerFilters({ page: lastPage });
+          return;
+        }
         setLedgers(res.data.items);
         setTotal(res.data.total);
         setTotalPages(res.data.total_pages);
