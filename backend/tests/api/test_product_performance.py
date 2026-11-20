@@ -191,15 +191,18 @@ class TestInvoiceDiscounts:
         a = _create_product(client, "ID-3", "Alpha", purchase_price=10)
         b = _create_product(client, "ID-4", "Beta", purchase_price=10)
         customer = _create_ledger(client, "Customer")
-        # 59 off a 472 invoice: 59 x 400/472 = 50.00 ex-GST, split 1:3.
+        # 59 off a 472 invoice: 59 x 400/472 = 50.00 ex-GST, split 1:3, and
+        # 9.00 off the GST, split 18:54. That leaves each line's GST at an odd
+        # paisa (15.75, 47.25), so like a credit note for the line (#790) the
+        # paisa moves to its taxable value and the CGST/SGST halves stay equal.
         _create_invoice(
             client, customer, [_line(a, 1, 100), _line(b, 3, 100)],
             discount_type="net", discount_value=59,
         )
 
         rows = _rows(_report(client))
-        assert rows["Alpha"]["revenue"] == 87.50
-        assert rows["Beta"]["revenue"] == 262.50
+        assert rows["Alpha"]["revenue"] == 87.51
+        assert rows["Beta"]["revenue"] == 262.51
         assert rows["Beta"]["average_selling_price"] == 87.50
 
     def test_purchase_invoice_discount_lowers_spend_and_cost(self, client):

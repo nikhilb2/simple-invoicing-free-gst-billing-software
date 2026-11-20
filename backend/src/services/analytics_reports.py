@@ -16,16 +16,19 @@ from itertools import groupby
 from operator import attrgetter
 
 from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, lazyload, load_only, selectinload
 
+from src.models.buyer import Buyer
 from src.models.credit_note import CreditNote, CreditNoteItem
 from src.models.inventory import Inventory
 from src.models.invoice import Invoice, InvoiceItem
 from src.models.product import Product
 from src.services.gst_tax_service import money as _money
 from src.services.invoice_discounts import (
+    DiscountedLine,
     apportion_invoice_discount,
     build_invoice_discount_totals,
+    discounted_line_amounts,
     invoice_discount_amount,
 )
 
@@ -120,6 +123,119 @@ def _scoped_invoice_query(
     return query
 
 
+def _billed_invoices(
+    db: Session,
+    *,
+    company_id: int,
+    voucher_type: str,
+    from_date: date,
+    to_date: date,
+    ledger_id: int | None = None,
+    product_id: int | None = None,
+) -> list[tuple[Invoice, dict[int, DiscountedLine]]]:
+    """In-scope invoices, each with what every one of its lines billed, keyed by item id.
+
+    A line's figures are :func:`discounted_line_amounts` with ``include_round_off``:
+    its taxable value and GST after its share of the invoice-level discount and the
+    round-off. That is exactly what a credit note credits for the line, so a report
+    that books these and takes active notes off nets a fully returned invoice to
+    zero, however it was discounted or rounded (#790). TCS is never part of a line.
+
+    Under a product filter the invoice set narrows to invoices carrying that product,
+    but every line is still loaded: the discount and round-off are shared over all
+    of an invoice's lines, so the filtered product only ever takes its own share.
+
+    A line from before the tax columns carries only its total, which stands in as
+    its taxable value, as credit notes do.
+
+    Only the columns the split needs are loaded: a full ``Invoice`` row carries the
+    company logo snapshot, far too heavy to load per invoice here.
+    """
+    query = _scoped_invoice_query(
+        db,
+        company_id=company_id,
+        voucher_type=voucher_type,
+        from_date=from_date,
+        to_date=to_date,
+        ledger_id=ledger_id,
+    ).options(
+        load_only(
+            Invoice.id, Invoice.invoice_date, Invoice.ledger_id, Invoice.ledger_name,
+            Invoice.tax_inclusive, Invoice.taxable_amount, Invoice.total_tax_amount,
+            Invoice.round_off_amount, Invoice.tcs_amount, Invoice.total_amount,
+            Invoice.company_gst, Invoice.ledger_gst, Invoice.place_of_supply,
+        ),
+        lazyload("*"),
+        selectinload(Invoice.items).load_only(
+            InvoiceItem.id, InvoiceItem.invoice_id, InvoiceItem.product_id, InvoiceItem.quantity,
+            InvoiceItem.taxable_amount, InvoiceItem.tax_amount, InvoiceItem.line_total,
+        ),
+    )
+    if product_id is not None:
+        query = query.filter(Invoice.items.any(InvoiceItem.product_id == product_id))
+
+    billed_invoices: list[tuple[Invoice, dict[int, DiscountedLine]]] = []
+    for invoice in query.order_by(Invoice.id).all():
+        billed = discounted_line_amounts(invoice, include_round_off=True)
+        for item in invoice.items:
+            if not item.taxable_amount and not item.tax_amount:
+                billed[item.id] = DiscountedLine(_money(Decimal(str(item.line_total or 0))), Decimal("0"))
+        billed_invoices.append((invoice, billed))
+    return billed_invoices
+
+
+def _billed_invoice_lines(
+    db: Session,
+    *,
+    company_id: int,
+    voucher_type: str,
+    from_date: date,
+    to_date: date,
+    ledger_id: int | None,
+    product_id: int | None,
+) -> list[tuple[Invoice, InvoiceItem, DiscountedLine]]:
+    """``(invoice, line, what the line billed)`` for every in-scope line.
+
+    See :func:`_billed_invoices`. Under a product filter only that product's lines
+    are returned, after the discount has been shared over all of their invoice's lines.
+    """
+    lines: list[tuple[Invoice, InvoiceItem, DiscountedLine]] = []
+    for invoice, billed in _billed_invoices(
+        db, company_id=company_id, voucher_type=voucher_type, from_date=from_date,
+        to_date=to_date, ledger_id=ledger_id, product_id=product_id,
+    ):
+        for item in invoice.items:
+            if product_id is None or item.product_id == product_id:
+                lines.append((invoice, item, billed[item.id]))
+    return lines
+
+
+def _active_note_lines(
+    db: Session,
+    *,
+    company_id: int,
+    voucher_type: str,
+    from_date: date,
+    to_date: date,
+    ledger_id: int | None,
+    product_id: int | None,
+):
+    """Active note lines in the period that run against this report's voucher type.
+
+    Outward notes reverse sales, inward (supplier) notes reverse purchases; a NULL
+    direction predates the column and was always outward.
+    """
+    expected = "outward" if voucher_type == "sales" else "inward"
+    return [
+        note
+        for note in _credit_note_lines(
+            db, company_id=company_id, from_date=from_date, to_date=to_date,
+            ledger_id=ledger_id, product_id=product_id,
+        )
+        if (note.direction or "outward") == expected
+    ]
+
+
 def build_monthly_sales_report(
     db: Session,
     *,
@@ -133,23 +249,32 @@ def build_monthly_sales_report(
 
     Every month in the range is emitted, including empty ones — a chart with
     gaps silently omitted would misrepresent a quiet month as no month.
+
+    Taxable value and GST are what the invoice's lines billed after the
+    invoice-level discount and round-off (see :func:`_billed_invoices`), so with
+    TCS they add up to total sales; the discount is still reported on its own as
+    ``discount_given``.
+
+    Active credit notes (outward for sales, inward for purchases) reduce taxable
+    value, GST and total sales, TCS included, in the month of the *credit note*
+    date. A fully returned invoice nets to zero.
     """
-    invoices = _scoped_invoice_query(
+    billed_invoices = _billed_invoices(
         db,
         company_id=company_id,
         voucher_type=voucher_type,
         from_date=from_date,
         to_date=to_date,
         ledger_id=ledger_id,
-    ).all()
+    )
 
-    discounts = build_invoice_discount_totals(db, invoices)
+    discounts = build_invoice_discount_totals(db, [invoice for invoice, _ in billed_invoices])
 
     buckets: dict[tuple[int, int], MonthlyBucket] = {
         key: MonthlyBucket() for key in months_between(from_date, to_date)
     }
 
-    for invoice in invoices:
+    for invoice, billed in billed_invoices:
         key = (invoice.invoice_date.year, invoice.invoice_date.month)
         bucket = buckets.get(key)
         if bucket is None:
@@ -157,9 +282,26 @@ def build_monthly_sales_report(
             continue
         bucket.invoice_count += 1
         bucket.total_sales += Decimal(str(invoice.total_amount or 0))
-        bucket.taxable_value += Decimal(str(invoice.taxable_amount or 0))
-        bucket.gst_collected += Decimal(str(invoice.total_tax_amount or 0))
+        bucket.taxable_value += sum((line.taxable_amount for line in billed.values()), Decimal("0"))
+        bucket.gst_collected += sum((line.tax_amount for line in billed.values()), Decimal("0"))
         bucket.discount_given += discounts[invoice.id].total_discount
+
+    # Notes reduce the month they were issued in, not the month of the invoice
+    # they reverse — the same split the day book uses. Every note type (return,
+    # discount, adjustment) reduces value here: there is no per-unit figure in
+    # this report for the return/other distinction to matter.
+    for note in _active_note_lines(
+        db, company_id=company_id, voucher_type=voucher_type, from_date=from_date,
+        to_date=to_date, ledger_id=ledger_id, product_id=None,
+    ):
+        bucket = buckets.get((note.credit_note_date.year, note.credit_note_date.month))
+        if bucket is None:
+            continue
+        taxable_value = Decimal(str(note.taxable_amount or 0))
+        tax_value = Decimal(str(note.tax_amount or 0))
+        bucket.taxable_value -= taxable_value
+        bucket.gst_collected -= tax_value
+        bucket.total_sales -= taxable_value + tax_value + Decimal(str(note.tcs_amount or 0))
 
     totals = MonthlyBucket()
     for bucket in buckets.values():
@@ -193,98 +335,92 @@ def build_product_sales_report(
     sort_dir: str = "desc",
     limit: int | None = None,
 ) -> ProductSalesData:
-    """Aggregate invoice lines into one row per product."""
-    start, end = _date_bounds(from_date, to_date)
+    """Aggregate invoice lines into one row per product.
 
-    query = (
-        db.query(
-            Product.id,
-            Product.name,
-            Product.sku,
-            Product.maintain_inventory,
-            func.coalesce(func.sum(InvoiceItem.quantity), 0),
-            func.coalesce(func.sum(InvoiceItem.taxable_amount), 0),
-            func.coalesce(func.sum(InvoiceItem.tax_amount), 0),
-            func.coalesce(func.sum(InvoiceItem.line_total), 0),
-            # Distinct: a product appearing on two lines of one invoice must
-            # count that invoice once.
-            func.count(func.distinct(InvoiceItem.invoice_id)),
-        )
-        .join(Invoice, InvoiceItem.invoice_id == Invoice.id)
-        .join(Product, Product.id == InvoiceItem.product_id)
-        .filter(
-            # InvoiceItem carries no company_id — scope comes via the Invoice join.
-            Invoice.company_id == company_id,
-            Invoice.status == "active",
-            Invoice.voucher_type == voucher_type,
-            Invoice.invoice_date >= start,
-            Invoice.invoice_date <= end,
-        )
-    )
-    if ledger_id is not None:
-        query = query.filter(Invoice.ledger_id == ledger_id)
-    if product_id is not None:
-        query = query.filter(Product.id == product_id)
+    Each line counts for what it billed after the invoice-level discount and
+    round-off (see :func:`_billed_invoices`): ex-GST as ``sales_amount``, its GST
+    as ``total_gst``, both together as ``total_revenue``.
 
-    grouped = query.group_by(Product.id, Product.name, Product.sku, Product.maintain_inventory).all()
+    Active credit notes dated in the range (outward for sales, inward for
+    purchases) then reduce ``quantity_sold`` (return notes only) and all three
+    money figures (every note type), the rule Product Performance uses, so a
+    fully returned invoice nets to zero. A product with notes but no invoice in
+    the range still gets a row, as it does in Profit & Loss and Sales by Month.
+    The average selling price is over the gross, pre-note figures.
+    """
+    acc: dict[int, dict] = {}
 
-    # Stock is fetched separately rather than outer-joined: a product with
-    # maintain_inventory=False has no meaningful stock, and a join would report
-    # a misleading 0 instead of "not tracked".
-    stock_map: dict[int, Decimal] = {}
-    if grouped:
-        stock_rows = (
-            db.query(Inventory.product_id, Inventory.quantity)
-            .filter(
-                Inventory.company_id == company_id,
-                Inventory.product_id.in_([row[0] for row in grouped]),
-            )
-            .all()
-        )
-        stock_map = {pid: Decimal(str(qty or 0)) for pid, qty in stock_rows}
+    def bucket(pid: int) -> dict:
+        if pid not in acc:
+            acc[pid] = {
+                "gross_qty": Decimal("0"),
+                "gross_taxable": Decimal("0"),
+                "qty": Decimal("0"),
+                "taxable": Decimal("0"),
+                "tax": Decimal("0"),
+                "invoice_ids": set(),
+            }
+        return acc[pid]
 
-    # Sales amount is taxable net of the invoice-level discount, apportioned
-    # across all of an invoice's lines first (same rule as Product Performance).
-    # The helper fetches every line of in-scope invoices even under a product
-    # filter, so a filtered product only takes its own share of the discount.
-    discounted_sales: dict[int, Decimal] = {}
-    for line_pid, _qty, discounted_taxable, _date in _dated_discounted_invoice_lines(
-        db,
-        company_id=company_id,
-        voucher_type=voucher_type,
-        from_date=from_date,
-        to_date=to_date,
-        ledger_id=ledger_id,
-        product_id=product_id,
+    for invoice, item, billed in _billed_invoice_lines(
+        db, company_id=company_id, voucher_type=voucher_type, from_date=from_date,
+        to_date=to_date, ledger_id=ledger_id, product_id=product_id,
     ):
-        discounted_sales[line_pid] = discounted_sales.get(line_pid, Decimal("0")) + discounted_taxable
+        entry = bucket(item.product_id)
+        qty = Decimal(str(item.quantity or 0))
+        entry["gross_qty"] += qty
+        entry["gross_taxable"] += billed.taxable_amount
+        entry["qty"] += qty
+        entry["taxable"] += billed.taxable_amount
+        entry["tax"] += billed.tax_amount
+        # A set: a product on two lines of one invoice counts that invoice once.
+        entry["invoice_ids"].add(invoice.id)
 
-    # Total revenue includes GST, so the whole invoice discount comes off it.
-    discounted_revenue = _discounted_line_totals(
-        db,
-        company_id=company_id,
-        voucher_type=voucher_type,
-        from_date=from_date,
-        to_date=to_date,
-        ledger_id=ledger_id,
-        product_id=product_id,
-    )
+    for note in _active_note_lines(
+        db, company_id=company_id, voucher_type=voucher_type, from_date=from_date,
+        to_date=to_date, ledger_id=ledger_id, product_id=product_id,
+    ):
+        entry = bucket(note.product_id)
+        entry["taxable"] -= Decimal(str(note.taxable_amount or 0))
+        entry["tax"] -= Decimal(str(note.tax_amount or 0))
+        if note.credit_note_type == "return":
+            entry["qty"] -= Decimal(str(note.quantity or 0))
+
+    products = {}
+    stock_map: dict[int, Decimal] = {}
+    if acc:
+        products = {
+            product.id: product
+            for product in db.query(Product.id, Product.name, Product.sku, Product.maintain_inventory)
+            .filter(Product.id.in_(list(acc)))
+            .all()
+        }
+        # Stock is fetched separately rather than outer-joined: a product with
+        # maintain_inventory=False has no meaningful stock, and a join would
+        # report a misleading 0 instead of "not tracked".
+        stock_map = {
+            pid: Decimal(str(qty or 0))
+            for pid, qty in db.query(Inventory.product_id, Inventory.quantity)
+            .filter(Inventory.company_id == company_id, Inventory.product_id.in_(list(acc)))
+            .all()
+        }
 
     rows: list[dict] = []
-    for pid, name, sku, maintain_inventory, quantity, taxable, tax, revenue, invoice_count in grouped:
-        qty = Decimal(str(quantity or 0))
-        sales_amount = discounted_sales.get(pid, Decimal(str(taxable or 0)))
+    for pid, entry in acc.items():
+        product = products.get(pid)
+        if product is None:  # defensive: a line pointing at a deleted product
+            continue
         rows.append({
             "product_id": pid,
-            "name": name,
-            "sku": sku,
-            "quantity_sold": qty,
-            "sales_amount": sales_amount,
-            "average_selling_price": average_of(sales_amount, qty),
-            "total_revenue": discounted_revenue.get(pid, Decimal(str(revenue or 0))),
-            "total_gst": Decimal(str(tax or 0)),
-            "invoice_count": int(invoice_count or 0),
-            "current_stock": stock_map.get(pid, Decimal("0")) if maintain_inventory else None,
+            "name": product.name,
+            "sku": product.sku,
+            "quantity_sold": entry["qty"],
+            "sales_amount": _money(entry["taxable"]),
+            "average_selling_price": average_of(entry["gross_taxable"], entry["gross_qty"]),
+            "total_revenue": _money(entry["taxable"] + entry["tax"]),
+            "total_gst": _money(entry["tax"]),
+            "invoice_count": len(entry["invoice_ids"]),
+            "current_stock": stock_map.get(pid, Decimal("0")) if product.maintain_inventory else None,
         })
 
     _sort_rows(rows, sort_by=sort_by, sort_dir=sort_dir)
@@ -383,55 +519,6 @@ def apportioned_invoice_rows(query, *, gst_inclusive=False):
         yield from zip(invoice_rows, shares)
 
 
-def _discounted_line_totals(
-    db: Session,
-    *,
-    company_id: int,
-    voucher_type: str,
-    from_date: date,
-    to_date: date,
-    ledger_id: int | None,
-    product_id: int | None,
-) -> dict[int, Decimal]:
-    """Per-product revenue: ``line_total`` (incl. GST) net of the invoice discount."""
-    start, end = _date_bounds(from_date, to_date)
-    query = (
-        db.query(
-            Invoice.id,
-            InvoiceItem.product_id,
-            InvoiceItem.line_total,
-            Invoice.taxable_amount,
-            Invoice.total_tax_amount,
-            Invoice.round_off_amount,
-            Invoice.total_amount,
-            Invoice.tcs_amount,
-        )
-        .join(InvoiceItem, InvoiceItem.invoice_id == Invoice.id)
-        .filter(
-            Invoice.company_id == company_id,
-            Invoice.status == "active",
-            Invoice.voucher_type == voucher_type,
-            Invoice.invoice_date >= start,
-            Invoice.invoice_date <= end,
-        )
-    )
-    if ledger_id is not None:
-        query = query.filter(Invoice.ledger_id == ledger_id)
-    if product_id is not None:
-        # Fetch every line of invoices containing the product; the discount
-        # is apportioned across all of them before the other lines are skipped.
-        containing = db.query(InvoiceItem.invoice_id).filter(InvoiceItem.product_id == product_id)
-        query = query.filter(Invoice.id.in_(containing))
-
-    revenue: dict[int, Decimal] = {}
-    for row, share in apportioned_invoice_rows(query, gst_inclusive=True):
-        if product_id is not None and row.product_id != product_id:
-            continue
-        net_total = Decimal(str(row.line_total or 0)) - share
-        revenue[row.product_id] = revenue.get(row.product_id, Decimal("0")) + net_total
-    return revenue
-
-
 def build_profit_loss_report(
     db: Session,
     *,
@@ -446,54 +533,40 @@ def build_profit_loss_report(
 
     Cost basis is the product's *current* ``purchase_price`` — invoice lines
     carry no cost snapshot, so a historical period is priced at today's cost and
-    its margin shifts if the cost is later edited. Revenue is ``taxable_amount``
-    net of the invoice-level discount (ex-GST), apportioned across an invoice's
-    lines the same way Product Performance does; GST is pass-through and never
-    counted as profit.
+    its margin shifts if the cost is later edited. Revenue is what each line
+    billed ex-GST, after its share of the invoice-level discount and round-off
+    (see :func:`_billed_invoices`); GST is pass-through and never counted as
+    profit.
+
+    Active credit notes dated in the range then reduce quantity, revenue and
+    COGS the way Product Performance does: every note type lowers revenue, but
+    only a ``return`` note lowers quantity and COGS, since a discount or
+    adjustment note sends no goods back. A fully returned invoice nets to zero.
 
     All three breakdowns come from one line-level scan so the numbers can't
     diverge. When ``product_id`` is set, ``monthly_rows`` narrows to that
     product's series — the per-product purchase-vs-sales view reuses it directly.
     """
-    start, end = _date_bounds(from_date, to_date)
-
-    query = (
-        db.query(
-            Invoice.id,
-            Invoice.invoice_date,
-            Invoice.ledger_id,
-            Invoice.ledger_name,
-            InvoiceItem.product_id,
-            InvoiceItem.quantity,
-            InvoiceItem.taxable_amount.label("line_taxable"),
-            Product.name,
-            Product.sku,
-            Product.purchase_price,
-            # Header totals, carried under the names invoice_discount_amount
-            # reads so the row goes straight to it in apportioned_invoice_rows.
-            Invoice.taxable_amount,
-            Invoice.total_tax_amount,
-            Invoice.round_off_amount,
-            Invoice.total_amount,
-            Invoice.tcs_amount,
-        )
-        .join(InvoiceItem, InvoiceItem.invoice_id == Invoice.id)
-        .join(Product, Product.id == InvoiceItem.product_id)
-        .filter(
-            Invoice.company_id == company_id,
-            Invoice.status == "active",
-            Invoice.voucher_type == voucher_type,
-            Invoice.invoice_date >= start,
-            Invoice.invoice_date <= end,
-        )
+    lines = _billed_invoice_lines(
+        db, company_id=company_id, voucher_type=voucher_type, from_date=from_date,
+        to_date=to_date, ledger_id=ledger_id, product_id=product_id,
     )
-    if ledger_id is not None:
-        query = query.filter(Invoice.ledger_id == ledger_id)
-    if product_id is not None:
-        # Fetch every line of invoices containing the product; the discount
-        # is apportioned across all of them before the other lines are skipped.
-        containing = db.query(InvoiceItem.invoice_id).filter(InvoiceItem.product_id == product_id)
-        query = query.filter(Invoice.id.in_(containing))
+    # Notes are booked in the month of the *credit note* date, not the invoice's.
+    note_lines = _active_note_lines(
+        db, company_id=company_id, voucher_type=voucher_type, from_date=from_date,
+        to_date=to_date, ledger_id=ledger_id, product_id=product_id,
+    )
+
+    # Every product a line or a note touches. A note's product (or customer) may
+    # have no invoice in the range, e.g. when the invoice falls before a narrower
+    # window than the note.
+    product_ids = {item.product_id for _, item, _ in lines} | {note.product_id for note in note_lines}
+    catalogue = {
+        product.id: product
+        for product in db.query(Product.id, Product.name, Product.sku, Product.purchase_price)
+        .filter(Product.id.in_(product_ids))
+        .all()
+    } if product_ids else {}
 
     # Per-product, per-month, and per-customer accumulators, all built in one pass.
     products: dict[int, dict] = {}
@@ -502,65 +575,64 @@ def build_profit_loss_report(
         for key in months_between(from_date, to_date)
     }
     customers: dict[int | None, dict] = {}
-    total_invoice_ids: set[int] = set()
 
-    # Revenue is each line's taxable amount net of its share of the invoice-level
-    # discount, apportioned across all of an invoice's lines first — the same
-    # rule as Product Performance. Under a product filter the query narrows to
-    # invoices containing that product (in the query above) and the other lines
-    # are skipped only after apportioning, so the filtered product never takes
-    # the whole discount.
-    discounted_rows: list[tuple] = []
-    for row, share in apportioned_invoice_rows(query):
-        if product_id is not None and row.product_id != product_id:
-            continue
-        discounted_rows.append((row, Decimal(str(row.line_taxable or 0)) - share))
-
-    for row, revenue in discounted_rows:
-        invoice_id = row.id
-        invoice_date = row.invoice_date
-        row_ledger_id = row.ledger_id
-        ledger_name = row.ledger_name
-        pid = row.product_id
-        qty = Decimal(str(row.quantity or 0))
-        cost = Decimal(str(row.purchase_price or 0))
-        line_cogs = qty * cost
-
-        product = products.get(pid)
-        if product is None:
-            product = {
+    def product_entry(pid: int) -> dict | None:
+        if pid not in products and pid in catalogue:
+            info = catalogue[pid]
+            products[pid] = {
                 "product_id": pid,
-                "name": row.name,
-                "sku": row.sku,
-                "purchase_price": cost,
+                "name": info.name,
+                "sku": info.sku,
+                "purchase_price": Decimal(str(info.purchase_price or 0)),
                 "quantity_sold": Decimal("0"),
                 "revenue": Decimal("0"),
             }
-            products[pid] = product
-        product["quantity_sold"] += qty
-        product["revenue"] += revenue
+        return products.get(pid)
 
-        bucket = months.get((invoice_date.year, invoice_date.month))
-        if bucket is not None:  # defensive: query is already range-bounded
-            bucket["quantity"] += qty
-            bucket["revenue"] += revenue
-            bucket["cogs"] += line_cogs
-
-        customer = customers.get(row_ledger_id)
-        if customer is None:
-            customer = {
-                "ledger_id": row_ledger_id,
-                "name": ledger_name or "—",
+    def customer_entry(ledger: int | None, name: str | None) -> dict:
+        if ledger not in customers:
+            customers[ledger] = {
+                "ledger_id": ledger,
+                "name": name or "—",
                 "revenue": Decimal("0"),
                 "cogs": Decimal("0"),
                 "invoice_ids": set(),
             }
-            customers[row_ledger_id] = customer
+        return customers[ledger]
+
+    def book(product: dict, when: datetime, customer: dict, units: Decimal, revenue: Decimal) -> None:
+        """Add one line (or, with negative figures, take one note line off)."""
+        line_cogs = units * product["purchase_price"]
+        product["quantity_sold"] += units
+        product["revenue"] += revenue
+        bucket = months.get((when.year, when.month))
+        if bucket is not None:  # defensive: the queries are already range-bounded
+            bucket["quantity"] += units
+            bucket["revenue"] += revenue
+            bucket["cogs"] += line_cogs
         customer["revenue"] += revenue
         customer["cogs"] += line_cogs
-        customer["invoice_ids"].add(invoice_id)
 
-        total_invoice_ids.add(invoice_id)
+    for invoice, item, billed in lines:
+        product = product_entry(item.product_id)
+        if product is None:  # defensive: a line pointing at a deleted product
+            continue
+        customer = customer_entry(invoice.ledger_id, invoice.ledger_name)
+        customer["invoice_ids"].add(invoice.id)
+        book(product, invoice.invoice_date, customer, Decimal(str(item.quantity or 0)), billed.taxable_amount)
+
+    missing_ledger_ids = {note.ledger_id for note in note_lines} - customers.keys()
+    ledger_names: dict[int, str] = {}
+    if missing_ledger_ids:
+        ledger_names = dict(db.query(Buyer.id, Buyer.name).filter(Buyer.id.in_(missing_ledger_ids)).all())
+
+    for note in note_lines:
+        product = product_entry(note.product_id)
+        if product is None:
+            continue
+        units = Decimal(str(note.quantity or 0)) if note.credit_note_type == "return" else Decimal("0")
+        customer = customer_entry(note.ledger_id, ledger_names.get(note.ledger_id))
+        book(product, note.credit_note_date, customer, -units, -Decimal(str(note.taxable_amount or 0)))
 
     product_rows: list[dict] = []
     for product in products.values():
@@ -704,57 +776,19 @@ def _dated_discounted_invoice_lines(
     ledger_id: int | None,
     product_id: int | None,
 ) -> list[tuple[int, Decimal, Decimal, datetime]]:
-    """``(product_id, quantity, taxable net of invoice discount, invoice_date)``.
+    """``(product_id, quantity, taxable the line billed, invoice_date)``.
 
-    Every line of every in-scope invoice is fetched, even under a product
-    filter, because the invoice-level discount is apportioned across *all* of
-    an invoice's lines; dropping the other lines first would hand the filtered
-    product the whole discount. The product filter narrows the invoice set in
-    SQL and the lines in Python afterwards.
-
-    Only the columns needed are selected — a full ``Invoice`` row carries the
-    company logo snapshot, which is far too heavy to load per invoice here.
+    The taxable value is after the line's share of the invoice-level discount
+    and round-off, the same figure a credit note credits; see
+    :func:`_billed_invoices`, which also covers the product filter.
     """
-    start, end = _date_bounds(from_date, to_date)
-    query = (
-        db.query(
-            Invoice.id,
-            Invoice.invoice_date,
-            Invoice.taxable_amount,
-            Invoice.total_tax_amount,
-            Invoice.round_off_amount,
-            Invoice.total_amount,
-            Invoice.tcs_amount,
-            InvoiceItem.product_id,
-            InvoiceItem.quantity,
-            InvoiceItem.taxable_amount.label("line_taxable"),
+    return [
+        (item.product_id, Decimal(str(item.quantity or 0)), billed.taxable_amount, invoice.invoice_date)
+        for invoice, item, billed in _billed_invoice_lines(
+            db, company_id=company_id, voucher_type=voucher_type, from_date=from_date,
+            to_date=to_date, ledger_id=ledger_id, product_id=product_id,
         )
-        .join(InvoiceItem, InvoiceItem.invoice_id == Invoice.id)
-        .filter(
-            Invoice.company_id == company_id,
-            Invoice.status == "active",
-            Invoice.voucher_type == voucher_type,
-            Invoice.invoice_date >= start,
-            Invoice.invoice_date <= end,
-        )
-    )
-    if ledger_id is not None:
-        query = query.filter(Invoice.ledger_id == ledger_id)
-    if product_id is not None:
-        containing = db.query(InvoiceItem.invoice_id).filter(InvoiceItem.product_id == product_id)
-        query = query.filter(Invoice.id.in_(containing))
-
-    lines: list[tuple[int, Decimal, Decimal, datetime]] = []
-    for row, share in apportioned_invoice_rows(query):
-        if product_id is not None and row.product_id != product_id:
-            continue
-        lines.append((
-            row.product_id,
-            Decimal(str(row.quantity or 0)),
-            Decimal(str(row.line_taxable or 0)) - share,
-            row.invoice_date,
-        ))
-    return lines
+    ]
 
 
 def _credit_note_lines(
@@ -771,15 +805,22 @@ def _credit_note_lines(
     Strict company equality on the note header: unlike
     :mod:`src.services.credit_note_reporting`, a NULL-company note must not
     leak into every company's figures on a reporting surface.
+
+    Rows carry ``tax_amount``, ``tcs_amount`` and ``ledger_id`` alongside the
+    fields Product Performance uses, so the other report builders can reduce
+    GST-inclusive totals, total sales and per-customer figures with the same query.
     """
     start, end = _date_bounds(from_date, to_date)
     query = (
         db.query(
             CreditNote.direction,
             CreditNote.credit_note_type,
+            CreditNote.ledger_id,
             CreditNoteItem.product_id,
             CreditNoteItem.quantity,
             CreditNoteItem.taxable_amount,
+            CreditNoteItem.tax_amount,
+            CreditNoteItem.tcs_amount,
             CreditNote.credit_note_date,
         )
         .join(CreditNote, CreditNoteItem.credit_note_id == CreditNote.id)
@@ -915,13 +956,12 @@ def build_product_performance_report(
 ) -> ProductPerformanceData:
     """Per-product sales, purchases, returns and margin for a period.
 
-    Money is ex-GST throughout. Revenue and purchase spend start from line
-    ``taxable_amount`` (already net of line discounts), less each line's share
-    of any invoice-level discount (see
-    :func:`~src.services.invoice_discounts.apportion_invoice_discount`), less
-    active credit notes: outward notes reduce sales, inward (supplier) notes
-    reduce purchases. Every credit note type reduces value; only ``return``
-    notes move units, because a ``discount`` or ``adjustment`` note sends no
+    Money is ex-GST throughout. Revenue and purchase spend start from what each
+    line billed ex-GST: its ``taxable_amount`` (already net of line discounts)
+    after its share of any invoice-level discount and round-off (see
+    :func:`_billed_invoices`), less active credit notes: outward notes reduce
+    sales, inward (supplier) notes reduce purchases. Every credit note type
+    reduces value; only ``return`` notes move units, because a ``discount`` or ``adjustment`` note sends no
     goods back (the credit note service only touches stock for returns).
 
     Cost: the weighted average ex-GST purchase price over the period
@@ -973,8 +1013,11 @@ def build_product_performance_report(
         entry = bucket(pid)
         entry["units_bought"] += qty
         entry["purchase_value"] += taxable
-    for direction, note_type, pid, qty, taxable, _note_date in note_lines:
-        _add_note_line(bucket(pid), direction, note_type, qty, taxable)
+    for note in note_lines:
+        _add_note_line(
+            bucket(note.product_id), note.direction, note.credit_note_type,
+            note.quantity, note.taxable_amount,
+        )
 
     if not acc:
         return ProductPerformanceData(rows=[], totals=_performance_totals([]))
@@ -1148,8 +1191,11 @@ def build_product_performance_detail(
     for _, qty, taxable, when in cost_lines:
         paid[(when.year, when.month)][0] += taxable
         paid[(when.year, when.month)][1] += qty
-    for direction, note_type, _, qty, taxable, note_date in note_lines:
-        _add_note_line(buckets[(note_date.year, note_date.month)], direction, note_type, qty, taxable)
+    for note in note_lines:
+        _add_note_line(
+            buckets[(note.credit_note_date.year, note.credit_note_date.month)],
+            note.direction, note.credit_note_type, note.quantity, note.taxable_amount,
+        )
 
     # COGS is booked as the change in the rounded running total rather than
     # rounded month by month: per-month rounding of units x an unrounded cost

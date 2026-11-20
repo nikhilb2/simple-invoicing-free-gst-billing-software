@@ -1,11 +1,14 @@
 """Tests for the sales analytics endpoints."""
 
 import csv
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from io import StringIO
 
 import pytest
+
+from src.models.company import CompanyProfile
+from tests.api.test_tcs_invoices import SCRAP_2025, _section_id, _seed_sections
 
 
 def _create_product(client, sku, name, price, *, stock=1000, **extra):
@@ -44,6 +47,34 @@ def _create_invoice(client, ledger_id, items, *, voucher_type="sales", invoice_d
         payload["invoice_date"] = invoice_date.date().isoformat()
     response = client.post("/api/invoices/", json=payload)
     assert response.status_code == 200, response.text
+    return response.json()
+
+
+def _create_note(client, invoice, quantities, *, direction="outward", note_type="return", credit_note_date=None):
+    """quantities maps invoice_item_id -> units (or the inclusive amount for a
+    discount note). Dating it explicitly keeps a test independent of today."""
+    items = []
+    for item_id, amount in quantities.items():
+        entry = {"invoice_id": invoice["id"], "invoice_item_id": item_id}
+        if note_type == "discount":
+            entry["discount_amount_inclusive"] = amount
+        else:
+            entry["quantity"] = amount
+        items.append(entry)
+    payload = {
+        "ledger_id": invoice["ledger_id"],
+        "invoice_ids": [invoice["id"]],
+        "credit_note_type": note_type,
+        "direction": direction,
+        "items": items,
+    }
+    if credit_note_date is not None:
+        payload["credit_note_date"] = credit_note_date.isoformat()
+    if direction == "inward":
+        payload["supplier_credit_note_number"] = "SUP-CN-1"
+        payload["supplier_credit_note_date"] = date.today().isoformat()
+    response = client.post("/api/credit-notes/", json=payload)
+    assert response.status_code == 201, response.text
     return response.json()
 
 
@@ -331,12 +362,15 @@ class TestProductSales:
         # Issue #674: Total Revenue includes GST, so the whole discount comes off.
         assert row["total_revenue"] == 1062.00
         assert res.json()["totals"]["total_revenue"] == 1062.00
-        # Stored GST is left as the invoice wrote it.
-        assert row["total_gst"] == 180.00
-        # The monthly report reads the invoice header, so its taxable value
-        # stays the pre-discount 1000.00 even though the line reports are net.
+        # Issue #790: the GST the discount took off comes off the line's GST
+        # too (180 - 18), the figure a credit note for the line would reverse.
+        assert row["total_gst"] == 162.00
+        # Sales by Month books the same billed figures, so it agrees.
         monthly = client.get("/api/analytics/sales-by-month", params={"from_date": "2026-10-01", "to_date": "2026-10-31"}).json()
-        assert monthly["rows"][0]["taxable_value"] == 1000.00
+        assert monthly["rows"][0]["taxable_value"] == 900.00
+        assert monthly["rows"][0]["gst_collected"] == 162.00
+        assert monthly["rows"][0]["total_sales"] == 1062.00
+        assert monthly["rows"][0]["discount_given"] == 118.00
 
     def test_total_revenue_is_what_the_invoice_charged(self, client):
         """Issue #674: 1 x 1000 at 18% GST (1180) with a flat discount leaves
@@ -646,6 +680,319 @@ class TestProfitLoss:
         }).json()["totals"]
         assert totals["product_count"] == 0
         assert totals["revenue"] == 0.0
+
+
+class TestCreditNotes:
+    """Issue #790: Profit & Loss, Sales by Product and Sales by Month must
+    take active credit notes off the same way Product Performance already
+    does, so all four reports on the Analytics screen agree."""
+
+    def test_reports_agree_with_product_performance(self, client):
+        widget = _create_product(client, "CN-1", "Widget", 1000, purchase_price=600)
+        gadget = _create_product(client, "CN-2", "Gadget", 1000, purchase_price=500)
+        ledger = _create_ledger(client, "Acme")
+
+        sale = _create_invoice(client, ledger, [
+            {"product_id": widget, "quantity": 2, "unit_price": 1000, "gst_rate": 18},
+            {"product_id": gadget, "quantity": 1, "unit_price": 1000, "gst_rate": 18},
+        ], invoice_date=datetime(2026, 11, 5, 12, 0))
+        widget_item_id = sale["items"][0]["id"]
+        gadget_item_id = sale["items"][1]["id"]
+
+        # Full return of the 2 widgets.
+        return_note = _create_note(
+            client, sale, {widget_item_id: 2}, credit_note_date=date(2026, 11, 10),
+        )
+        # A partial discount on the gadget line: 236 inclusive of 18% GST is
+        # 200 ex-GST / 36 GST.
+        _create_note(
+            client, sale, {gadget_item_id: 236}, note_type="discount",
+            credit_note_date=date(2026, 11, 12),
+        )
+
+        params = {"from_date": "2026-11-01", "to_date": "2026-11-30"}
+
+        def _rows(path, key="rows"):
+            return {
+                row["name"]: row
+                for row in client.get(path, params=params).json()[key]
+            }
+
+        performance = _rows("/api/analytics/product-performance")
+        assert performance["Widget"]["net_units_sold"] == 0
+        assert performance["Widget"]["revenue"] == 0.00
+        assert performance["Widget"]["gross_profit"] == 0.00
+        assert performance["Gadget"]["net_units_sold"] == 1
+        assert performance["Gadget"]["revenue"] == 800.00
+        assert performance["Gadget"]["gross_profit"] == 300.00
+
+        pl = _rows("/api/analytics/profit-loss", key="product_rows")
+        assert pl["Widget"]["quantity_sold"] == performance["Widget"]["net_units_sold"]
+        assert pl["Widget"]["sales_amount"] == performance["Widget"]["revenue"]
+        assert pl["Widget"]["cogs"] == 0.00
+        assert pl["Widget"]["gross_profit"] == 0.00
+        assert pl["Gadget"]["quantity_sold"] == performance["Gadget"]["net_units_sold"]
+        assert pl["Gadget"]["sales_amount"] == performance["Gadget"]["revenue"]
+        assert pl["Gadget"]["gross_profit"] == 300.00
+
+        by_product = _rows("/api/analytics/sales-by-product")
+        assert by_product["Widget"]["quantity_sold"] == performance["Widget"]["net_units_sold"]
+        assert by_product["Widget"]["sales_amount"] == performance["Widget"]["revenue"]
+        assert by_product["Widget"]["total_revenue"] == 0.00
+        assert by_product["Gadget"]["quantity_sold"] == performance["Gadget"]["net_units_sold"]
+        assert by_product["Gadget"]["sales_amount"] == performance["Gadget"]["revenue"]
+        assert by_product["Gadget"]["total_revenue"] == 944.00  # 800 ex-GST + 144 GST
+
+        by_month = client.get("/api/analytics/sales-by-month", params=params).json()["rows"][0]
+        assert by_month["taxable_value"] == 800.00
+        assert by_month["gst_collected"] == 144.00
+        assert by_month["total_sales"] == 944.00
+
+        # Cancel the return note: Widget goes back to its gross, pre-note
+        # figures everywhere, while Gadget (still discounted) does not.
+        assert client.post(f"/api/credit-notes/{return_note['id']}/cancel").status_code == 200
+
+        performance_after = _rows("/api/analytics/product-performance")
+        assert performance_after["Widget"]["net_units_sold"] == 2
+        assert performance_after["Widget"]["revenue"] == 2000.00
+        assert performance_after["Widget"]["gross_profit"] == 800.00
+
+        pl_after = _rows("/api/analytics/profit-loss", key="product_rows")
+        assert pl_after["Widget"]["quantity_sold"] == 2
+        assert pl_after["Widget"]["sales_amount"] == 2000.00
+        assert pl_after["Widget"]["cogs"] == 1200.00
+        assert pl_after["Widget"]["gross_profit"] == 800.00
+        assert pl_after["Gadget"]["gross_profit"] == 300.00  # untouched
+
+        by_product_after = _rows("/api/analytics/sales-by-product")
+        assert by_product_after["Widget"]["quantity_sold"] == 2
+        assert by_product_after["Widget"]["sales_amount"] == 2000.00
+        assert by_product_after["Widget"]["total_revenue"] == 2360.00
+        assert by_product_after["Gadget"]["total_revenue"] == 944.00  # untouched
+
+        by_month_after = client.get("/api/analytics/sales-by-month", params=params).json()["rows"][0]
+        # Widget's 2000 taxable / 360 GST is back; Gadget's discount (200/36)
+        # still applies.
+        assert by_month_after["taxable_value"] == 2800.00
+        assert by_month_after["gst_collected"] == 504.00
+        assert by_month_after["total_sales"] == 3304.00
+
+    def test_note_dated_in_a_later_month_than_its_invoice(self, client):
+        """A note reduces the month it is dated in, and a window holding only the
+        note still shows its product and customer, in every report."""
+        widget = _create_product(client, "CN-LATE", "Widget", 1000, purchase_price=600)
+        ledger = _create_ledger(client, "Acme")
+        sale = _create_invoice(client, ledger, [
+            {"product_id": widget, "quantity": 2, "unit_price": 1000, "gst_rate": 18},
+        ], invoice_date=datetime(2026, 5, 20, 12, 0))
+        _create_note(client, sale, {sale["items"][0]["id"]: 1}, credit_note_date=date(2026, 6, 3))
+
+        both = {"from_date": "2026-05-01", "to_date": "2026-06-30"}
+        may, june = client.get("/api/analytics/sales-by-month", params=both).json()["rows"]
+        assert (may["taxable_value"], may["gst_collected"], may["total_sales"]) == (2000.00, 360.00, 2360.00)
+        assert (june["taxable_value"], june["gst_collected"], june["total_sales"]) == (-1000.00, -180.00, -1180.00)
+        assert june["invoice_count"] == 0
+
+        pl = client.get("/api/analytics/profit-loss", params=both).json()
+        pl_may, pl_june = pl["monthly_rows"]
+        assert (pl_may["quantity"], pl_may["revenue"], pl_may["cogs"]) == (2, 2000.00, 1200.00)
+        assert (pl_june["quantity"], pl_june["revenue"], pl_june["cogs"]) == (-1, -1000.00, -600.00)
+        assert pl["totals"]["gross_profit"] == 400.00
+
+        by_product = client.get("/api/analytics/sales-by-product", params=both).json()["rows"]
+        assert [(row["quantity_sold"], row["sales_amount"]) for row in by_product] == [(1, 1000.00)]
+
+        # June alone: the invoice is out of range, the note is not.
+        june_only = {"from_date": "2026-06-01", "to_date": "2026-06-30"}
+        month = client.get("/api/analytics/sales-by-month", params=june_only).json()["totals"]
+        assert (month["taxable_value"], month["total_sales"]) == (-1000.00, -1180.00)
+
+        products = client.get("/api/analytics/sales-by-product", params=june_only).json()
+        assert len(products["rows"]) == 1
+        row = products["rows"][0]
+        assert row["name"] == "Widget"
+        assert row["quantity_sold"] == -1
+        assert row["sales_amount"] == -1000.00
+        assert row["total_gst"] == -180.00
+        assert row["total_revenue"] == -1180.00
+        assert row["invoice_count"] == 0
+        assert row["average_selling_price"] == 0.00
+        assert products["totals"]["product_count"] == 1
+        assert products["totals"]["total_revenue"] == -1180.00
+        assert products["totals"]["invoice_count"] == 0
+
+        pl_june_only = client.get("/api/analytics/profit-loss", params=june_only).json()
+        product_row = pl_june_only["product_rows"][0]
+        assert (product_row["name"], product_row["quantity_sold"], product_row["sales_amount"]) == ("Widget", -1, -1000.00)
+        assert (product_row["cogs"], product_row["gross_profit"]) == (-600.00, -400.00)
+        customer_row = pl_june_only["customer_rows"][0]
+        assert (customer_row["name"], customer_row["revenue"], customer_row["invoice_count"]) == ("Acme", -1000.00, 0)
+
+        performance = client.get("/api/analytics/product-performance", params=june_only).json()["rows"][0]
+        assert (performance["units_returned"], performance["revenue"]) == (1, -1000.00)
+
+    def test_inward_note_reduces_purchase_reports_only(self, client):
+        """A supplier's (inward) note takes a purchase off the purchase-side
+        reports and leaves every sales report alone; an outward note does the
+        reverse."""
+        widget = _create_product(client, "CN-BUY", "Widget", 1000, purchase_price=500)
+        supplier = _create_ledger(client, "Supplier")
+        customer = _create_ledger(client, "Customer")
+        purchase = _create_invoice(client, supplier, [
+            {"product_id": widget, "quantity": 4, "unit_price": 500, "gst_rate": 18},
+        ], voucher_type="purchase", invoice_date=datetime(2026, 7, 2, 12, 0))
+        sale = _create_invoice(client, customer, [
+            {"product_id": widget, "quantity": 1, "unit_price": 1000, "gst_rate": 18},
+        ], invoice_date=datetime(2026, 7, 3, 12, 0))
+        _create_note(client, purchase, {purchase["items"][0]["id"]: 1}, direction="inward",
+                     credit_note_date=date(2026, 7, 10))
+
+        params = {"from_date": "2026-07-01", "to_date": "2026-07-31"}
+        purchases = {**params, "voucher_type": "purchase"}
+
+        month = client.get("/api/analytics/sales-by-month", params=purchases).json()["totals"]
+        assert (month["taxable_value"], month["gst_collected"], month["total_sales"]) == (1500.00, 270.00, 1770.00)
+        row = client.get("/api/analytics/sales-by-product", params=purchases).json()["rows"][0]
+        assert (row["quantity_sold"], row["sales_amount"], row["total_gst"], row["total_revenue"]) == (
+            3, 1500.00, 270.00, 1770.00,
+        )
+
+        sales_month = client.get("/api/analytics/sales-by-month", params=params).json()["totals"]
+        assert (sales_month["taxable_value"], sales_month["total_sales"]) == (1000.00, 1180.00)
+        sales_row = client.get("/api/analytics/sales-by-product", params=params).json()["rows"][0]
+        assert (sales_row["quantity_sold"], sales_row["sales_amount"]) == (1, 1000.00)
+        pl = client.get("/api/analytics/profit-loss", params=params).json()["totals"]
+        assert (pl["quantity_sold"], pl["revenue"], pl["cogs"]) == (1, 1000.00, 500.00)
+
+        # And an outward note leaves the purchase side alone.
+        _create_note(client, sale, {sale["items"][0]["id"]: 1}, credit_note_date=date(2026, 7, 12))
+        month_after = client.get("/api/analytics/sales-by-month", params=purchases).json()["totals"]
+        assert month_after["total_sales"] == 1770.00
+        sales_after = client.get("/api/analytics/sales-by-month", params=params).json()["totals"]
+        assert sales_after["total_sales"] == 0.00
+
+    def test_ledger_and_product_filters_apply_to_notes(self, client):
+        widget = _create_product(client, "CN-F1", "Widget", 1000, purchase_price=600)
+        gadget = _create_product(client, "CN-F2", "Gadget", 500, purchase_price=200)
+        acme = _create_ledger(client, "Acme")
+        beta = _create_ledger(client, "Beta")
+        on = datetime(2026, 8, 4, 12, 0)
+        sale_a = _create_invoice(client, acme, [
+            {"product_id": widget, "quantity": 2, "unit_price": 1000, "gst_rate": 18},
+            {"product_id": gadget, "quantity": 1, "unit_price": 500, "gst_rate": 18},
+        ], invoice_date=on)
+        sale_b = _create_invoice(client, beta, [
+            {"product_id": widget, "quantity": 2, "unit_price": 1000, "gst_rate": 18},
+        ], invoice_date=on)
+        _create_note(client, sale_a, {sale_a["items"][0]["id"]: 1}, credit_note_date=date(2026, 8, 6))
+        _create_note(client, sale_b, {sale_b["items"][0]["id"]: 1}, credit_note_date=date(2026, 8, 7))
+
+        def reports(**filters):
+            params = {"from_date": "2026-08-01", "to_date": "2026-08-31", **filters}
+            month = client.get("/api/analytics/sales-by-month", params=params).json()["totals"]
+            products = {
+                row["name"]: (row["quantity_sold"], row["sales_amount"])
+                for row in client.get("/api/analytics/sales-by-product", params=params).json()["rows"]
+            }
+            pl = client.get("/api/analytics/profit-loss", params=params).json()
+            pl_products = {row["name"]: (row["quantity_sold"], row["sales_amount"]) for row in pl["product_rows"]}
+            return month["taxable_value"], products, pl_products, pl["totals"]["revenue"]
+
+        # Unfiltered: 5 units sold, 2 returned.
+        month, products, pl_products, pl_revenue = reports()
+        assert month == 2500.00
+        assert products == {"Widget": (2, 2000.00), "Gadget": (1, 500.00)}
+        assert pl_products == products
+        assert pl_revenue == 2500.00
+
+        month, products, pl_products, pl_revenue = reports(ledger_id=acme)
+        assert month == 1500.00
+        assert products == {"Widget": (1, 1000.00), "Gadget": (1, 500.00)}
+        assert pl_products == products
+
+        month, products, pl_products, pl_revenue = reports(ledger_id=beta)
+        assert month == 1000.00
+        assert products == {"Widget": (1, 1000.00)}
+        assert pl_products == products
+        assert pl_revenue == 1000.00
+
+        _, products, pl_products, pl_revenue = reports(product_id=widget)
+        assert products == {"Widget": (2, 2000.00)}
+        assert pl_products == products
+        assert pl_revenue == 2000.00
+
+        _, products, pl_products, pl_revenue = reports(product_id=gadget)
+        assert products == {"Gadget": (1, 500.00)}
+        assert pl_products == products
+
+        _, products, pl_products, _ = reports(ledger_id=beta, product_id=gadget)
+        assert products == {}
+        assert pl_products == {}
+
+    @pytest.mark.parametrize("place_of_supply", [None, "27"], ids=["intrastate", "interstate"])
+    def test_full_return_of_a_discounted_tcs_rounded_invoice_nets_to_zero(
+        self, client, db_session, place_of_supply,
+    ):
+        """Review of #894: every report books an invoice line at what it billed
+        after the invoice discount and round-off, the figure a credit note
+        credits, and Sales by Month takes the note's TCS off total sales too, so
+        a full return leaves nothing behind anywhere."""
+        _seed_sections(db_session)
+        assert client.get("/api/company/").status_code == 200
+        profile = db_session.query(CompanyProfile).first()
+        profile.gst = "29AAAAA0000A1Z5"
+        profile.enable_tcs = True
+        db_session.commit()
+
+        lines = [(3, 333.33, 18, 210), (7, 49.99, 12, 30), (1, 19.99, 5, 11)]
+        products = [
+            _create_product(client, f"CN-TCS-{index}", f"Part {index}", price, gst_rate=rate,
+                            purchase_price=cost, hsn_sac="8471")
+            for index, (_, price, rate, cost) in enumerate(lines)
+        ]
+        ledger = _create_ledger(client, "Walk-in")
+        extra = {"place_of_supply": place_of_supply} if place_of_supply else {}
+        sale = _create_invoice(client, ledger, [
+            {"product_id": product, "quantity": quantity, "unit_price": price, "gst_rate": rate}
+            for product, (quantity, price, rate, _) in zip(products, lines)
+        ], invoice_date=datetime(2026, 5, 14, 12, 0), discount_type="percentage", discount_value="7.5",
+            apply_round_off=True, tcs_section_id=_section_id(db_session, SCRAP_2025), **extra)
+        assert sale["tcs_amount"] > 0
+        assert sale["round_off_amount"] != 0
+
+        params = {"from_date": "2026-05-01", "to_date": "2026-05-31"}
+        month = client.get("/api/analytics/sales-by-month", params=params).json()["totals"]
+        # What the lines billed adds up to the invoice total less its TCS.
+        assert month["total_sales"] == sale["total_amount"]
+        assert Decimal(str(month["taxable_value"])) + Decimal(str(month["gst_collected"])) == (
+            Decimal(str(sale["total_amount"])) - Decimal(str(sale["tcs_amount"]))
+        )
+        product_totals = client.get("/api/analytics/sales-by-product", params=params).json()["totals"]
+        assert product_totals["sales_amount"] == month["taxable_value"]
+        assert product_totals["total_revenue"] == month["taxable_value"] + month["gst_collected"]
+
+        _create_note(
+            client, sale, {item["id"]: int(item["quantity"]) for item in sale["items"]},
+            credit_note_date=date(2026, 5, 25),
+        )
+
+        month = client.get("/api/analytics/sales-by-month", params=params).json()["totals"]
+        assert (month["taxable_value"], month["gst_collected"], month["total_sales"]) == (0, 0, 0)
+
+        by_product = client.get("/api/analytics/sales-by-product", params=params).json()
+        for row in by_product["rows"] + [by_product["totals"]]:
+            assert (row["quantity_sold"], row["sales_amount"], row["total_gst"], row["total_revenue"]) == (0, 0, 0, 0)
+
+        pl = client.get("/api/analytics/profit-loss", params=params).json()
+        for row in pl["product_rows"]:
+            assert (row["quantity_sold"], row["sales_amount"], row["cogs"], row["gross_profit"]) == (0, 0, 0, 0)
+        assert [(row["revenue"], row["cogs"]) for row in pl["monthly_rows"]] == [(0, 0)]
+        assert [(row["revenue"], row["cogs"]) for row in pl["customer_rows"]] == [(0, 0)]
+        assert (pl["totals"]["revenue"], pl["totals"]["cogs"], pl["totals"]["gross_profit"]) == (0, 0, 0)
+
+        performance = client.get("/api/analytics/product-performance", params=params).json()
+        for row in performance["rows"]:
+            assert (row["net_units_sold"], row["revenue"], row["gross_profit"]) == (0, 0, 0)
 
 
 class TestCsvExports:

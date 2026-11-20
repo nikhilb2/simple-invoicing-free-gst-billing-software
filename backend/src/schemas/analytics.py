@@ -21,9 +21,9 @@ class MonthlySalesRow(BaseModel):
     month: str  # "2026-04"
     label: str  # "Apr 26"
     invoice_count: int
-    total_sales: float  # sum of invoice total_amount, incl. GST and round-off
-    taxable_value: float  # sum of invoice taxable_amount, ex-GST
-    gst_collected: float  # sum of invoice total_tax_amount
+    total_sales: float  # sum of invoice total_amount (GST, TCS, round-off), less credit notes
+    taxable_value: float  # what the lines billed ex-GST, after the invoice discount and round-off, less credit notes
+    gst_collected: float  # the lines' GST after the invoice discount, less credit notes
     discount_given: float  # derived — see src.services.invoice_discounts
     average_invoice_value: float
 
@@ -50,10 +50,10 @@ class ProductSalesRow(BaseModel):
     name: str
     sku: str | None = None
     quantity_sold: float
-    sales_amount: float  # sum of line taxable_amount net of invoice-level discount, ex-GST
-    average_selling_price: float  # sales_amount / quantity_sold
-    total_revenue: float  # sum of line_total, incl. GST
-    total_gst: float  # sum of line tax_amount
+    sales_amount: float  # what the lines billed ex-GST, after the invoice discount and round-off, less credit notes
+    average_selling_price: float  # over the lines alone, before credit notes
+    total_revenue: float  # sales_amount + total_gst
+    total_gst: float  # the lines' GST after the invoice discount, less credit notes
     invoice_count: int  # distinct invoices, not line items
     current_stock: float | None = None  # None when the product isn't stock-tracked
 
@@ -88,7 +88,7 @@ class ProfitLossProductRow(BaseModel):
     name: str
     sku: str | None = None
     quantity_sold: float
-    sales_amount: float  # revenue, sum of line taxable_amount net of invoice-level discount (ex-GST)
+    sales_amount: float  # revenue: what the lines billed ex-GST, after the invoice discount and round-off, less credit notes
     average_selling_price: float  # sales_amount / quantity_sold
     purchase_price: float  # current unit cost
     cogs: float  # quantity_sold * purchase_price
