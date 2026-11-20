@@ -557,6 +557,16 @@ def _build_ledger_statement_data(
     opening_balance = opening_debit - opening_credit
     closing_balance = opening_balance + period_debit - period_credit
 
+    # These are plain float sums, so a settled account (e.g. 0.10 + 0.20 - 0.30)
+    # can leave a tiny residue such as -5.55e-17 instead of 0. Rounding to 2
+    # places and adding 0.0 folds that residue away and turns any resulting
+    # -0.0 into 0.0, so callers (the JSON API, the PDF and the share link,
+    # which picks Dr/Cr by `closing >= 0`) always see a clean zero.
+    period_debit = round(period_debit, 2) + 0.0
+    period_credit = round(period_credit, 2) + 0.0
+    opening_balance = round(opening_balance, 2) + 0.0
+    closing_balance = round(closing_balance, 2) + 0.0
+
     return LedgerStatementData(
         opening_balance=opening_balance,
         period_debit=period_debit,

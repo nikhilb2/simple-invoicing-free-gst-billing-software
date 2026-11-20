@@ -166,6 +166,46 @@ def test_statement_csv_shows_a_settled_balance_as_zero_without_a_side(client, db
     assert rows[-1] == ["", "", "", "Totals", "0.30", "0.30", "0.00", ""]
 
 
+def test_statement_json_shows_a_settled_balance_as_a_clean_zero(client, db_session):
+    user = User(id=1, email="test@example.com", full_name="Test Admin", hashed_password="test-hash", role=UserRole.admin)
+    company = _company(1, "Respawn Pvt Ltd")
+    ledger = _ledger(1, company.id, "Acme Stores")
+    db_session.add_all([user, company, ledger])
+    db_session.add_all([
+        _invoice(ledger, "S-001", "sales", 0.30, datetime(2026, 4, 3, 10, 0, 0)),
+        Payment(
+            company_id=company.id,
+            ledger_id=ledger.id,
+            voucher_type="receipt",
+            amount=0.10,
+            date=datetime(2026, 4, 4, 11, 0, 0),
+            payment_number="RCPT-001",
+            mode="bank",
+            created_by=user.id,
+            status="active",
+        ),
+        Payment(
+            company_id=company.id,
+            ledger_id=ledger.id,
+            voucher_type="receipt",
+            amount=0.20,
+            date=datetime(2026, 4, 5, 11, 0, 0),
+            payment_number="RCPT-002",
+            mode="bank",
+            created_by=user.id,
+            status="active",
+        ),
+    ])
+    db_session.commit()
+
+    statement = client.get("/api/ledgers/1/statement", params=PERIOD).json()
+
+    # 0.30 (debit) and 0.10 + 0.20 (credit) do not cancel exactly in floats.
+    assert statement["period_credit"] == 0.30
+    assert statement["closing_balance"] == 0
+    assert not str(statement["closing_balance"]).startswith("-")
+
+
 def test_statement_csv_keeps_a_non_ascii_ledger_name_out_of_the_header(client, db_session):
     _seed_statement(db_session, ledger_name='श्री "Gupta" Traders')
 
