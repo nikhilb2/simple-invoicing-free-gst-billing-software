@@ -51,6 +51,18 @@ describe('resolveDueDate — one rule per mode', () => {
     ).toBe('2024-02-01');
   });
 
+  test('days mode rejects a value that produces an invalid Date', () => {
+    expect(
+      resolveDueDate({ mode: 'days', invoiceDate: '2026-11-20', exactDate: '', daysFromInvoice: '100000000' }),
+    ).toBe(undefined);
+  });
+
+  test('days mode rejects a date beyond year 9999', () => {
+    expect(
+      resolveDueDate({ mode: 'days', invoiceDate: '2026-11-20', exactDate: '', daysFromInvoice: '3000000' }),
+    ).toBe(undefined);
+  });
+
   test('days mode rejects negative days', () => {
     expect(
       resolveDueDate({ mode: 'days', invoiceDate: '2024-01-25', exactDate: '', daysFromInvoice: '-5' }),
