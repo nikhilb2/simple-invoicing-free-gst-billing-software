@@ -1059,6 +1059,12 @@ def _import_csv_from_content(content: bytes, db: Session, active_company: Compan
         )
 
         if existing:
+            if not existing.allow_decimal and not _is_whole_number(stock):
+                errors.append(
+                    {"row": row_num, "message": f"Invalid Current Stock for {sku}: must be a whole number"}
+                )
+                continue
+
             existing.name = item_name
             if "selling_price" in headers:
                 existing.price = selling_price
@@ -1098,6 +1104,15 @@ def _import_csv_from_content(content: bytes, db: Session, active_company: Compan
 
             updated += 1
         else:
+            # New products from the import always default to a whole-number
+            # product (allow_decimal is False), so any fractional stock here
+            # is invalid just like it would be via the product form.
+            if not _is_whole_number(stock):
+                errors.append(
+                    {"row": row_num, "message": f"Invalid Current Stock for {sku}: must be a whole number"}
+                )
+                continue
+
             product = Product(
                 company_id=active_company.id,
                 sku=sku,

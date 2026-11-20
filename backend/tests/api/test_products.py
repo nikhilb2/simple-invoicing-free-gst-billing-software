@@ -679,6 +679,54 @@ def test_product_production_cost_valid_values_still_save(client, fields):
     assert updated.json()["production_cost"] == fields.get("production_cost")
 
 
+def test_csv_import_rejects_fractional_stock_for_a_new_whole_number_product(client):
+    csv_content = "Item Name,Item Code,Selling Price,Current Stock\nWhole,W1,10,2.5\n"
+
+    res = client.post("/api/products/import-csv", files={"file": ("p.csv", csv_content.encode(), "text/csv")})
+
+    data = res.json()
+    assert data["created"] == 0
+    assert [e["row"] for e in data["errors"]] == [2]
+    assert data["errors"][0]["message"] == "Invalid Current Stock for W1: must be a whole number"
+
+
+def test_csv_import_rejects_fractional_stock_for_an_existing_whole_number_product(client):
+    created = client.post(
+        "/api/products/",
+        json={"sku": "W2", "name": "Whole Existing", "price": 10, "initial_quantity": 5},
+    )
+    assert created.status_code == 200, created.text
+
+    csv_content = "Item Name,Item Code,Selling Price,Current Stock\nWhole Existing,W2,10,3.25\n"
+    res = client.post("/api/products/import-csv", files={"file": ("p.csv", csv_content.encode(), "text/csv")})
+
+    data = res.json()
+    assert data["updated"] == 0
+    assert [e["row"] for e in data["errors"]] == [2]
+    assert data["errors"][0]["message"] == "Invalid Current Stock for W2: must be a whole number"
+
+    stock = client.get("/api/products/with-inventory", params={"search": "W2"}).json()["items"]
+    assert stock[0]["current_stock"] == 5
+
+
+def test_csv_import_accepts_fractional_stock_for_an_existing_decimal_product(client):
+    created = client.post(
+        "/api/products/",
+        json={"sku": "W3", "name": "Decimal Existing", "price": 10, "allow_decimal": True, "initial_quantity": 5},
+    )
+    assert created.status_code == 200, created.text
+
+    csv_content = "Item Name,Item Code,Selling Price,Current Stock\nDecimal Existing,W3,10,3.25\n"
+    res = client.post("/api/products/import-csv", files={"file": ("p.csv", csv_content.encode(), "text/csv")})
+
+    data = res.json()
+    assert data["updated"] == 1
+    assert data["errors"] == []
+
+    stock = client.get("/api/products/with-inventory", params={"search": "W3"}).json()["items"]
+    assert stock[0]["current_stock"] == 3.25
+
+
 def test_csv_import_skips_overflowing_rows_and_saves_largest_valid_values(client):
     content = (
         "Item Name,Item Code,Selling Price,Purchase Price,Reorder Level,Current Stock\n"
@@ -686,7 +734,11 @@ def test_csv_import_skips_overflowing_rows_and_saves_largest_valid_values(client
         "Purchase,BADBUY,1,1000000000,1,1\n"
         "Reorder,BADREORDER,1,1,99999999.995,1\n"
         "Stock,BADSTOCK,1,1,1,999999999.9995\n"
-        "Valid,VALID,99999999.99,99999999.99,99999999.99,999999999.999\n"
+        # Current Stock is a whole number here (unlike the other near-cutoff
+        # columns): the imported product defaults to allow_decimal=False, so
+        # a fractional stock would be rejected as a whole-number violation
+        # rather than exercising the overflow bound this test is about.
+        "Valid,VALID,99999999.99,99999999.99,99999999.99,999999999\n"
     )
     response = client.post("/api/products/import-csv", files={"file": ("p.csv", content.encode(), "text/csv")})
     assert response.status_code == 200, response.text
