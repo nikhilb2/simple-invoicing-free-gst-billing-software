@@ -1,10 +1,13 @@
 """Unit tests for the INR money formatter used by PDF templates.
 
 Covers the float-precision rounding bug that could drop a rupee from totals
-(see issue #791).
+(see issue #791), and the Indian-grouping / negative-sign bug in the
+invoice, purchase, quotation, credit note and receipt PDFs (see issue #819).
 """
 
+from src.services.pdf_templates.builders import _fmt_currency
 from src.services.pdf_templates.ledger_template import _fmt_inr
+from src.api.routes.payments import _fmt_amt
 
 
 def test_fmt_inr_rounds_float_just_below_whole_rupee():
@@ -35,3 +38,37 @@ def test_fmt_inr_zero_and_positive():
 
 def test_fmt_inr_non_inr_currency():
     assert _fmt_inr(1234.5, currency="USD") == "1,234.50 USD"
+
+
+# --- issue #819: invoice/purchase/quotation/credit-note PDFs used Western
+# grouping and printed negatives as "₹-500.00" instead of "-₹500.00". ---
+
+
+def test_fmt_currency_inr_uses_indian_grouping():
+    assert _fmt_currency(1234567.5, "INR") == "₹12,34,567.50"
+
+
+def test_fmt_currency_inr_negative_sign_in_front_of_symbol():
+    assert _fmt_currency(-500, "INR") == "-₹500.00"
+
+
+def test_fmt_currency_non_inr_keeps_western_grouping():
+    assert _fmt_currency(1234567.5, "USD") == "$1,234,567.50"
+    assert _fmt_currency(1234567.5, "EUR") == "€1,234,567.50"
+    assert _fmt_currency(1234567.5, "GBP") == "£1,234,567.50"
+
+
+def test_fmt_currency_non_inr_negative_sign_in_front_of_symbol():
+    assert _fmt_currency(-500, "USD") == "-$500.00"
+
+
+def test_fmt_amt_inr_uses_indian_grouping():
+    assert _fmt_amt(1234567.5, "INR") == "₹12,34,567.50"
+
+
+def test_fmt_amt_inr_negative_sign_in_front_of_symbol():
+    assert _fmt_amt(-500, "INR") == "-₹500.00"
+
+
+def test_fmt_amt_non_inr_keeps_western_grouping():
+    assert _fmt_amt(1234567.5, "USD") == "$1,234,567.50"

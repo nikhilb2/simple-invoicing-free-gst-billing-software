@@ -18,6 +18,7 @@ from src.schemas.payment import PaymentCreate, PaymentOut, PaymentUpdate
 from src.services.series import generate_next_number
 from src.services.financial_year import get_active_fy, get_fy_for_date
 from src.services.invoice_payments import sync_payment_allocations
+from src.services.pdf_templates.builders import _fmt_inr
 from src.services.share_documents import get_payment as get_shared_payment, render_receipt_pdf
 from src.services.company_access import company_scope
 
@@ -391,16 +392,20 @@ def _re(text: str | None) -> str:
 
 
 def _fmt_amt(value: float, currency_code: str | None = None) -> str:
+    """Format a currency value with the appropriate symbol.
+
+    INR uses Indian (lakh/crore) digit grouping via the shared ``_fmt_inr``
+    helper (see issue #819); other currencies keep Western (thousands)
+    grouping, with the minus sign printed in front of the symbol.
+    """
     code = currency_code or "INR"
     try:
         if code == "INR":
-            return f"\u20b9{value:,.2f}"
-        elif code == "EUR":
-            return f"\u20ac{value:,.2f}"
-        elif code == "GBP":
-            return f"\u00a3{value:,.2f}"
-        else:
-            return f"${value:,.2f}"
+            return _fmt_inr(value, "INR")
+        symbol = "\u20ac" if code == "EUR" else "\u00a3" if code == "GBP" else "$"
+        neg = value < 0
+        formatted = f"{symbol}{abs(value):,.2f}"
+        return f"-{formatted}" if neg else formatted
     except Exception:
         return f"{value:,.2f}"
 

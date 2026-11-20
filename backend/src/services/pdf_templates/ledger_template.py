@@ -1,44 +1,21 @@
 """Ledger-related PDF HTML template generation."""
 
 from datetime import date, datetime
-from decimal import Decimal, ROUND_HALF_UP
 from html import escape
 
 from src.models.buyer import Buyer as Ledger
 from src.models.company import CompanyProfile
 from src.schemas.ledger import DayBookEntry, LedgerStatementEntry
 
+# Re-exported from builders.py (the shared home for currency formatting, see
+# issue #819) so existing imports of `_fmt_inr` from this module keep working.
+from .builders import _fmt_inr
+
+__all__ = ["_fmt_inr"]
+
 
 def _e(text: str | None) -> str:
     return escape(text or "")
-
-
-def _fmt_inr(value: float, currency: str = "INR") -> str:
-    try:
-        if currency == "INR":
-            # Indian grouping: 1,23,456.78
-            # Round to 2 decimal places first so float precision cannot drop a rupee.
-            # (e.g. 6490.999999999999 must become ₹6,491.00, not ₹6,490.00)
-            d = Decimal(str(value)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-            neg = d < 0
-            d = abs(d)
-            integer_part = int(d)
-            decimal_part = f"{d - Decimal(integer_part):.2f}"[1:]  # ".xx"
-            s = str(integer_part)
-            if len(s) > 3:
-                last3 = s[-3:]
-                rest = s[:-3]
-                groups = []
-                while rest:
-                    groups.append(rest[-2:])
-                    rest = rest[:-2]
-                groups.reverse()
-                s = ",".join(groups) + "," + last3
-            result = f"\u20b9{s}{decimal_part}"
-            return f"-{result}" if neg else result
-        return f"{value:,.2f} {currency}"
-    except Exception:
-        return f"{value:,.2f}"
 
 
 def _build_day_book_html(

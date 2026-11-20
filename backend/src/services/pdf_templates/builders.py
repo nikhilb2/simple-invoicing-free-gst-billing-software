@@ -17,18 +17,57 @@ def _e(text: str | None) -> str:
     return escape(text or "")
 
 
+def _fmt_inr(value: float, currency: str = "INR") -> str:
+    """Format a money value using Indian (lakh/crore) digit grouping for INR.
+
+    e.g. 1234567.5 -> "₹12,34,567.50". The minus sign, when present, goes in
+    front of the ₹ symbol rather than between it and the digits. Non-INR
+    currency codes fall back to a plain "<amount> <code>" string (Western
+    grouping) so this stays a drop-in formatter for callers that pass through
+    whatever currency the company is configured with.
+    """
+    try:
+        if currency == "INR":
+            # Round to 2 decimal places first so float precision cannot drop a rupee.
+            # (e.g. 6490.999999999999 must become ₹6,491.00, not ₹6,490.00)
+            d = Decimal(str(value)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            neg = d < 0
+            d = abs(d)
+            integer_part = int(d)
+            decimal_part = f"{d - Decimal(integer_part):.2f}"[1:]  # ".xx"
+            s = str(integer_part)
+            if len(s) > 3:
+                last3 = s[-3:]
+                rest = s[:-3]
+                groups = []
+                while rest:
+                    groups.append(rest[-2:])
+                    rest = rest[:-2]
+                groups.reverse()
+                s = ",".join(groups) + "," + last3
+            result = f"₹{s}{decimal_part}"
+            return f"-{result}" if neg else result
+        return f"{value:,.2f} {currency}"
+    except Exception:
+        return f"{value:,.2f}"
+
+
 def _fmt_currency(value: float, currency_code: str | None = None) -> str:
-    """Format a currency value with the appropriate symbol."""
+    """Format a currency value with the appropriate symbol.
+
+    INR uses Indian (lakh/crore) digit grouping via ``_fmt_inr``; other
+    currencies keep Western (thousands) grouping. Either way, a negative
+    amount's minus sign is printed in front of the symbol (``-$500.00``),
+    not between the symbol and the digits (``$-500.00``).
+    """
     code = currency_code or "USD"
     try:
         if code == "INR":
-            return f"₹{value:,.2f}"
-        elif code == "EUR":
-            return f"€{value:,.2f}"
-        elif code == "GBP":
-            return f"£{value:,.2f}"
-        else:
-            return f"${value:,.2f}"
+            return _fmt_inr(value, "INR")
+        symbol = "€" if code == "EUR" else "£" if code == "GBP" else "$"
+        neg = value < 0
+        formatted = f"{symbol}{abs(value):,.2f}"
+        return f"-{formatted}" if neg else formatted
     except Exception:
         return f"{value:,.2f}"
 
