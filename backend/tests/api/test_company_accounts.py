@@ -1,3 +1,6 @@
+import pytest
+
+
 def _ledger_payload(name: str, gst: str):
     return {
         "name": name,
@@ -254,3 +257,97 @@ def test_switching_an_account_to_cash_drops_its_upi_id(client):
     )
     assert updated.status_code == 200, updated.text
     assert updated.json()["upi_vpa"] is None
+
+
+# #755: a NaN or over-sized opening balance must be rejected with 422 rather
+# than reaching the NUMERIC(12, 2) column, where SQLite -- unlike Postgres --
+# would silently accept it. See tests/db/test_company_account_bounds_postgres.py
+# for coverage of the real column limits against Postgres.
+
+
+def test_negative_opening_balance_is_rejected(client):
+    response = client.post(
+        "/api/company-accounts/",
+        json={"account_type": "bank", "display_name": "Negative", "opening_balance": -1},
+    )
+    assert response.status_code == 422, response.text
+    assert response.json()["detail"][0]["loc"] == ["body", "opening_balance"]
+
+
+def test_opening_balance_over_the_upper_bound_is_rejected(client):
+    response = client.post(
+        "/api/company-accounts/",
+        json={"account_type": "bank", "display_name": "Too Big", "opening_balance": 1e11},
+    )
+    assert response.status_code == 422, response.text
+    assert response.json()["detail"][0]["loc"] == ["body", "opening_balance"]
+
+
+def test_opening_balance_that_rounds_up_to_the_column_limit_is_rejected(client):
+    response = client.post(
+        "/api/company-accounts/",
+        json={
+            "account_type": "bank",
+            "display_name": "Rounds Up",
+            "opening_balance": 9_999_999_999.996,
+        },
+    )
+    assert response.status_code == 422, response.text
+    assert response.json()["detail"][0]["loc"] == ["body", "opening_balance"]
+
+
+def test_largest_storable_opening_balance_is_accepted(client):
+    response = client.post(
+        "/api/company-accounts/",
+        json={
+            "account_type": "bank",
+            "display_name": "Largest",
+            "opening_balance": 9_999_999_999.99,
+        },
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["opening_balance"] == 9_999_999_999.99
+
+
+@pytest.mark.parametrize("value", ["NaN", "Infinity", "-Infinity"])
+def test_create_rejects_non_finite_opening_balance(client, value):
+    response = client.post(
+        "/api/company-accounts/",
+        content=f'{{"account_type": "bank", "display_name": "Bad", "opening_balance": {value}}}',
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 422, response.text
+    assert response.json()["detail"][0]["loc"] == ["body", "opening_balance"]
+
+
+@pytest.mark.parametrize("value", ["NaN", "Infinity", "-Infinity"])
+def test_update_rejects_non_finite_opening_balance(client, value):
+    created = client.post(
+        "/api/company-accounts/",
+        json={"account_type": "bank", "display_name": "Updatable", "opening_balance": 100},
+    ).json()
+
+    response = client.put(
+        f"/api/company-accounts/{created['id']}",
+        content=f'{{"opening_balance": {value}}}',
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 422, response.text
+    assert response.json()["detail"][0]["loc"] == ["body", "opening_balance"]
+
+    unchanged = client.get(f"/api/company-accounts/{created['id']}")
+    assert unchanged.status_code == 200, unchanged.text
+    assert unchanged.json()["opening_balance"] == 100
+
+
+def test_update_refuses_opening_balance_over_the_upper_bound(client):
+    created = client.post(
+        "/api/company-accounts/",
+        json={"account_type": "bank", "display_name": "Updatable Bound", "opening_balance": 100},
+    ).json()
+
+    response = client.put(
+        f"/api/company-accounts/{created['id']}", json={"opening_balance": 1e11}
+    )
+    assert response.status_code == 422, response.text
+    assert response.json()["detail"][0]["loc"] == ["body", "opening_balance"]
