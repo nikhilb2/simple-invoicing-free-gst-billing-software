@@ -23,7 +23,7 @@ import TdsAllocationFields from '../components/TdsAllocationFields';
 import { useFY } from '../context/FYContext';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import { fetchOutstandingInvoices, fetchLedgerAddresses, createLedgerAddress, updateLedgerAddress, deleteLedgerAddress } from '../features/invoices/api';
-import { formatInvoiceDateLabel } from '../utils/invoiceDueDate.ts';
+import { dueBadgeLabel, formatInvoiceDateLabel } from '../utils/invoiceDueDate.ts';
 import EmptyState from '../components/EmptyState';
 import LedgerPhoneLinks from '../components/LedgerPhoneLinks';
 import { toIsoDate, toLocalDateTimeInput } from '../utils/dateRanges';
@@ -478,7 +478,7 @@ export default function LedgerViewPage() {
                         </span>
                         <span className="table-subtext">
                           Status {invoice.payment_status}
-                          {typeof invoice.due_in_days === 'number' ? ` · ${invoice.due_in_days} days` : ''}
+                          {typeof invoice.due_in_days === 'number' ? ` · ${dueBadgeLabel(invoice.due_in_days)}` : ''}
                         </span>
                       </div>
                     </label>

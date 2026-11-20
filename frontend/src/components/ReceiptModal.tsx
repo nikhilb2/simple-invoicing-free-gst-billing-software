@@ -3,7 +3,7 @@ import api, { getApiErrorMessage } from '../api/client';
 import type { CompanyAccount, OutstandingInvoice, Payment, PaymentCreate, PaymentInvoiceAllocation } from '../types/api';
 import { fetchOutstandingInvoices } from '../features/invoices/api';
 import formatCurrency from '../utils/formatting';
-import { formatInvoiceDateLabel } from '../utils/invoiceDueDate';
+import { dueBadgeLabel, formatInvoiceDateLabel } from '../utils/invoiceDueDate';
 import { remainingAmount } from '../utils/validateAllocations';
 import { totalTds, validateTdsAllocations } from '../utils/tds';
 import TdsAllocationFields from './TdsAllocationFields';
@@ -383,7 +383,7 @@ export default function ReceiptModal({
                               </span>
                               <span className="table-subtext">
                                 Status {invoice.payment_status}
-                                {typeof invoice.due_in_days === 'number' ? ` · ${invoice.due_in_days} days` : ''}
+                                {typeof invoice.due_in_days === 'number' ? ` · ${dueBadgeLabel(invoice.due_in_days)}` : ''}
                               </span>
                             </div>
                           </label>

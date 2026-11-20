@@ -1,4 +1,4 @@
-import { formatDate } from './formatting';
+import { formatDate, plural } from './formatting';
 import { toIsoDate } from './dateRanges';
 
 export type DueDateMode = 'none' | 'exact' | 'days';
@@ -127,6 +127,19 @@ export function overdueLabel(dueInDays: number | null | undefined): string | nul
   }
   const days = Math.abs(dueInDays);
   return days === 1 ? '1 day overdue' : `${days} days overdue`;
+}
+
+/**
+ * Full due-date wording for a payment or dues line: "No due date" when
+ * due_in_days is null, the overdueLabel wording when overdue, "Due today"
+ * for zero, and "Due in N day(s)" otherwise.
+ */
+export function dueBadgeLabel(dueInDays: number | null | undefined): string {
+  if (dueInDays === null || dueInDays === undefined) return 'No due date';
+  const overdue = overdueLabel(dueInDays);
+  if (overdue !== null) return overdue;
+  if (dueInDays === 0) return 'Due today';
+  return `Due in ${plural(dueInDays, 'day')}`;
 }
 
 export type OverdueInvoiceInput = {

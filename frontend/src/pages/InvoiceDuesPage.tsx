@@ -18,9 +18,9 @@ import { downloadCsv } from '../utils/csv';
 import {
   buildDueWindow,
   DEFAULT_DUE_MODE,
+  dueBadgeLabel,
   formatInvoiceDateLabel,
   isOverdueInvoice,
-  overdueLabel,
   type DueFilterMode,
 } from '../utils/invoiceDueDate.ts';
 import { toIsoDate } from '../utils/dateRanges';
@@ -41,14 +41,6 @@ const DUE_WINDOW_OPTIONS: { value: DueFilterMode; label: string }[] = [
   { value: 'exact-date', label: 'Exact date' },
   { value: 'all', label: 'All dues' },
 ];
-
-function dueBadgeLabel(dueInDays: number | null) {
-  if (dueInDays === null) return 'No due date';
-  const overdue = overdueLabel(dueInDays);
-  if (overdue !== null) return overdue;
-  if (dueInDays === 0) return 'Due today';
-  return `Due in ${plural(dueInDays, 'day')}`;
-}
 
 export default function InvoiceDuesPage() {
   const [searchParams, setSearchParams] = useSearchParams();

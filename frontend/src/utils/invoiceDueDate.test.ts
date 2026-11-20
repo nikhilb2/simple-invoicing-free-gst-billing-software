@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { DEFAULT_DUE_MODE, addDaysToIsoDate, buildDueWindow, createDueDateFormState, isOverdueInvoice, overdueLabel, resolveDueDate } from './invoiceDueDate.ts';
+import { DEFAULT_DUE_MODE, addDaysToIsoDate, buildDueWindow, createDueDateFormState, dueBadgeLabel, isOverdueInvoice, overdueLabel, resolveDueDate } from './invoiceDueDate.ts';
 
 describe('addDaysToIsoDate — calendar arithmetic on ISO dates', () => {
   test('same-day addition is a no-op', () => {
@@ -111,6 +111,29 @@ describe('overdueLabel — singular, plural, and not overdue', () => {
     expect(overdueLabel(3)).toBe(null);
     expect(overdueLabel(null)).toBe(null);
     expect(overdueLabel(undefined)).toBe(null);
+  });
+});
+
+describe('dueBadgeLabel — payment screens and dues page share this wording', () => {
+  test('overdue invoices read "N days overdue"', () => {
+    expect(dueBadgeLabel(-3)).toBe('3 days overdue');
+  });
+
+  test('due today reads "Due today"', () => {
+    expect(dueBadgeLabel(0)).toBe('Due today');
+  });
+
+  test('due tomorrow reads "Due in 1 day", singular', () => {
+    expect(dueBadgeLabel(1)).toBe('Due in 1 day');
+  });
+
+  test('due in several days reads "Due in N days", plural', () => {
+    expect(dueBadgeLabel(4)).toBe('Due in 4 days');
+  });
+
+  test('no due date reads "No due date"', () => {
+    expect(dueBadgeLabel(null)).toBe('No due date');
+    expect(dueBadgeLabel(undefined)).toBe('No due date');
   });
 });
 
