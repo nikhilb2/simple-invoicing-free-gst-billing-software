@@ -145,6 +145,7 @@ def list_inventory(
         .join(Invoice, InvoiceItem.invoice_id == Invoice.id)
         .filter(
             Invoice.status != "cancelled",
+            Invoice.voucher_type == "sales",
             Invoice.company_id == active_company.id,
         )
         .group_by(InvoiceItem.product_id)

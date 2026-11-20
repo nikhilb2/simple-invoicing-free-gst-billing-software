@@ -45,6 +45,74 @@ def _make_producible_setup(db_session):
     return finished
 
 
+def _create_product(client, sku, name, **overrides):
+    payload = {
+        "sku": sku,
+        "name": name,
+        "price": 100.0,
+        "gst_rate": 18.0,
+        "maintain_inventory": True,
+        "initial_quantity": 0,
+    }
+    payload.update(overrides)
+    res = client.post("/api/products/", json=payload)
+    assert res.status_code == 200, res.text
+    return res.json()
+
+
+def _create_ledger(client, name, gst):
+    res = client.post("/api/ledgers/", json={
+        "name": name,
+        "address": "123 Test St",
+        "gst": gst,
+        "phone_number": "9876543210",
+    })
+    assert res.status_code == 200, res.text
+    return res.json()
+
+
+def _create_invoice(client, product_id, ledger_id, invoice_date, voucher_type="sales"):
+    res = client.post("/api/invoices/", json={
+        "ledger_id": ledger_id,
+        "voucher_type": voucher_type,
+        "invoice_date": invoice_date,
+        "tax_inclusive": False,
+        "apply_round_off": False,
+        "items": [{"product_id": product_id, "quantity": 1, "unit_price": 100}],
+    })
+    assert res.status_code == 200, res.text
+    return res.json()
+
+
+def _by_product_id(payload, product_id):
+    return next(item for item in payload["items"] if item["product_id"] == product_id)
+
+
+def test_inventory_list_last_sold_at_ignores_purchase_invoices(client):
+    product = _create_product(client, "INV-SOLD-1", "Purchase Only Item", initial_quantity=20)
+    supplier = _create_ledger(client, "Inventory Purchase Supplier", "27AADCB2233M1ZQ")
+
+    _create_invoice(client, product["id"], supplier["id"], "2026-05-01", voucher_type="purchase")
+
+    response = client.get("/api/inventory/?search=INV-SOLD-1&page=1&page_size=20")
+    assert response.status_code == 200
+    item = _by_product_id(response.json(), product["id"])
+    assert item["last_sold_at"] is None
+
+
+def test_inventory_list_last_sold_at_uses_the_sale_date_even_when_the_purchase_is_more_recent(client):
+    product = _create_product(client, "INV-SOLD-2", "Purchased And Sold Item", initial_quantity=20)
+    supplier = _create_ledger(client, "Inventory Purchase And Sale Supplier", "27AADCB2234M1ZP")
+
+    _create_invoice(client, product["id"], supplier["id"], "2026-01-10")
+    _create_invoice(client, product["id"], supplier["id"], "2026-06-01", voucher_type="purchase")
+
+    response = client.get("/api/inventory/?search=INV-SOLD-2&page=1&page_size=20")
+    assert response.status_code == 200
+    item = _by_product_id(response.json(), product["id"])
+    assert item["last_sold_at"].startswith("2026-01-10")
+
+
 def test_inventory_list_includes_products_without_inventory_rows(client, db_session):
     create_response = client.post(
         "/api/products/",

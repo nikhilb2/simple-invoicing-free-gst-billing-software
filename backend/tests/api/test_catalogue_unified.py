@@ -49,10 +49,13 @@ def _create_ledger(client: TestClient, name: str, gst: str) -> dict:
     return res.json()
 
 
-def _create_invoice(client: TestClient, product_id: int, ledger_id: int, invoice_date: str, quantity: int = 1) -> dict:
+def _create_invoice(
+    client: TestClient, product_id: int, ledger_id: int, invoice_date: str, quantity: int = 1,
+    voucher_type: str = "sales",
+) -> dict:
     res = client.post("/api/invoices/", json={
         "ledger_id": ledger_id,
-        "voucher_type": "sales",
+        "voucher_type": voucher_type,
         "invoice_date": invoice_date,
         "tax_inclusive": False,
         "apply_round_off": False,
@@ -182,6 +185,25 @@ class TestCatalogueSupersetFields:
 
         item = _by_sku(_catalogue(client, search="CAT-SOLD-3"), "CAT-SOLD-3")
         assert item["last_sold_at"] is None
+
+    def test_last_sold_at_ignores_purchase_invoices(self, client):
+        product = _create_product(client, "CAT-SOLD-4", "Purchase Only Item", initial_quantity=20)
+        supplier = _create_ledger(client, "Purchase Supplier", "27AADCB2231M1ZS")
+
+        _create_invoice(client, product["id"], supplier["id"], "2026-05-01", voucher_type="purchase")
+
+        item = _by_sku(_catalogue(client, search="CAT-SOLD-4"), "CAT-SOLD-4")
+        assert item["last_sold_at"] is None
+
+    def test_last_sold_at_uses_the_sale_date_even_when_the_purchase_is_more_recent(self, client):
+        product = _create_product(client, "CAT-SOLD-5", "Purchased And Sold Item", initial_quantity=20)
+        supplier = _create_ledger(client, "Purchase And Sale Supplier", "27AADCB2232M1ZR")
+
+        _create_invoice(client, product["id"], supplier["id"], "2026-01-10")
+        _create_invoice(client, product["id"], supplier["id"], "2026-06-01", voucher_type="purchase")
+
+        item = _by_sku(_catalogue(client, search="CAT-SOLD-5"), "CAT-SOLD-5")
+        assert item["last_sold_at"].startswith("2026-01-10")
 
 
 class TestCatalogueSorting:
