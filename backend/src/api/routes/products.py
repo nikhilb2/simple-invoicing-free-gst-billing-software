@@ -998,8 +998,8 @@ def _import_csv_from_content(content: bytes, db: Session, active_company: Compan
         sku = item_code.strip().upper()
 
         try:
-            selling_price = float(values.get("selling_price") or 0)
-            if selling_price >= MONEY_STORAGE_CUTOFF:
+            selling_price = _csv_number(values.get("selling_price") or 0)
+            if not 0 <= selling_price < MONEY_STORAGE_CUTOFF:
                 raise ValueError(selling_price)
         except ValueError:
             errors.append({"row": row_num, "message": f"Invalid Selling Price for {sku}"})

@@ -486,6 +486,61 @@ class TestCSVImport:
         assert data["updated"] == 0
         assert data["errors"] == [{"row": 2, "message": message}]
 
+    @pytest.mark.parametrize("cell", ["nan", "inf", "-50"])
+    def test_import_csv_bad_selling_price_errors_and_creates_nothing(self, client, cell):
+        """nan/inf/negative Selling Price cells error their row and save nothing (Issue #584)."""
+        csv_content = (
+            "Item Name,Item Code,Selling Price\n"
+            f"Bad Price,IMP012,{cell}\n"
+        )
+        res = client.post(
+            "/api/products/import-csv",
+            files={"file": ("test.csv", csv_content.encode("utf-8"), "text/csv")},
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert data["created"] == 0
+        assert data["updated"] == 0
+        assert data["errors"] == [{"row": 2, "message": "Invalid Selling Price for IMP012"}]
+        assert client.get("/api/products/?search=Bad Price").json()["items"] == []
+
+    @pytest.mark.parametrize("cell", ["0", ""])
+    def test_import_csv_zero_or_empty_selling_price_still_imports(self, client, cell):
+        """0 and an empty Selling Price cell still mean a price of 0 (Issue #584)."""
+        csv_content = (
+            "Item Name,Item Code,Selling Price\n"
+            f"Free Item,IMP013,{cell}\n"
+        )
+        res = client.post(
+            "/api/products/import-csv",
+            files={"file": ("test.csv", csv_content.encode("utf-8"), "text/csv")},
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert data["created"] == 1
+        assert data["errors"] == []
+        item = client.get("/api/products/with-inventory?search=Free Item").json()["items"][0]
+        assert item["selling_price"] == 0
+
+    def test_import_csv_bad_selling_price_keeps_other_rows(self, client):
+        """A row with a bad Selling Price errors, but other rows in the same
+        file still import (Issue #584)."""
+        csv_content = (
+            "Item Name,Item Code,Selling Price\n"
+            "Good Price,IMP014,10\n"
+            "Bad Price,IMP015,-50\n"
+        )
+        res = client.post(
+            "/api/products/import-csv",
+            files={"file": ("test.csv", csv_content.encode("utf-8"), "text/csv")},
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert data["created"] == 1
+        assert data["errors"] == [{"row": 3, "message": "Invalid Selling Price for IMP015"}]
+        assert client.get("/api/products/?search=Good Price").json()["items"] != []
+        assert client.get("/api/products/?search=Bad Price").json()["items"] == []
+
     @pytest.mark.parametrize("bad_hsn", ["402", "8471.30", "abcd"])
     def test_import_csv_invalid_hsn_errors_and_creates_nothing(self, client, bad_hsn):
         """A malformed HSN cell errors its row instead of saving the code (Issue #604)."""
