@@ -29,7 +29,7 @@ from src.services.invoice_payments import (
     open_amounts_by_ledger,
 )
 from src.services.mail import send_email
-from src.services.pdf_templates.builders import tcs_label
+from src.services.pdf_templates.builders import _fmt_currency, tcs_label
 from src.services.share_documents import (
     RESOURCE_INVOICE,
     RESOURCE_STATEMENT,
@@ -47,17 +47,6 @@ _jinja_env = Environment(
     loader=FileSystemLoader(str(_TEMPLATES_DIR)),
     autoescape=True,
 )
-
-_CURRENCY_SYMBOLS: dict[str, str] = {"INR": "₹", "USD": "$", "EUR": "€", "GBP": "£"}
-
-
-def _symbol(code: str | None) -> str:
-    return _CURRENCY_SYMBOLS.get(code or "INR", code or "₹")
-
-
-def _fmt(value: float) -> str:
-    return f"{value:,.2f}"
-
 
 # ---------------------------------------------------------------------------
 # Request schemas
@@ -196,14 +185,13 @@ async def send_invoice_email(
             if tcs_amount
             else None
         ),
-        tcs_amount=_fmt(tcs_amount) if tcs_amount else None,
+        tcs_amount=_fmt_currency(tcs_amount, currency_code) if tcs_amount else None,
         invoice_number=inv_number,
         invoice_date=inv_date,
         due_date=invoice.due_date.strftime("%d %b %Y") if invoice.due_date else None,
         buyer_name=invoice.ledger_name or (invoice.ledger.name if invoice.ledger else ""),
-        total_amount=_fmt(float(invoice.total_amount)),
+        total_amount=_fmt_currency(float(invoice.total_amount), currency_code),
         items_count=len(invoice.items or []),
-        currency=_symbol(currency_code),
         message=payload.message,
         ad=ad_context("email_invoice", source="email"),
         # A link, not an embedded QR: the reader is already in something that can
@@ -312,10 +300,11 @@ async def send_ledger_statement_email(
         ledger_name=ledger.name,
         date_from=payload.from_date.strftime("%d %b %Y"),
         date_to=payload.to_date.strftime("%d %b %Y"),
-        total_invoices=_fmt(total_invoiced),
-        total_payments=_fmt(total_received),
-        balance=_fmt(statement_data.closing_balance),
-        currency=_symbol(currency_code),
+        total_invoices=_fmt_currency(total_invoiced, currency_code),
+        total_payments=_fmt_currency(total_received, currency_code),
+        balance=_fmt_currency(abs(statement_data.closing_balance), currency_code),
+        balance_label=("In credit" if statement_data.closing_balance < 0 else
+                       "Balance due" if statement_data.closing_balance > 0 else "Balance"),
         message=payload.message,
         ad=ad_context("email_statement", source="email"),
     )
@@ -440,7 +429,7 @@ async def send_payment_reminder_email(
                 "invoice_number": inv.invoice_number or f"#{inv.id}",
                 "invoice_date": inv.invoice_date.strftime("%d %b %Y") if inv.invoice_date else "N/A",
                 "due_date": inv.due_date.strftime("%d %b %Y") if inv.due_date else None,
-                "amount": _fmt(summary.remaining_amount),
+                "amount": _fmt_currency(summary.remaining_amount, currency_code),
             }
         )
 
@@ -465,8 +454,7 @@ async def send_payment_reminder_email(
         company_phone=company.phone_number if company else None,
         company_address=company.address if company else None,
         buyer_name=ledger.name,
-        outstanding_balance=_fmt(outstanding_balance),
-        currency=_symbol(currency_code),
+        outstanding_balance=_fmt_currency(outstanding_balance, currency_code),
         last_payment_date=last_payment_date,
         message=payload.message,
         unpaid_invoices=unpaid_invoices,
@@ -571,7 +559,7 @@ async def send_due_reminders(
                     "invoice_number": inv.invoice_number or f"#{inv.id}",
                     "invoice_date": inv.invoice_date.strftime("%d %b %Y") if inv.invoice_date else "N/A",
                     "due_date": inv.due_date.strftime("%d %b %Y") if inv.due_date else None,
-                    "amount": _fmt(summary.remaining_amount),
+                    "amount": _fmt_currency(summary.remaining_amount, currency_code),
                 }
             )
 
@@ -628,8 +616,7 @@ async def send_due_reminders(
             company_phone=company.phone_number if company else None,
             company_address=company.address if company else None,
             buyer_name=ledger_name,
-            outstanding_balance=_fmt(outstanding_balance),
-            currency=_symbol(currency_code),
+            outstanding_balance=_fmt_currency(outstanding_balance, currency_code),
             last_payment_date=last_payment_date,
             message=payload.message,
             unpaid_invoices=outstanding_list,

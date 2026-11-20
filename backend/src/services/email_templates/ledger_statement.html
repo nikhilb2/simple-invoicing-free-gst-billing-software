@@ -9,7 +9,6 @@
     total_invoices  (str|number)  — Sum of all invoices in the period, e.g. "50,000.00"
     total_payments  (str|number)  — Sum of all payments in the period, e.g. "42,500.00"
     balance         (str|number)  — Net outstanding balance (invoices − payments), e.g. "7,500.00"
-    currency        (str)         — Currency symbol. Default: "₹"
     message         (str|None)    — Optional custom message from the sender
 #}
 {% extends "base.html" %}
@@ -21,12 +20,11 @@
 {{ ui.letter(ledger_name, message,
              "Here is your account statement for " ~ date_from ~ " to " ~ date_to ~ ". A detailed PDF is attached for your records.") }}
 
-{% set cur = currency | default("₹") %}
 {% call ui.recap("Statement from " ~ (company_name or "us"), "Account statement", date_from ~ " – " ~ date_to) %}
-    {{ ui.amount("Balance due", cur ~ balance) }}
+    {{ ui.amount(balance_label, balance) }}
     {{ ui.rows([
-        ("Invoiced", cur ~ total_invoices, None),
-        ("Received", cur ~ total_payments, None),
+        ("Invoiced", total_invoices, None),
+        ("Received", total_payments, None),
         ("Account", ledger_name, None),
         ("Period", date_from ~ " – " ~ date_to, None),
     ]) }}

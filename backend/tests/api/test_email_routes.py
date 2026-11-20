@@ -161,3 +161,28 @@ def test_bulk_reminders_continue_after_a_failed_delivery(client, db_session, mon
     logs = db_session.query(EmailLog).order_by(EmailLog.id).all()
     assert [log.status for log in logs] == ["sent", "failed", "sent"]
     assert logs[1].error_message == str(error)
+
+
+def test_statement_email_labels_credit_and_groups_indian_currency(client, db_session, monkeypatch, recipients):
+    ledger_id, invoice_id, _ = recipients[0]
+    invoice = db_session.get(Invoice, invoice_id)
+    invoice.taxable_amount = invoice.total_amount = 100_000
+    db_session.commit()
+    payment = client.post("/api/payments/", json={
+        "ledger_id": ledger_id, "voucher_type": "receipt",
+        "amount": 1_250_000, "date": "2026-02-10T10:00:00",
+    })
+    assert payment.status_code == 200, payment.text
+    send = AsyncMock()
+    monkeypatch.setattr(email_routes, "send_email", send)
+
+    statement = _send(client, "ledger-statement", recipients[0])
+    assert statement.status_code == 200, statement.text
+    html = send.call_args.kwargs["html_body"]
+    assert "In credit" in html and "₹11,50,000.00" in html
+    assert "Balance due" not in html and "₹-" not in html
+    assert "₹1,00,000.00" in html and "₹12,50,000.00" in html
+
+    invoice_email = _send(client, "invoice", recipients[0])
+    assert invoice_email.status_code == 200, invoice_email.text
+    assert "₹1,00,000.00" in send.call_args.kwargs["html_body"]

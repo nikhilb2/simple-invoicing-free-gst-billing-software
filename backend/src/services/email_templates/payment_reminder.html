@@ -5,7 +5,6 @@
   Variables (in addition to base.html variables):
     buyer_name          (str)         — Buyer / party name
     outstanding_balance (str|number)  — Total outstanding amount, e.g. "8,750.00"
-    currency            (str)         — Currency symbol. Default: "₹"
     last_payment_date   (str|None)    — Date of the most recent payment; omitted if none
     message             (str|None)    — Optional custom message from the sender
     unpaid_invoices     (list)        — List of dicts with keys:
@@ -24,9 +23,8 @@
 {{ ui.letter(buyer_name, message,
              "This is a gentle reminder that your account has an outstanding balance. We would appreciate it if you could settle it at your earliest convenience.") }}
 
-{% set cur = currency | default("₹") %}
 {% call ui.recap("Reminder from " ~ (company_name or "us"), "Payment reminder") %}
-    {{ ui.amount("Outstanding balance", cur ~ outstanding_balance,
+    {{ ui.amount("Outstanding balance", outstanding_balance,
                  ("Last payment received on " ~ last_payment_date) if last_payment_date else None) }}
 
     {% if unpaid_invoices %}
@@ -47,7 +45,7 @@
                 {{ inv.due_date if inv.due_date else "—" }}
             </td>
             <td valign="top" align="right" style="padding: 10px 0; border-bottom: 1px solid #2a2320; font-size: 14px; font-weight: 600; color: #fcfbf8; white-space: nowrap;">
-                {{ cur }}{{ inv.amount }}
+                {{ inv.amount }}
             </td>
         </tr>
         {% endfor %}
