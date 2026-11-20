@@ -11,6 +11,8 @@ from decimal import Decimal, ROUND_HALF_UP
 from src.core.validation import is_place_of_supply
 from src.models.invoice import Invoice, InvoiceItem
 
+IST = timezone(timedelta(hours=5, minutes=30))
+
 
 def money(value: Decimal) -> Decimal:
     """Round a Decimal value to 2 decimal places using ROUND_HALF_UP."""
@@ -19,7 +21,12 @@ def money(value: Decimal) -> Decimal:
 
 def india_today() -> date:
     """Today's date in India, which is what a GST document is dated by."""
-    return datetime.now(timezone(timedelta(hours=5, minutes=30))).date()
+    return datetime.now(IST).date()
+
+
+def to_india_date(value: datetime | None) -> date | None:
+    """The calendar date in India of a naive UTC timestamp, such as cancelled_at."""
+    return value.replace(tzinfo=timezone.utc).astimezone(IST).date() if value else None
 
 
 def is_interstate_supply(company_gst: str | None, ledger_gst: str | None) -> bool:

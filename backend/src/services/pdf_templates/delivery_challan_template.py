@@ -15,6 +15,7 @@ need them) but never printed, and nothing here asks the buyer to pay.
 from src.core.validation import GST_STATE_NAMES
 from src.models.delivery_challan import STATUS_CANCELLED
 from src.models.product import Product
+from src.services.gst_tax_service import to_india_date
 
 from .builders import (
     _amount_in_words_indian,
@@ -132,7 +133,7 @@ def _build_delivery_challan_html(
 
     mark_html = ""
     if cancelled:
-        mark_html = f'<div class="sheet__mark">CANCELLED on {_fmt_date(challan.cancelled_at)}</div>'
+        mark_html = f'<div class="sheet__mark">CANCELLED on {_fmt_date(to_india_date(challan.cancelled_at))}</div>'
 
     total_value = float(challan.taxable_amount or 0)
     words_html = (

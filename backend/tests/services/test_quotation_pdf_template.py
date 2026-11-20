@@ -189,6 +189,11 @@ def test_cancelled_is_marked():
     assert '<div class="sheet__mark">Cancelled on 10 Jun 2026</div>' in html
 
 
+def test_cancelled_date_is_the_india_date_not_the_utc_one():
+    html = render(make_quotation(status="cancelled", cancelled_at=datetime(2026, 11, 20, 20, 0)))
+    assert '<div class="sheet__mark">Cancelled on 21 Nov 2026</div>' in html
+
+
 def test_bank_details_on_proforma_only():
     proforma = render(make_quotation(document_type="proforma"), [ACCOUNT])
     assert "Bank details" in proforma
