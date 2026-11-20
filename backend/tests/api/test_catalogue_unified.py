@@ -305,9 +305,32 @@ class TestLowStockFilter:
         assert sorted(_skus(active)) == ["CAT-LOW-1", "CAT-LOW-2"]
         assert active["total"] == 2
 
+        # An inactive product never maintains inventory, so it never keeps
+        # stock to be low on — CAT-LOW-5 has a reorder level but no stock row.
         inactive = _catalogue(client, search="CAT-LOW", status="inactive", low_stock=True)
-        assert _skus(inactive) == ["CAT-LOW-5"]
-        assert inactive["total"] == 1
+        assert _skus(inactive) == []
+        assert inactive["total"] == 0
+
+    def test_low_stock_excludes_products_that_do_not_maintain_inventory(self, client):
+        _create_product(client, "CAT-LOW-STOCKED", "Low Stocked", reorder_level=5.0, initial_quantity=2)
+        _create_product(
+            client,
+            "CAT-LOW-SERVICE",
+            "Low Service",
+            maintain_inventory=False,
+            reorder_level=5.0,
+        )
+
+        payload = _catalogue(client, search="CAT-LOW", low_stock=True)
+        assert _skus(payload) == ["CAT-LOW-STOCKED"]
+        assert payload["total"] == 1
+
+        res = client.get(
+            "/api/products/export-csv", params={"search": "CAT-LOW", "low_stock": True}
+        )
+        assert res.status_code == 200, res.text
+        codes = [row["Item Code"] for row in csv.DictReader(io.StringIO(res.text))]
+        assert codes == ["CAT-LOW-STOCKED"]
 
     def test_low_stock_does_not_reach_across_companies(self, client, db_session):
         self._seed(client)

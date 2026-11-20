@@ -577,7 +577,13 @@ def _apply_catalogue_filters(
     if low_stock:
         # A reorder level of 0 means no restock threshold was ever set, so those
         # products are not "low" — without this every zero-stock row would be.
+        # A product with Maintain inventory off (a service, a labour charge)
+        # has no stock row at all, so its quantity reads as 0 and it would
+        # otherwise pass the filter the moment a reorder level is set on it —
+        # only a product that actually keeps stock can be low on it, matching
+        # `needs_attention` in list_inventory.
         query = query.filter(
+            Product.maintain_inventory.is_(True),
             Product.reorder_level > 0,
             quantity_expr <= Product.reorder_level,
         )
