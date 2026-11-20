@@ -28,7 +28,7 @@ import { roundMoney } from '../utils/invoiceTotals';
 import { backdatedNoteWarning, creditNoteDateChoice as nextCreditNoteDateChoice, shownCreditNoteDate } from '../utils/creditNoteDate';
 import { creditNoteInvoiceLabels } from '../utils/creditNoteInvoices';
 import { toIsoDate } from '../utils/dateRanges';
-import { downloadCsv } from '../utils/csv';
+import { exportCreditNotesCsv } from './credit-notes/exports';
 import { deepLinkClass, numericParam, useDeepLinkScroll } from '../utils/deepLink';
 
 type SelectedLineItem = {
@@ -83,6 +83,7 @@ export default function CreditNotesPage() {
 
   const [loadingBootstrap, setLoadingBootstrap] = useState(true);
   const [loadingCreditNotes, setLoadingCreditNotes] = useState(true);
+  const [exporting, setExporting] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [cancellingId, setCancellingId] = useState<number | null>(null);
   const [previewCreditNote, setPreviewCreditNote] = useState<CreditNote | null>(null);
@@ -537,21 +538,28 @@ export default function CreditNotesPage() {
     }
   }
 
-  function handleExportCreditNotesCsv() {
-    downloadCsv(
-      `credit_notes_${toIsoDate(new Date())}.csv`,
-      ['Number', 'Date', 'Ledger', 'Original invoice', 'Total'],
-      creditNotes.map((creditNote) => {
-        const ledger = ledgers.find((entry) => entry.id === creditNote.ledger_id);
-        return [
-          creditNote.credit_note_number,
-          formatDate(creditNote.credit_note_date ?? creditNote.created_at),
-          ledger?.name || `Ledger #${creditNote.ledger_id}`,
-          creditNoteInvoiceLabels(creditNote.invoice_ids, allInvoices),
-          creditNote.total_amount,
-        ];
-      }),
-    );
+  // Exports every note the current filters select, not just the visible
+  // page: the export pages the list endpoint itself (see credit-notes/exports).
+  async function handleExportCreditNotesCsv() {
+    try {
+      setExporting(true);
+      setError('');
+      await exportCreditNotesCsv(
+        {
+          search: search || undefined,
+          status: statusFilter || undefined,
+          direction: (directionFilter || undefined) as CreditNoteDirection | undefined,
+          date_from: dateFrom || undefined,
+          date_to: dateTo || undefined,
+        },
+        ledgers,
+        allInvoices,
+      );
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Unable to export credit notes as CSV'));
+    } finally {
+      setExporting(false);
+    }
   }
 
   return (
@@ -884,10 +892,10 @@ export default function CreditNotesPage() {
               <button
                 type="button"
                 className="button button--secondary button--small"
-                disabled={loadingCreditNotes || creditNotes.length === 0}
-                onClick={handleExportCreditNotesCsv}
+                disabled={loadingCreditNotes || exporting || creditNotes.length === 0}
+                onClick={() => void handleExportCreditNotesCsv()}
               >
-                Export CSV
+                {exporting ? 'Exporting...' : 'Export CSV'}
               </button>
             </div>
           </div>
