@@ -190,7 +190,7 @@ async def send_invoice_email(
         tcs_amount=_fmt(tcs_amount) if tcs_amount else None,
         invoice_number=inv_number,
         invoice_date=inv_date,
-        due_date=None,  # due_date column is not yet mapped in the Python Invoice model
+        due_date=invoice.due_date.strftime("%d %b %Y") if invoice.due_date else None,
         buyer_name=invoice.ledger_name or (invoice.ledger.name if invoice.ledger else ""),
         total_amount=_fmt(float(invoice.total_amount)),
         items_count=len(invoice.items or []),

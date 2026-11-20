@@ -3,7 +3,7 @@
 import io
 import smtplib
 from datetime import datetime
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -99,6 +99,25 @@ def test_single_send_still_succeeds(client, db_session, monkeypatch, recipients,
     assert response.status_code == 200, response.text
     deliver.assert_called_once()
     assert db_session.query(EmailLog).one().status == "sent"
+
+
+@pytest.mark.parametrize(("due_date", "expected"), [(datetime(2026, 6, 4), "04 Jun 2026"), (None, None)])
+def test_invoice_email_shows_the_due_date(client, db_session, monkeypatch, recipients, due_date, expected):
+    invoice = db_session.get(Invoice, recipients[0][1])
+    invoice.due_date = due_date
+    db_session.commit()
+    send = AsyncMock()
+    monkeypatch.setattr(email_routes, "send_email", send)
+
+    response = _send(client, "invoice", recipients[0])
+
+    assert response.status_code == 200, response.text
+    html_body = send.call_args.kwargs["html_body"]
+    if expected:
+        assert "Due date" in html_body
+        assert expected in html_body
+    else:
+        assert "Due date" not in html_body
 
 
 @pytest.mark.parametrize(
