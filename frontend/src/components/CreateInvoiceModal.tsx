@@ -381,6 +381,7 @@ export default function CreateInvoiceModal({
                       className="input"
                       type="number"
                       min="0"
+                      max="9999"
                       step="1"
                       value={dueDateDays}
                       onChange={(e) => setDueDateDays(e.target.value)}

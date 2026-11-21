@@ -71,6 +71,9 @@ export function addDaysToIsoDate(value: string, days: number): string {
   const [year, month, day] = parsed;
   const nextDate = new Date(Date.UTC(year, month - 1, day));
   nextDate.setUTCDate(nextDate.getUTCDate() + days);
+  if (Number.isNaN(nextDate.getTime()) || nextDate.getUTCFullYear() > 9999) {
+    return '';
+  }
   return nextDate.toISOString().slice(0, 10);
 }
 
@@ -93,7 +96,7 @@ export function resolveDueDate(input: {
     return undefined;
   }
 
-  return addDaysToIsoDate(input.invoiceDate, parsedDays);
+  return addDaysToIsoDate(input.invoiceDate, parsedDays) || undefined;
 }
 
 export function createDueDateFormState(dueDate?: string | null): DueDateFormState {
