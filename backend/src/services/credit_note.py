@@ -23,7 +23,7 @@ from src.services.gst_tax_service import (
     invoice_is_interstate,
     money as _money,
 )
-from src.services.inventory_service import InventoryManager
+from src.services.inventory_service import InventoryManager, line_applied_stock
 from src.services.company_access import company_scope
 
 
@@ -573,10 +573,6 @@ def create_credit_note(
     for inv_id in payload.invoice_ids:
         db.add(CreditNoteInvoiceRef(credit_note_id=cn.id, invoice_id=inv_id))
 
-    # ── 9. Persist items ─────────────────────────────────────────────────────
-    for item_data in built_items:
-        db.add(CreditNoteItem(credit_note_id=cn.id, company_id=company_id, **item_data))
-
     if payload.credit_note_type == "return":
         serials = SerialManager(db)
         # built_items is appended one-per-payload item, in order.
@@ -622,7 +618,8 @@ def create_credit_note(
                     detail=f"{product.name} is not serial-tracked — remove the serial numbers",
                 )
 
-            if not getattr(product, "maintain_inventory", True):
+            item_data["stock_applied"] = line_applied_stock(invoice_item_map[cn_item.invoice_item_id], product)
+            if not item_data["stock_applied"]:
                 continue
 
             kwargs = {"company_id": company_id} if company_id is not None else {}
@@ -642,6 +639,8 @@ def create_credit_note(
                 **kwargs,
             )
 
+    for item_data in built_items:
+        db.add(CreditNoteItem(credit_note_id=cn.id, company_id=company_id, **item_data))
     db.flush()
 
     # ── 10. Recompute credit_status for all referenced invoices ──────────────
@@ -705,7 +704,7 @@ def cancel_credit_note(cn_id: int, db: Session, company_id: int | None = None) -
                             quantity=int(item.quantity),
                         )
 
-                if not getattr(product, "maintain_inventory", True):
+                if not line_applied_stock(item, product):
                     continue
 
                 kwargs = {"company_id": company_id} if company_id is not None else {}

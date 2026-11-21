@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Numeric, Date, DateTime, ForeignKey, UniqueConstraint, text
+from sqlalchemy import Boolean, Column, Integer, String, Numeric, Date, DateTime, ForeignKey, UniqueConstraint, text
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from src.db.base import Base
@@ -74,6 +74,7 @@ class CreditNoteItem(Base):
     invoice_item_id = Column(Integer, ForeignKey("invoice_items.id"), nullable=True)
     product_id = Column(Integer, ForeignKey("products.id"), nullable=True)
     quantity = Column(Numeric(12, 3), nullable=False)
+    stock_applied = Column(Boolean, nullable=True)
     unit_price = Column(Numeric(10, 2), nullable=False)
     gst_rate = Column(Numeric(5, 2), nullable=False, default=0)
     taxable_amount = Column(Numeric(10, 2), nullable=False, default=0)

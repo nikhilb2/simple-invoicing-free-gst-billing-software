@@ -133,6 +133,7 @@ class InvoiceItem(Base):
     product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
     hsn_sac = Column(String, nullable=True)
     quantity = Column(Numeric(12, 3), nullable=False)
+    stock_applied = Column(Boolean, nullable=True)
     unit_price = Column(Numeric(10, 2), nullable=False)
     gst_rate = Column(Numeric(5, 2), nullable=False, default=0)
     taxable_amount = Column(Numeric(10, 2), nullable=False, default=0)

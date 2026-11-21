@@ -165,12 +165,12 @@ class InvoiceProcessor:
         payload: InvoiceCreate,
         *,
         company_id: int | None,
-    ) -> None:
+    ) -> dict[int, bool]:
         """Compute and apply the *net* inventory delta when editing an invoice.
 
         Delegates to :meth:`InventoryManager.apply_invoice_changes`.
         """
-        self.inventory.apply_invoice_changes(invoice, payload, company_id=company_id)
+        return self.inventory.apply_invoice_changes(invoice, payload, company_id=company_id)
 
     # ------------------------------------------------------------------
     # Serial helpers — delegate to SerialManager
@@ -448,6 +448,7 @@ class InvoiceProcessor:
         active_financial_year_id: int | None = None,
         regenerate_number: bool = True,
         apply_inventory_changes: bool = True,
+        stock_by_product: dict[int, bool] | None = None,
     ) -> None:
         """Apply *payload* data onto *invoice*, updating all scalar fields,
         creating new InvoiceItem rows, and recalculating totals.
@@ -597,6 +598,10 @@ class InvoiceProcessor:
                 invoice_id=invoice.id,
                 product_id=result["product"].id,
                 quantity=float(result["quantity_value"]),
+                stock_applied=(
+                    stock_by_product[result["product"].id] if stock_by_product is not None
+                    else bool(apply_inventory_changes and result["product"].maintain_inventory)
+                ),
                 hsn_sac=(
                     getattr(result["item_schema"], "hsn_sac", None)
                     or result["product"].hsn_sac

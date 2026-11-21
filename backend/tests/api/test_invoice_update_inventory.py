@@ -201,3 +201,68 @@ def test_invoice_accepts_decimal_quantity_for_decimal_enabled_product(client):
         )
 
         assert response.status_code == 200, response.text
+
+
+def _stock_for(db_session, product_id):
+    db_session.expire_all()
+    row = db_session.query(Inventory).filter_by(product_id=product_id).one()
+    return row.quantity
+
+
+def _return_invoice_quantity(client, invoice, quantity):
+    return client.post("/api/credit-notes/", json={
+        "ledger_id": invoice["ledger_id"], "invoice_ids": [invoice["id"]],
+        "items": [{
+            "invoice_id": invoice["id"], "invoice_item_id": invoice["items"][0]["id"],
+            "quantity": quantity,
+        }],
+    })
+
+
+def test_invoice_issued_without_stock_stays_untracked_after_tracking_is_enabled(client, db_session):
+    ledger_id = _create_ledger(client, "Untracked history", "27ABCDE1234F1Z0")
+    product_id = _create_product(client, maintain_inventory=False)
+    invoice = _create_invoice(client, ledger_id, "sales", product_id, 5)
+    assert client.put(f"/api/products/{product_id}/with-inventory", json={
+        "status": "active", "current_stock": 10,
+    }).status_code == 200
+
+    assert client.delete(f"/api/invoices/{invoice['id']}").status_code == 200
+    assert _stock_for(db_session, product_id) == 10
+    assert client.post(f"/api/invoices/{invoice['id']}/restore").status_code == 200
+    assert _stock_for(db_session, product_id) == 10
+
+    response = client.put(f"/api/invoices/{invoice['id']}", json={
+        "ledger_id": ledger_id, "voucher_type": "sales",
+        "items": [{"product_id": product_id, "quantity": 7, "unit_price": 100}],
+    })
+    assert response.status_code == 200, response.text
+    assert _stock_for(db_session, product_id) == 10
+    credit = _return_invoice_quantity(client, response.json(), 1)
+    assert credit.status_code == 201, credit.text
+    assert _stock_for(db_session, product_id) == 10
+    assert client.post(f"/api/credit-notes/{credit.json()['id']}/cancel").status_code == 200
+    assert _stock_for(db_session, product_id) == 10
+
+    _create_invoice(client, ledger_id, "sales", product_id, 2)
+    assert _stock_for(db_session, product_id) == 8
+
+
+def test_tracked_invoice_and_its_return_can_be_reversed_after_tracking_is_disabled(client, db_session):
+    ledger_id = _create_ledger(client, "Tracked history", "27ABCDE1234F1Z0")
+    product_id = _create_product(client)
+    _create_invoice(client, ledger_id, "purchase", product_id, 10)
+    invoice = _create_invoice(client, ledger_id, "sales", product_id, 5)
+    credit = _return_invoice_quantity(client, invoice, 1)
+    assert credit.status_code == 201, credit.text
+    assert _stock_for(db_session, product_id) == 6
+
+    assert client.put(f"/api/products/{product_id}/with-inventory", json={
+        "status": "inactive",
+    }).status_code == 200
+    assert client.post(f"/api/credit-notes/{credit.json()['id']}/cancel").status_code == 200
+    assert _stock_for(db_session, product_id) == 5
+    assert client.delete(f"/api/invoices/{invoice['id']}").status_code == 200
+    assert _stock_for(db_session, product_id) == 10
+    assert client.post(f"/api/invoices/{invoice['id']}/restore").status_code == 200
+    assert _stock_for(db_session, product_id) == 5

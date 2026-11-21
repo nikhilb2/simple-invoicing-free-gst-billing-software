@@ -797,7 +797,7 @@ def update_invoice(
             payload,
             company_id=active_company.id,
         )
-        processor.apply_inventory_delta_for_update(
+        stock_by_product = processor.apply_inventory_delta_for_update(
             invoice,
             payload,
             company_id=active_company.id,
@@ -813,6 +813,7 @@ def update_invoice(
             active_company,
             regenerate_number=False,
             apply_inventory_changes=False,
+            stock_by_product=stock_by_product,
         )
         db.commit()
         db.refresh(invoice)
