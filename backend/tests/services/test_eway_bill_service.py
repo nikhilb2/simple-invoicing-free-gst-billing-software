@@ -818,6 +818,18 @@ def test_road_needs_a_vehicle_or_a_transporter():
     assert validate_form_data(_complete_form(vehicle_number="", transporter_gstin="07ZZZZZ9999Z1ZA")) == []
 
 
+@pytest.mark.parametrize("number", ["", "LR/2026-00001.A"])
+def test_transport_document_number_is_optional_on_road(number):
+    assert validate_form_data(_complete_form(transport_doc_no=number)) == []
+
+
+@pytest.mark.parametrize("mode", ["1", "2", "3", "4"])
+@pytest.mark.parametrize("number", ["X" * 16, "LR(1)"])
+def test_supplied_transport_document_number_must_be_valid_in_every_mode(mode, number):
+    form = _complete_form(transport_mode=mode, transport_doc_no=number, transport_doc_date="2026-06-20")
+    assert [e.field for e in validate_form_data(form)] == ["transport_doc_no"]
+
+
 @pytest.mark.parametrize("mode", ["2", "3", "4"])
 def test_rail_air_ship_need_a_transport_document(mode):
     fields = [e.field for e in validate_form_data(_complete_form(transport_mode=mode, vehicle_number=""))]

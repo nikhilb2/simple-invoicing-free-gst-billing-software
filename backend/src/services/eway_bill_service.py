@@ -489,6 +489,10 @@ def validate_form_data(
     if form.vehicle_type not in VEHICLE_TYPE_CODES:
         add("vehicle_type", "Vehicle type must be Regular or Over Dimensional.")
 
+    doc_no = _s(form.transport_doc_no)
+    if doc_no and (len(doc_no) > MAX_TRANSPORT_DOC_NO_LENGTH or not DOC_NO_REGEX.match(doc_no)):
+        add("transport_doc_no", f"Transport document number can be at most {MAX_TRANSPORT_DOC_NO_LENGTH} characters: letters, numbers, / - and .")
+
     if form.transport_mode not in TRANSPORT_MODE_CODES:
         add("transport_mode", "Transport mode must be Road, Rail, Air or Ship.")
     elif form.transport_mode == ROAD_MODE:
@@ -499,11 +503,8 @@ def validate_form_data(
         # NIC's two documents disagree on whether Ship needs these. The newer calls
         # them optional and the API documentation calls them a must, and supplying
         # them satisfies both.
-        doc_no = _s(form.transport_doc_no)
         if not doc_no:
             add("transport_doc_no", "Transport document number is required for transport by rail, air or ship.")
-        elif len(doc_no) > MAX_TRANSPORT_DOC_NO_LENGTH or not DOC_NO_REGEX.match(doc_no):
-            add("transport_doc_no", f"Transport document number can be at most {MAX_TRANSPORT_DOC_NO_LENGTH} characters: letters, numbers, / - and .")
         if not _s(form.transport_doc_date):
             add("transport_doc_date", "Transport document date is required for transport by rail, air or ship.")
         if form.transport_mode in (RAIL_MODE, AIR_MODE) and form.vehicle_type == VEHICLE_TYPE_ODC:
