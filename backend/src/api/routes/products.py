@@ -375,7 +375,20 @@ def _backfill_serials(
     # switched back on already has some of its units covered.
     on_hand = int(stock)
     already = SerialManager(db).count_in_stock(product.id, company_id=company_id)
-    missing = max(on_hand - already, 0)
+    if already > on_hand:
+        # Units sold while tracking was off left no trace on the serial rows, so
+        # the rows now outnumber the shelf. Saving anyway would break the invariant
+        # inventory == in-stock serials and let the picker offer units that are gone
+        # (#918) — refuse and name both counts so the merchant can void the rest.
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"{product.name} has {_plural(already, 'serial number')} in stock but only "
+                f"{_plural(on_hand, 'unit')}. Void the serials of the units that already "
+                "left, then turn tracking on for the units still on the shelf."
+            ),
+        )
+    missing = on_hand - already
     if len(codes) != missing:
         raise HTTPException(
             status_code=400,
