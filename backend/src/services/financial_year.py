@@ -1,6 +1,7 @@
 from datetime import date
 from typing import Optional
 
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from src.core.config import settings
@@ -32,6 +33,37 @@ def get_fy_for_date(db: Session, invoice_date: date, company_id: int | None = No
     if company_id is not None:
         query = query.filter(FinancialYear.company_id == company_id)
     return query.first()
+
+
+def require_same_financial_year(
+    db: Session,
+    current_fy_id: int | None,
+    new_date: date,
+    *,
+    company_id: int,
+    document: str,
+) -> None:
+    """Refuse a date edit that would move an issued document into another financial year.
+
+    The financial year and the number series are fixed when the document is issued,
+    so the number would keep the old year while lists and reports file it under the
+    new one. A date that no financial year covers is allowed.
+    """
+    if current_fy_id is None:
+        return
+    date_fy = get_fy_for_date(db, new_date, company_id=company_id)
+    if date_fy is None or date_fy.id == current_fy_id:
+        return
+    current_fy = db.query(FinancialYear).filter(FinancialYear.id == current_fy_id).first()
+    current_label = current_fy.label if current_fy else f"id {current_fy_id}"
+    raise HTTPException(
+        status_code=400,
+        detail=(
+            f"This date is in {date_fy.label}, but the {document} belongs to "
+            f"{current_label}. Cancel it and create a new {document} in "
+            f"{date_fy.label} instead."
+        ),
+    )
 
 
 def activate_fy(db: Session, fy_id: int, company_id: int | None = None) -> FinancialYear:

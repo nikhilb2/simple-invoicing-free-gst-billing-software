@@ -1,6 +1,6 @@
 """Delivery challans (#840): create, edit, list, numbering, validation and scoping."""
 
-from datetime import timedelta
+from datetime import date, timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -445,6 +445,26 @@ def test_edit_to_a_number_in_use_is_refused(setup):
     assert get_challan(s.client, second["id"])["challan_number"] == "DC-2"
     # Its own number is not "in use".
     ok(update_challan(s.client, second, [(s.product, 1)], challan_number="DC-2"))
+
+
+def test_edit_to_a_date_in_another_financial_year_is_refused(setup):
+    s = setup
+    today = date.today()
+    later = ok(s.client.post("/api/financial-years/", json={
+        "label": "LATER-FY",
+        "start_date": date(today.year + 2, 1, 1).isoformat(),
+        "end_date": date(today.year + 2, 12, 31).isoformat(),
+    }), 201)
+    challan = create_challan(s.client, s.ledger, [(s.product, 1)])
+    assert challan["financial_year_id"] != later["id"]
+    response = update_challan(
+        s.client, challan, [(s.product, 1)], challan_date=date(today.year + 2, 6, 1).isoformat()
+    )
+    assert response.status_code == 400
+    assert "LATER-FY" in response.json()["detail"]
+    kept = get_challan(s.client, challan["id"])
+    assert kept["financial_year_id"] == challan["financial_year_id"]
+    assert kept["challan_date"] == challan["challan_date"]
 
 
 def test_edit_refuses_unknown_fields(setup):
