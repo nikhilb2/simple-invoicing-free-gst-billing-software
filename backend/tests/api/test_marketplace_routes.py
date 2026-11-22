@@ -24,6 +24,7 @@ from src.models.marketplace import (
 )
 from src.models.product import Product
 from src.models.user import User, UserRole
+from src.core.config import settings
 from src.services.marketplace import client as client_module
 from tests.fakes.fake_marketplace import FakeMarketplace
 
@@ -274,7 +275,6 @@ class TestConnectionRoutes:
     def test_routes_404_without_a_connection(self, client, db_session, fake):
         company = make_company(db_session, name="Acme", gst=GST_A)
         for method, path in [
-            ("get", "/api/marketplace/catalog"),
             ("post", "/api/marketplace/sync"),
             ("patch", "/api/marketplace/connection"),
         ]:
@@ -283,6 +283,107 @@ class TestConnectionRoutes:
             if method in ("post", "patch"):
                 kwargs["json"] = {}
             assert call(path, **kwargs).status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Default marketplace: read-only browse before registering
+# ---------------------------------------------------------------------------
+
+class TestDefaultMarketplace:
+    def _seed_listing(self, client, db_session):
+        seller = make_company(db_session, name="SellerCo", gst=GST_B)
+        client.post(
+            "/api/marketplace/connection",
+            json={"base_url": "http://marketplace.test"},
+            headers=headers_for(seller),
+        )
+        product = make_product(db_session, seller.id)
+        client.post(
+            "/api/marketplace/listings",
+            json={"product_id": product.id, "asking_price": 125.0},
+            headers=headers_for(seller),
+        )
+
+    def test_defaults_report_the_configured_url(self, client, monkeypatch):
+        monkeypatch.setattr(settings, "MARKETPLACE_DEFAULT_URL", "https://marketplace.respawn.in")
+        assert client.get("/api/marketplace/defaults").json() == {
+            "base_url": "https://marketplace.respawn.in"
+        }
+        monkeypatch.setattr(settings, "MARKETPLACE_DEFAULT_URL", "")
+        assert client.get("/api/marketplace/defaults").json() == {"base_url": None}
+
+    def test_an_unregistered_company_browses_anonymously(
+        self, client, db_session, fake, monkeypatch
+    ):
+        monkeypatch.setattr(settings, "MARKETPLACE_DEFAULT_URL", "https://marketplace.respawn.in")
+        self._seed_listing(client, db_session)
+        guest = make_company(db_session, name="GuestCo", gst=GST_A)
+
+        response = client.get("/api/marketplace/catalog", headers=headers_for(guest))
+        assert response.status_code == 200, response.text
+        items = response.json()["items"]
+        assert len(items) == 1
+        assert fake.anonymous_browses == 1
+
+        detail = client.get(
+            f"/api/marketplace/catalog/{items[0]['listing_id']}", headers=headers_for(guest)
+        )
+        assert detail.status_code == 200, detail.text
+
+    def test_an_unregistered_company_cannot_buy_or_sell(
+        self, client, db_session, fake, monkeypatch
+    ):
+        monkeypatch.setattr(settings, "MARKETPLACE_DEFAULT_URL", "https://marketplace.respawn.in")
+        self._seed_listing(client, db_session)
+        guest = make_company(db_session, name="GuestCo", gst=GST_A)
+        product = make_product(db_session, guest.id, sku="G1")
+        listing_id = next(iter(fake.listings))
+
+        assert client.post(
+            "/api/marketplace/orders",
+            json={"listing_id": listing_id, "quantity": 1},
+            headers=headers_for(guest),
+        ).status_code == 404
+        assert client.post(
+            "/api/marketplace/listings",
+            json={"product_id": product.id, "asking_price": 10.0},
+            headers=headers_for(guest),
+        ).status_code == 404
+
+    def test_a_pending_company_browses_anonymously(self, client, db_session, monkeypatch):
+        """The key is refused while pending, so Browse falls back to anonymous."""
+        pending_fake = FakeMarketplace(auto_approve=False)
+        client_module.set_transport_override(pending_fake.transport())
+        try:
+            company = make_company(db_session, name="PendingCo", gst=GST_A)
+            registered = client.post(
+                "/api/marketplace/connection",
+                json={"base_url": "http://marketplace.test"},
+                headers=headers_for(company),
+            )
+            assert registered.json()["status"] == "pending_approval"
+
+            response = client.get("/api/marketplace/catalog", headers=headers_for(company))
+            assert response.status_code == 200, response.text
+            assert pending_fake.anonymous_browses == 1
+        finally:
+            client_module.set_transport_override(None)
+
+    def test_a_marketplace_without_public_browse_is_a_403_not_a_401(
+        self, client, db_session, fake, monkeypatch
+    ):
+        """A 401 here would make the browser think its own session expired."""
+        monkeypatch.setattr(settings, "MARKETPLACE_DEFAULT_URL", "https://marketplace.respawn.in")
+        fake.public_browse = False
+        guest = make_company(db_session, name="GuestCo", gst=GST_A)
+        response = client.get("/api/marketplace/catalog", headers=headers_for(guest))
+        assert response.status_code == 403
+
+    def test_no_default_and_no_connection_404s(self, client, db_session, fake, monkeypatch):
+        monkeypatch.setattr(settings, "MARKETPLACE_DEFAULT_URL", "")
+        company = make_company(db_session, name="Acme", gst=GST_A)
+        response = client.get("/api/marketplace/catalog", headers=headers_for(company))
+        assert response.status_code == 404
 
 
 # ---------------------------------------------------------------------------
@@ -768,3 +869,103 @@ class TestSyncRoutes:
                 client.post("/api/marketplace/sync", headers=headers_for(company)).status_code
                 == 200
             )
+
+
+# ---------------------------------------------------------------------------
+# GST resync: a product tax edit must reach its open listings (#888)
+# ---------------------------------------------------------------------------
+
+class TestMarketplaceGstResync:
+    def _listed_product(self, client, db_session, fake):
+        """A connected company with a product published at 18% GST."""
+        company = make_company(db_session, name="Acme", gst=GST_A)
+        client.post(
+            "/api/marketplace/connection",
+            json={"base_url": "http://marketplace.test"},
+            headers=headers_for(company),
+        )
+        product = make_product(db_session, company.id)
+        created = client.post(
+            "/api/marketplace/listings",
+            json={"product_id": product.id, "asking_price": 125.0},
+            headers=headers_for(company),
+        )
+        assert created.status_code == 201
+        assert created.json()["gst_rate"] == "18.00"
+        return company, product, created.json()
+
+    def _read_listing(self, client, company, listing_id):
+        listed = client.get("/api/marketplace/listings", headers=headers_for(company)).json()
+        return next(item for item in listed if item["id"] == listing_id)
+
+    def test_product_gst_edit_resyncs_the_open_listing(self, client, db_session, fake):
+        company, product, listing = self._listed_product(client, db_session, fake)
+
+        updated = client.put(
+            f"/api/products/{product.id}",
+            json={
+                "sku": "P1",
+                "name": "Product P1",
+                "price": 125.0,
+                "gst_rate": 12,
+                "hsn_sac": "8483",
+                "unit": "Numbers",
+            },
+            headers=headers_for(company),
+        )
+        assert updated.status_code == 200
+
+        synced = self._read_listing(client, company, listing["id"])
+        assert synced["gst_rate"] == "12.00"
+        assert synced["hsn_sac"] == "8483"
+        assert synced["unit"] == "Numbers"
+        # The remote marketplace must quote the new rate too, not just our row.
+        assert Decimal(fake.listings[listing["remote_listing_id"]]["gst_rate"]) == Decimal(
+            "12"
+        )
+
+    def test_with_inventory_gst_edit_resyncs_the_open_listing(
+        self, client, db_session, fake
+    ):
+        company, product, listing = self._listed_product(client, db_session, fake)
+
+        updated = client.put(
+            f"/api/products/{product.id}/with-inventory",
+            json={"gst_rate": 12, "hsn_sac": "8483", "unit": "Numbers"},
+            headers=headers_for(company),
+        )
+        assert updated.status_code == 200
+
+        synced = self._read_listing(client, company, listing["id"])
+        assert synced["gst_rate"] == "12.00"
+        assert synced["hsn_sac"] == "8483"
+        assert synced["unit"] == "Numbers"
+
+    def test_withdrawn_listing_is_left_alone(self, client, db_session, fake):
+        company, product, listing = self._listed_product(client, db_session, fake)
+        assert (
+            client.delete(
+                f"/api/marketplace/listings/{listing['id']}",
+                headers=headers_for(company),
+            ).status_code
+            == 200
+        )
+
+        updated = client.put(
+            f"/api/products/{product.id}",
+            json={
+                "sku": "P1",
+                "name": "Product P1",
+                "price": 125.0,
+                "gst_rate": 12,
+                "hsn_sac": "8483",
+                "unit": "Numbers",
+            },
+            headers=headers_for(company),
+        )
+        assert updated.status_code == 200
+
+        left = self._read_listing(client, company, listing["id"])
+        assert left["status"] == "withdrawn"
+        assert left["gst_rate"] == "18.00"
+        assert left["hsn_sac"] == "8482"

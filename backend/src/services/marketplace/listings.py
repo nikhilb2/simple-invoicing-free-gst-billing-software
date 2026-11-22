@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 from src.models.inventory import Inventory
 from src.models.marketplace import MarketplaceConnection, MarketplaceListing
 from src.models.product import Product
-from src.services.marketplace.client import MarketplaceError
+from src.services.marketplace.client import MarketplaceError, client_for_connection
 from src.services.company_access import company_scope
 
 logger = logging.getLogger(__name__)
@@ -170,6 +170,86 @@ def update_listing(
             raise
     db.commit()
     return listing
+
+
+def resync_listings_for_product(
+    db: Session, company_id: int, product: Product
+) -> int:
+    """Push a product's tax fields onto its open marketplace listings.
+
+    A listing copies gst_rate/hsn_sac/unit from the product master once, at
+    creation. When the seller later corrects the product (a GST council
+    reclassification, a fixed HSN, a corrected unit), the listing kept
+    advertising the old figures and new orders booked the stale rate, which
+    the posted invoice then filed. This closes that gap: every open listing
+    for the product (anything not withdrawn) is brought back in line with
+    the product master, locally and on the remote marketplace.
+
+    A remote push that fails must not fail the product edit itself, so the
+    failure is recorded on the listing (last_error) and logged, the way the
+    quantity refresh below handles it.
+    """
+    connection = (
+        db.query(MarketplaceConnection)
+        .filter(MarketplaceConnection.company_id == company_id)
+        .first()
+    )
+    if connection is None:
+        return 0
+
+    listings = (
+        db.query(MarketplaceListing)
+        .filter(
+            MarketplaceListing.company_id == company_id,
+            MarketplaceListing.product_id == product.id,
+            MarketplaceListing.status != "withdrawn",
+        )
+        .order_by(MarketplaceListing.id.asc())
+        .all()
+    )
+    if not listings:
+        return 0
+
+    new_rate = Decimal(str(product.gst_rate or 0))
+    new_hsn = product.hsn_sac
+    new_unit = product.unit or "Pieces"
+
+    client = None
+    resynced = 0
+    for listing in listings:
+        changed = False
+        changes: dict = {}
+        if Decimal(str(listing.gst_rate or 0)) != new_rate:
+            listing.gst_rate = new_rate
+            changes["gst_rate"] = str(new_rate)
+            changed = True
+        if listing.hsn_sac != new_hsn:
+            listing.hsn_sac = new_hsn
+            if new_hsn is not None:
+                changes["hsn_sac"] = new_hsn
+            changed = True
+        if listing.unit != new_unit:
+            listing.unit = new_unit
+            changes["unit"] = new_unit
+            changed = True
+        if not changed:
+            continue
+        resynced += 1
+        if listing.remote_listing_id and changes:
+            if client is None:
+                client = client_for_connection(connection)
+            try:
+                client.update_listing(listing.remote_listing_id, changes)
+                listing.last_error = None
+                listing.last_published_at = datetime.utcnow()
+            except MarketplaceError as exc:
+                logger.warning(
+                    "marketplace: tax resync for %s failed: %s",
+                    listing.remote_listing_id,
+                    exc,
+                )
+                listing.last_error = f"{exc.code}: {exc}"[:1000]
+    return resynced
 
 
 def withdraw_listing(

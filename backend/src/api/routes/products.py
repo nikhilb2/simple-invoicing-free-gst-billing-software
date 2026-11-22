@@ -36,6 +36,7 @@ from src.api.pagination import MAX_PAGE
 from src.core.analytics import distinct_id_for, track
 from src.core.document_limits import MONEY_STORAGE_CUTOFF, QUANTITY_STORAGE_CUTOFF
 from src.core.validation import hsn_sac_warning, normalize_hsn_sac
+from src.services.marketplace.listings import resync_listings_for_product
 from src.services.serial_service import SerialManager
 
 router = APIRouter()
@@ -339,6 +340,11 @@ def update_product(
     if payload.track_serials and not was_tracking_serials:
         _backfill_serials(db, product, serial_codes, company_id=active_company.id)
 
+    # A tax/HSN/unit correction must reach the marketplace too: listings copy
+    # these fields once at creation, so without this they would keep quoting
+    # the old rate and new orders would book (and post) stale GST (#888).
+    resync_listings_for_product(db, active_company.id, product)
+
     db.commit()
     db.refresh(product)
     return product
@@ -577,7 +583,13 @@ def _apply_catalogue_filters(
     if low_stock:
         # A reorder level of 0 means no restock threshold was ever set, so those
         # products are not "low" — without this every zero-stock row would be.
+        # A product with Maintain inventory off (a service, a labour charge)
+        # has no stock row at all, so its quantity reads as 0 and it would
+        # otherwise pass the filter the moment a reorder level is set on it —
+        # only a product that actually keeps stock can be low on it, matching
+        # `needs_attention` in list_inventory.
         query = query.filter(
+            Product.maintain_inventory.is_(True),
             Product.reorder_level > 0,
             quantity_expr <= Product.reorder_level,
         )
@@ -609,6 +621,7 @@ def list_products_with_inventory(
         .join(Invoice, InvoiceItem.invoice_id == Invoice.id)
         .filter(
             Invoice.status != "cancelled",
+            Invoice.voucher_type == "sales",
             Invoice.company_id == active_company.id,
         )
         .group_by(InvoiceItem.product_id)
@@ -770,7 +783,7 @@ def update_product_with_inventory(
                 Inventory.product_id == product_id,
                 Inventory.company_id == active_company.id,
             )
-            .first()
+            .with_for_update().first()
         )
         # Setting stock outright would leave a tracked product with a quantity
         # no set of serials backs. It has to move through /inventory/adjust.
@@ -793,6 +806,11 @@ def update_product_with_inventory(
                     quantity=Decimal(str(payload.current_stock)),
                 )
             )
+
+    # A tax/HSN/unit correction must reach the marketplace too: listings copy
+    # these fields once at creation, so without this they would keep quoting
+    # the old rate and new orders would book (and post) stale GST (#888).
+    resync_listings_for_product(db, active_company.id, product)
 
     db.commit()
     db.refresh(product)
@@ -998,8 +1016,8 @@ def _import_csv_from_content(content: bytes, db: Session, active_company: Compan
         sku = item_code.strip().upper()
 
         try:
-            selling_price = float(values.get("selling_price") or 0)
-            if selling_price >= MONEY_STORAGE_CUTOFF:
+            selling_price = _csv_number(values.get("selling_price") or 0)
+            if not 0 <= selling_price < MONEY_STORAGE_CUTOFF:
                 raise ValueError(selling_price)
         except ValueError:
             errors.append({"row": row_num, "message": f"Invalid Selling Price for {sku}"})
@@ -1059,6 +1077,12 @@ def _import_csv_from_content(content: bytes, db: Session, active_company: Compan
         )
 
         if existing:
+            if not existing.allow_decimal and not _is_whole_number(stock):
+                errors.append(
+                    {"row": row_num, "message": f"Invalid Current Stock for {sku}: must be a whole number"}
+                )
+                continue
+
             existing.name = item_name
             if "selling_price" in headers:
                 existing.price = selling_price
@@ -1089,7 +1113,7 @@ def _import_csv_from_content(content: bytes, db: Session, active_company: Compan
                         Inventory.product_id == existing.id,
                         Inventory.company_id == active_company.id,
                     )
-                    .first()
+                    .with_for_update().first()
                 )
                 if inv:
                     inv.quantity = Decimal(str(stock))
@@ -1098,6 +1122,15 @@ def _import_csv_from_content(content: bytes, db: Session, active_company: Compan
 
             updated += 1
         else:
+            # New products from the import always default to a whole-number
+            # product (allow_decimal is False), so any fractional stock here
+            # is invalid just like it would be via the product form.
+            if not _is_whole_number(stock):
+                errors.append(
+                    {"row": row_num, "message": f"Invalid Current Stock for {sku}: must be a whole number"}
+                )
+                continue
+
             product = Product(
                 company_id=active_company.id,
                 sku=sku,
