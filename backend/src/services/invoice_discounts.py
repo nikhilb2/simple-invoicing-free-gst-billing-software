@@ -245,49 +245,60 @@ def discounted_line_amounts(invoice: Invoice, *, include_round_off: bool = False
 
     Both splits put their rounding residue on the largest line, so the lines
     add up to exactly ``taxable_amount + total_tax_amount - discount``, that is
-    ``total_amount - tcs_amount - round_off_amount``. On an intrastate invoice
-    a line whose GST comes out at an odd paisa moves that paisa to its taxable
+    ``total_amount - tcs_amount - round_off_amount``. On a discounted intrastate
+    invoice a line whose GST comes out at an odd paisa moves that paisa to its taxable
     value, so the GST still splits into equal CGST and SGST halves (as the
     invoice's own lines do) and a credit note reversing it halves exactly. The
     line total is unchanged; otherwise the taxable values match
     :func:`apportion_invoice_discount`'s to the paisa.
 
-    With ``include_round_off`` the invoice's round-off is shared out the same
-    way (a round-up adds to the lines, a round-down takes off), so the lines
-    add up to exactly ``total_amount - tcs_amount``: everything the buyer was
-    charged apart from TCS. Credit notes use this, so a full return credits
-    the whole invoice and the buyer's account closes at zero. A report that
-    nets credit notes off invoice lines should pass it too, or a full return
-    leaves the round-off behind as a residue.
+    With ``include_round_off`` the invoice's round-off is shared out over the
+    lines' taxable values only, pro-rata by taxable value with the residue on
+    the largest line (a round-up adds to them, a round-down takes off). It
+    never touches GST: round-off is not tax, so each line keeps exactly the
+    GST the invoice charged (less any discount share), and on an undiscounted
+    invoice the GST is the stored GST to the paisa. The lines then add up to
+    exactly ``total_amount - tcs_amount``: everything the buyer was charged
+    apart from TCS. Credit notes use this, so a full return credits the whole
+    invoice and the buyer's account closes at zero. A report that nets credit
+    notes off invoice lines should pass it too, or a full return leaves the
+    round-off behind as a residue.
 
     A line with no taxable value and no GST (a row from before those columns
     existed) carries nothing and takes no share; callers fall back to its
     stored ``line_total``. An invoice with no discount (and, with
-    ``include_round_off``, no round-off) returns the stored figures unchanged.
+    ``include_round_off``, no round-off) returns the stored figures unchanged;
+    with no discount the GST is always unchanged.
     """
     items = list(invoice.items)
     taxables = [_dec(item.taxable_amount) for item in items]
     taxes = [_dec(item.tax_amount) for item in items]
 
-    adjustment = invoice_discount_amount(invoice)
-    if include_round_off:
-        adjustment -= _dec(invoice.round_off_amount)
+    discount = invoice_discount_amount(invoice)
+    round_off = _dec(invoice.round_off_amount) if include_round_off else Decimal("0")
 
     taxable_total = sum(taxables, Decimal("0"))
     gross = taxable_total + sum(taxes, Decimal("0"))
-    if not adjustment or gross <= 0:
+    if (not discount and not round_off) or gross <= 0:
         return {
             item.id: DiscountedLine(_money(taxable), _money(tax))
             for item, taxable, tax in zip(items, taxables, taxes)
         }
 
-    taxable_part = _money(min(adjustment, gross) * taxable_total / gross)
-    taxable_shares = _split_by_weight(taxable_part, taxables)
-    tax_shares = _split_by_weight(_money(min(adjustment, gross) - taxable_part), taxes)
-    halves = not invoice_is_interstate(invoice)
+    zeros = [Decimal("0.00") for _ in items]
+    taxable_shares, tax_shares = zeros, zeros
+    if discount:
+        taxable_part = _money(min(discount, gross) * taxable_total / gross)
+        taxable_shares = _split_by_weight(taxable_part, taxables)
+        tax_shares = _split_by_weight(_money(min(discount, gross) - taxable_part), taxes)
+    # Round-off is not tax: it goes on the taxable values alone.
+    round_off_shares = _split_by_weight(round_off, taxables)
+    halves = bool(discount) and not invoice_is_interstate(invoice)
     lines: dict[int, DiscountedLine] = {}
-    for item, taxable, tax, taxable_share, tax_share in zip(items, taxables, taxes, taxable_shares, tax_shares):
-        line_taxable = _money(taxable - taxable_share)
+    for item, taxable, tax, taxable_share, tax_share, round_off_share in zip(
+        items, taxables, taxes, taxable_shares, tax_shares, round_off_shares
+    ):
+        line_taxable = _money(taxable - taxable_share + round_off_share)
         line_tax = _money(tax - tax_share)
         if halves and line_tax > 0 and int(line_tax * 100) % 2:
             line_taxable += Decimal("0.01")

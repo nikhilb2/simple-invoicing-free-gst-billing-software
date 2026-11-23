@@ -42,6 +42,38 @@ describe('billedLineAmounts', () => {
     expect(billedLineAmounts(inv).get(11)?.lineTotal).toBe(500);
   });
 
+  test('the round-off on an undiscounted invoice goes on taxable value only, never GST (#891 review)', () => {
+    // 999.66 + 179.94 GST = 1,179.60, rounded up to 1,180 (intrastate).
+    const inv = invoice(1, [{ id: 11, quantity: 1, taxable_amount: 999.66, tax_amount: 179.94, line_total: 1179.6 }], {
+      total_amount: 1180, round_off_amount: 0.4,
+    });
+
+    expect(billedLineAmounts(inv).get(11)).toEqual({ taxable: 1000.06, tax: 179.94, lineTotal: 1180 });
+  });
+
+  test('a round-up on an undiscounted multi-line invoice keeps every line\'s GST', () => {
+    // 3 lines at 18/12/5% (interstate): 1,369.91 + 222.99 IGST = 1,592.90, rounded up to 1,593.
+    const inv = invoice(1, [
+      { id: 11, quantity: 3, taxable_amount: 999.99, tax_amount: 180, line_total: 1179.99 },
+      { id: 12, quantity: 7, taxable_amount: 349.93, tax_amount: 41.99, line_total: 391.92 },
+      { id: 13, quantity: 1, taxable_amount: 19.99, tax_amount: 1, line_total: 20.99 },
+    ], { total_amount: 1593, round_off_amount: 0.1, igst_amount: 222.99 });
+
+    const lines = billedLineAmounts(inv);
+    expect(inv.items.map((item) => lines.get(item.id)?.tax)).toEqual([180, 41.99, 1]);
+    const total = [...lines.values()].reduce((sum, line) => sum + line.lineTotal, 0);
+    expect(Math.round(total * 100) / 100).toBe(1593);
+  });
+
+  test('the round-off on a discounted invoice leaves the discounted GST alone', () => {
+    // 1,000 @ 18% less 10% = 900 + 162 = 1,062.00; pretend it rounded down by 0.40.
+    const inv = invoice(1, [{ id: 11, quantity: 1, taxable_amount: 1000, tax_amount: 180, line_total: 1180 }], {
+      total_amount: 1061.6, round_off_amount: -0.4,
+    });
+
+    expect(billedLineAmounts(inv).get(11)).toEqual({ taxable: 899.6, tax: 162, lineTotal: 1061.6 });
+  });
+
   test('lines of a discounted, rounded invoice add up to its total, as the server stores them', () => {
     // Two lines, 7.5% invoice discount, round-off on: the figures the server
     // writes for 3 x 333.33 @ 18% and 7 x 49.99 @ 12% (intrastate).
@@ -86,6 +118,22 @@ describe('returnPreviewTotal', () => {
     ], { total_amount: 1454, round_off_amount: -0.01 });
 
     expect(fullReturn(inv)).toBe(1454);
+  });
+
+  test('a full return of an undiscounted, rounded intrastate invoice previews its total', () => {
+    const inv = invoice(1, [{ id: 11, quantity: 1, taxable_amount: 999.66, tax_amount: 179.94, line_total: 1179.6 }], {
+      total_amount: 1180, round_off_amount: 0.4,
+    });
+
+    expect(fullReturn(inv)).toBe(1180);
+  });
+
+  test('returning all of a fractional line previews all of it, not a share of one unit', () => {
+    // 0.5 kg billed 50 + 9 GST.
+    const inv = invoice(1, [{ id: 11, quantity: 0.5, taxable_amount: 50, tax_amount: 9, line_total: 59 }], { total_amount: 59 });
+
+    expect(returnPreviewTotal([{ invoice: inv, item: inv.items[0], quantity: 0.5 }])).toBe(59);
+    expect(returnPreviewTotal([{ invoice: inv, item: inv.items[0], quantity: 0.25 }])).toBe(29.5);
   });
 
   test('nothing selected previews zero', () => {

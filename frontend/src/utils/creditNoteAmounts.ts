@@ -50,26 +50,30 @@ function splitByWeight(amount: number, weights: number[]): number[] {
 
 const isLegacy = (item: Pick<InvoiceItem, 'taxable_amount' | 'tax_amount'>) => !num(item.taxable_amount) && !num(item.tax_amount);
 
-/** Each line's taxable value and GST after its share of the invoice discount and round-off, by item id. */
+/**
+ * Each line's taxable value and GST after its share of the invoice discount and round-off, by item id.
+ * The discount comes off taxable value and GST; the round-off, which is not tax, goes on taxable value only.
+ */
 export function billedLineAmounts(invoice: InvoiceAmounts): Map<number, BilledLine> {
   const taxables = invoice.items.map((item) => num(item.taxable_amount));
   const taxes = invoice.items.map((item) => num(item.tax_amount));
   const taxableTotal = taxables.reduce((sum, value) => sum + value, 0);
   const gross = taxableTotal + taxes.reduce((sum, value) => sum + value, 0);
-  const adjustment = roundMoney(invoiceDiscountAmount(invoice) - num(invoice.round_off_amount));
+  const discount = invoiceDiscountAmount(invoice);
 
   let taxableShares = taxables.map(() => 0);
   let taxShares = taxes.map(() => 0);
-  if (adjustment && gross > 0) {
-    const capped = Math.min(adjustment, gross);
+  if (discount && gross > 0) {
+    const capped = Math.min(discount, gross);
     const taxablePart = roundMoney(capped * taxableTotal / gross);
     taxableShares = splitByWeight(taxablePart, taxables);
     taxShares = splitByWeight(roundMoney(capped - taxablePart), taxes);
   }
+  const roundOffShares = gross > 0 ? splitByWeight(num(invoice.round_off_amount), taxables) : taxables.map(() => 0);
 
-  // An intrastate line keeps its GST at an even paisa so it splits into equal
-  // CGST and SGST halves; the odd paisa moves to its taxable value.
-  const halves = adjustment !== 0 && gross > 0 && !(num(invoice.igst_amount) > 0);
+  // A discounted intrastate line keeps its GST at an even paisa so it splits into
+  // equal CGST and SGST halves; the odd paisa moves to its taxable value.
+  const halves = discount !== 0 && gross > 0 && !(num(invoice.igst_amount) > 0);
   const lines = new Map<number, BilledLine>();
   invoice.items.forEach((item, index) => {
     if (isLegacy(item)) {
@@ -78,7 +82,7 @@ export function billedLineAmounts(invoice: InvoiceAmounts): Map<number, BilledLi
       lines.set(item.id, { taxable: lineTotal, tax: 0, lineTotal });
       return;
     }
-    let taxable = roundMoney(taxables[index] - taxableShares[index]);
+    let taxable = roundMoney(taxables[index] - taxableShares[index] + roundOffShares[index]);
     let tax = roundMoney(taxes[index] - taxShares[index]);
     if (halves && tax > 0 && Math.round(tax * 100) % 2) {
       taxable = roundMoney(taxable + 0.01);
@@ -105,12 +109,13 @@ export function returnPreviewTotal(selections: ReturnSelection[]): number {
     const line = billedByInvoice.get(invoice.id)!.get(item.id);
     if (!line) continue;
 
-    const whole = Math.max(num(item.quantity), 1);
-    const taxable = roundMoney(line.taxable * quantity / whole);
+    // The share of the line returned; quantities can be fractional (0.5 kg of 0.5 kg is all of it).
+    const ratio = num(item.quantity) > 0 ? quantity / num(item.quantity) : 0;
+    const taxable = roundMoney(line.taxable * ratio);
     // An intrastate note splits its tax into equal CGST and SGST halves, each rounded.
     const tax = num(invoice.igst_amount) > 0
-      ? roundMoney(line.tax * quantity / whole)
-      : 2 * roundMoney((line.tax / 2) * quantity / whole);
+      ? roundMoney(line.tax * ratio)
+      : 2 * roundMoney((line.tax / 2) * ratio);
     const credit = roundMoney(taxable + tax);
     total += credit;
     creditedByInvoice.set(invoice.id, (creditedByInvoice.get(invoice.id) || 0) + credit);

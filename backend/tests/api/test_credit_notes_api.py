@@ -656,6 +656,39 @@ def test_full_return_of_a_discounted_rounded_multi_line_invoice_closes_the_accou
     assert _credit_status(client, invoice) == "fully_credited"
 
 
+@pytest.mark.parametrize("place_of_supply", [None, "27"], ids=["intrastate", "interstate"])
+@pytest.mark.parametrize("unit_price", ["100.40", "999.66"], ids=["rounds-down", "rounds-up"])
+def test_full_return_of_an_undiscounted_rounded_invoice_reverses_exactly_its_gst(
+    client, gst_seller, place_of_supply, unit_price,
+):
+    """#891 review: round-off is not tax, so it never reaches the note's GST.
+
+    With no invoice discount, a full return reverses exactly the GST the invoice
+    charged; the round-off goes on the taxable value alone, so the note still
+    credits the invoice's total and the buyer's account closes at zero.
+    """
+    invoice = _sale(
+        client, {"quantity": 1, "unit_price": unit_price, "gst_rate": 18},
+        place_of_supply=place_of_supply, apply_round_off=True,
+    )
+    assert invoice["round_off_amount"] != 0
+    assert (invoice["round_off_amount"] > 0) == (unit_price == "999.66")
+
+    response = _note(client, invoice, quantity=1)
+
+    assert response.status_code == 201, response.text
+    note = response.json()
+    assert note["cgst_amount"] + note["sgst_amount"] + note["igst_amount"] == pytest.approx(invoice["total_tax_amount"])
+    if place_of_supply:
+        assert note["igst_amount"] == pytest.approx(invoice["total_tax_amount"])
+    else:
+        assert note["cgst_amount"] + note["sgst_amount"] == pytest.approx(invoice["total_tax_amount"])
+    assert note["taxable_amount"] == pytest.approx(invoice["taxable_amount"] + invoice["round_off_amount"])
+    assert note["total_amount"] == pytest.approx(invoice["total_amount"])
+    assert _closing_balance(client, invoice) == 0
+    assert _credit_status(client, invoice) == "fully_credited"
+
+
 def test_returns_in_parts_of_a_discounted_rounded_invoice_close_the_account(client, gst_seller):
     """The same invoice returned a few units at a time adds back to exactly its total."""
     invoice = _multi_line_sale(
