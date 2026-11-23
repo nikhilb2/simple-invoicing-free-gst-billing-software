@@ -14,6 +14,8 @@ type StatusToastsProps = {
   onClearError: () => void;
   onClearSuccess: () => void;
   successDurationMs?: number;
+  /** Errors stay longer than successes so they can be read, but they do clear. */
+  errorDurationMs?: number;
 };
 
 function Toast({ kind, message, onDismiss }: ToastProps) {
@@ -44,18 +46,40 @@ export default function StatusToasts({
   onClearError,
   onClearSuccess,
   successDurationMs = 5000,
+  errorDurationMs = 8000,
 }: StatusToastsProps) {
+  // Callers often pass inline arrows. Reading them through refs keeps a parent re-render
+  // (every keystroke in a form) from restarting the countdown.
+  const onClearErrorRef = useRef(onClearError);
+  const onClearSuccessRef = useRef(onClearSuccess);
+  useEffect(() => {
+    onClearErrorRef.current = onClearError;
+    onClearSuccessRef.current = onClearSuccess;
+  });
+
   useEffect(() => {
     if (!success) {
       return undefined;
     }
 
     const timeoutId = window.setTimeout(() => {
-      onClearSuccess();
+      onClearSuccessRef.current();
     }, successDurationMs);
 
     return () => window.clearTimeout(timeoutId);
-  }, [success, successDurationMs, onClearSuccess]);
+  }, [success, successDurationMs]);
+
+  useEffect(() => {
+    if (!error) {
+      return undefined;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      onClearErrorRef.current();
+    }, errorDurationMs);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [error, errorDurationMs]);
 
   // An error that was already showing belongs to an earlier action, so a new success replaces
   // it instead of stacking beside it. An error that arrives together with the success stays.
