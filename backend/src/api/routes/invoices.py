@@ -33,6 +33,7 @@ from src.schemas.invoice import (
 )
 from src.api.deps import get_active_company, get_current_user
 from src.api.pagination import MAX_PAGE
+from src.api.search import contains_pattern
 from src.core.analytics import distinct_id_for, track
 from src.services.financial_year import get_active_fy, get_fy_for_date
 from src.services.gst_tax_service import india_today
@@ -228,10 +229,10 @@ def _apply_invoice_filters(
         query = query.filter(func.date(Invoice.invoice_date) <= date_to)
     if search.strip():
         cleaned = search.strip()
-        term = f"%{cleaned}%"
-        product_match = Product.name.ilike(term)
+        term = contains_pattern(search)
+        product_match = Product.name.ilike(term, escape="\\")
         if include_description:
-            product_match = or_(product_match, InvoiceItem.description.ilike(term))
+            product_match = or_(product_match, InvoiceItem.description.ilike(term, escape="\\"))
         product_match_subq = (
             db.query(InvoiceItem.invoice_id)
             .join(Product, Product.id == InvoiceItem.product_id)
@@ -257,13 +258,13 @@ def _apply_invoice_filters(
         # Void rows are deliberately included: a unit whose purchase was later
         # cancelled must still lead back to the voucher it arrived on, which is
         # exactly the trace an operator is doing when they type an IMEI.
-        serial_term = f"%{cleaned.upper()}%"
+        serial_term = contains_pattern(cleaned.upper())
         serial_matches = db.query(ProductSerial).filter(
             # Tenancy: the serial rows themselves are scoped, not just the
             # invoices they point at — a serial must never be able to name an
             # invoice belonging to another company.
             ProductSerial.company_id == active_company.id,
-            func.upper(ProductSerial.serial_number).like(serial_term),
+            func.upper(ProductSerial.serial_number).ilike(serial_term, escape="\\"),
         )
         # scalar_subquery() rather than subquery(): these feed IN() directly,
         # and a plain Subquery is coerced with a SAWarning on every call.
@@ -275,13 +276,13 @@ def _apply_invoice_filters(
         ).scalar_subquery()
         query = query.filter(
             or_(
-                Invoice.ledger_name.ilike(term),
+                Invoice.ledger_name.ilike(term, escape="\\"),
                 # Our own document number, plus the counterparty's number as
                 # recorded on a purchase — an operator typing "the invoice
                 # number" means whichever of the two is printed on the paper in
                 # front of them.
-                Invoice.invoice_number.ilike(term),
-                Invoice.supplier_invoice_number.ilike(term),
+                Invoice.invoice_number.ilike(term, escape="\\"),
+                Invoice.supplier_invoice_number.ilike(term, escape="\\"),
                 Invoice.id.in_(product_match_subq),
                 Invoice.id.in_(serial_purchase_subq),
                 Invoice.id.in_(serial_sales_subq),

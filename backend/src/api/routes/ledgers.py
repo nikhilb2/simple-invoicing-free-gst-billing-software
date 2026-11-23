@@ -16,6 +16,7 @@ from src.services.pdf_paper import ReportPaper, page_css, render_pdf, resolve_pa
 
 from src.api.deps import get_active_company, get_current_user, require_company_role
 from src.api.pagination import MAX_PAGE
+from src.api.search import contains_pattern
 from src.core.analytics import distinct_id_for, track
 from src.db.session import get_db
 from src.models.buyer import Buyer as Ledger
@@ -755,16 +756,7 @@ def list_ledgers(
     if company_id is not None:
       query = query.filter(company_scope(Ledger.company_id, company_id))
     if search.strip():
-        # Escape LIKE wildcards so a term such as 50% matches literally
-        # instead of matching every ledger. Phone numbers match on the raw
-        # stored text only in this first version, not on digits only.
-        escaped = (
-            search.strip()
-            .replace("\\", "\\\\")
-            .replace("%", "\\%")
-            .replace("_", "\\_")
-        )
-        pattern = f"%{escaped}%"
+        pattern = contains_pattern(search)
         query = query.filter(
             or_(
                 Ledger.name.ilike(pattern, escape="\\"),

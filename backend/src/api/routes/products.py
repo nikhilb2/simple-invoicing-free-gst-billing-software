@@ -34,6 +34,7 @@ from src.schemas.product import (
 )
 from src.api.deps import get_active_company, get_current_user, require_company_role
 from src.api.pagination import MAX_PAGE
+from src.api.search import contains_pattern
 from src.core.analytics import distinct_id_for, track
 from src.core.document_limits import MONEY_STORAGE_CUTOFF, QUANTITY_STORAGE_CUTOFF
 from src.core.validation import hsn_sac_warning, normalize_hsn_sac
@@ -210,8 +211,8 @@ def list_products(
 ):
     query = db.query(Product).filter(Product.company_id == active_company.id)
     if search.strip():
-        term = f"%{search.strip()}%"
-        query = query.filter(or_(Product.name.ilike(term), Product.sku.ilike(term)))
+        term = contains_pattern(search)
+        query = query.filter(or_(Product.name.ilike(term, escape="\\"), Product.sku.ilike(term, escape="\\")))
     if is_producable is not None:
         query = query.filter(Product.is_producable == is_producable)
     total = query.count()
@@ -537,7 +538,7 @@ def _apply_catalogue_filters(
     """
     if search.strip():
         cleaned = search.strip()
-        term = f"%{cleaned}%"
+        term = contains_pattern(search)
         # A pasted IMEI names a unit, not a product, so the search also reaches
         # into the serial register and returns the product that unit belongs to
         # — the catalogue-side counterpart of the invoice list's serial search.
@@ -549,7 +550,7 @@ def _apply_catalogue_filters(
         #
         # Sold and void rows are matched too: "which product is this unit?" is
         # asked most often about a handset that has already left the shelf.
-        serial_term = f"%{cleaned.upper()}%"
+        serial_term = contains_pattern(cleaned.upper())
         serial_subq = (
             db.query(ProductSerial.product_id)
             .filter(
@@ -557,7 +558,7 @@ def _apply_catalogue_filters(
                 # products they point at — a serial belonging to another company
                 # must never name a product here.
                 ProductSerial.company_id == company_id,
-                func.upper(ProductSerial.serial_number).like(serial_term),
+                func.upper(ProductSerial.serial_number).ilike(serial_term, escape="\\"),
             )
             # ``scalar_subquery`` rather than ``subquery``: IN() over a plain
             # Subquery is coerced with a SAWarning on SQLAlchemy 2.
@@ -565,8 +566,8 @@ def _apply_catalogue_filters(
         )
         query = query.filter(
             or_(
-                Product.name.ilike(term),
-                Product.sku.ilike(term),
+                Product.name.ilike(term, escape="\\"),
+                Product.sku.ilike(term, escape="\\"),
                 Product.id.in_(serial_subq),
             )
         )

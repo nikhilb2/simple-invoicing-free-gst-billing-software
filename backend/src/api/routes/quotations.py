@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session, selectinload
 from src.api.deps import get_active_company, get_current_user
 from src.api.pagination import MAX_PAGE
 from src.api.routes.invoices import build_invoice_out, track_invoice_created
+from src.api.search import contains_pattern
 from src.core.analytics import distinct_id_for, track
 from src.core.http_headers import content_disposition
 from src.db.session import get_db
@@ -174,8 +175,8 @@ def list_quotations(
     if date_to is not None:
         query = query.filter(Quotation.quotation_date <= date_to)
     if search.strip():
-        term = f"%{search.strip()}%"
-        query = query.filter(or_(Quotation.quotation_number.ilike(term), Quotation.ledger_name.ilike(term)))
+        term = contains_pattern(search)
+        query = query.filter(or_(Quotation.quotation_number.ilike(term, escape="\\"), Quotation.ledger_name.ilike(term, escape="\\")))
 
     today = india_today()
     expired = and_(
