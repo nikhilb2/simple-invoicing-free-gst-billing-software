@@ -47,7 +47,7 @@ test.describe('Dashboard', () => {
     const sections: [string, string[]][] = [
       ['catalogue', ['Products & Stock', 'Produce Items']],
       ['reports', ['Day Book']],
-      ['sales', ['Invoices']],
+      ['sales', ['Invoice composer']],
     ];
     for (const [sectionId, labels] of sections) {
       await openSidebarSection(page, sectionId);

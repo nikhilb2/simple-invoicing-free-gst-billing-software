@@ -36,7 +36,7 @@ test.describe('Create invoice with missing fields', () => {
     const ledger = page.locator('#invoice-ledger');
     const product = page.locator('#invoice-product-1');
     await expect(ledger).toHaveAttribute('aria-invalid', 'true');
-    await expect(page.locator('#invoice-ledger-error')).toHaveText('Pick a ledger from the list.');
+    await expect(page.locator('#invoice-ledger-error')).toHaveText('Choose or add a customer first');
     await expect(product).toHaveAttribute('aria-invalid', 'true');
     await expect(page.locator('#invoice-product-1-error')).toHaveText('Product: Pick a product from the list.');
     // The page scrolls to the first missing field.

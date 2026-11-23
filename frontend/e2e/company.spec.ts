@@ -45,8 +45,8 @@ test.describe('Company Profile', () => {
     await page.goto('/settings/company');
     await page.getByTestId('company-switcher').click();
     await page.getByRole('button', { name: '+ New Company' }).click();
-    const dialog = page.getByRole('dialog', { name: 'Create new company' });
-    await dialog.getByLabel('Company name').fill('Second company');
+    const dialog = page.getByRole('dialog', { name: 'New company' });
+    await dialog.getByLabel('Business name').fill('Second company');
     const gst = dialog.getByLabel('GSTIN (optional)');
     const error = dialog.getByRole('alert');
 
@@ -56,7 +56,7 @@ test.describe('Company Profile', () => {
     await expect(error).toContainText('format');
     await gst.fill('27ABCDE1234F1Z9');
     await expect(error).toContainText('15th character');
-    await dialog.getByRole('button', { name: 'Create Company' }).click();
+    await dialog.getByRole('button', { name: 'Create company' }).click();
     await expect(gst).toBeFocused();
     await gst.fill('');
     await expect(error).toHaveCount(0);
