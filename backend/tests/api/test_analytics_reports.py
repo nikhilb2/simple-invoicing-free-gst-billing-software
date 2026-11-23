@@ -929,14 +929,31 @@ class TestCreditNotes:
         assert products == {}
         assert pl_products == {}
 
-    @pytest.mark.parametrize("place_of_supply", [None, "27"], ids=["intrastate", "interstate"])
-    def test_full_return_of_a_discounted_tcs_rounded_invoice_nets_to_zero(
-        self, client, db_session, place_of_supply,
+    @pytest.mark.parametrize(
+        ("place_of_supply", "discounted", "expected_gst"),
+        [
+            (None, False, None),
+            ("27", False, None),
+            # 7.5% off: 119.47, of which 16.73 (16.72 interstate) is GST, so
+            # 223.00 - 16.73 = 206.27 and 222.99 - 16.72 = 206.27. Intrastate
+            # then moves the odd paisa of the 12% line (38.85) to its taxable
+            # value so CGST and SGST stay equal halves, as the credit note does.
+            (None, True, 206.26),
+            ("27", True, 206.27),
+        ],
+        ids=["intrastate", "interstate", "intrastate-discounted", "interstate-discounted"],
+    )
+    def test_full_return_of_a_rounded_tcs_invoice_nets_to_zero(
+        self, client, db_session, place_of_supply, discounted, expected_gst,
     ):
         """Review of #894: every report books an invoice line at what it billed
         after the invoice discount and round-off, the figure a credit note
         credits, and Sales by Month takes the note's TCS off total sales too, so
-        a full return leaves nothing behind anywhere."""
+        a full return leaves nothing behind anywhere.
+
+        Round-off is not tax (#891): it goes on the taxable value only, so the
+        GST the reports show is the GST the invoice charged (less the discount's
+        GST share), and exactly the GST a full return credits."""
         _seed_sections(db_session)
         assert client.get("/api/company/").status_code == 200
         profile = db_session.query(CompanyProfile).first()
@@ -952,10 +969,12 @@ class TestCreditNotes:
         ]
         ledger = _create_ledger(client, "Walk-in")
         extra = {"place_of_supply": place_of_supply} if place_of_supply else {}
+        if discounted:
+            extra.update(discount_type="percentage", discount_value="7.5")
         sale = _create_invoice(client, ledger, [
             {"product_id": product, "quantity": quantity, "unit_price": price, "gst_rate": rate}
             for product, (quantity, price, rate, _) in zip(products, lines)
-        ], invoice_date=datetime(2026, 5, 14, 12, 0), discount_type="percentage", discount_value="7.5",
+        ], invoice_date=datetime(2026, 5, 14, 12, 0),
             apply_round_off=True, tcs_section_id=_section_id(db_session, SCRAP_2025), **extra)
         assert sale["tcs_amount"] > 0
         assert sale["round_off_amount"] != 0
@@ -967,14 +986,31 @@ class TestCreditNotes:
         assert Decimal(str(month["taxable_value"])) + Decimal(str(month["gst_collected"])) == (
             Decimal(str(sale["total_amount"])) - Decimal(str(sale["tcs_amount"]))
         )
-        product_totals = client.get("/api/analytics/sales-by-product", params=params).json()["totals"]
+        by_product = client.get("/api/analytics/sales-by-product", params=params).json()
+        product_totals = by_product["totals"]
         assert product_totals["sales_amount"] == month["taxable_value"]
         assert product_totals["total_revenue"] == month["taxable_value"] + month["gst_collected"]
+        assert product_totals["total_gst"] == month["gst_collected"]
+        if discounted:
+            assert month["gst_collected"] == expected_gst
+        else:
+            # No discount: the GST is the GST the invoice charged, line by line,
+            # and the round-off sits wholly in the taxable value.
+            assert month["gst_collected"] == sale["total_tax_amount"]
+            assert sorted(row["total_gst"] for row in by_product["rows"]) == sorted(
+                item["tax_amount"] for item in sale["items"]
+            )
+            assert Decimal(str(month["taxable_value"])) == (
+                Decimal(str(sale["taxable_amount"])) + Decimal(str(sale["round_off_amount"]))
+            )
 
-        _create_note(
+        note = _create_note(
             client, sale, {item["id"]: int(item["quantity"]) for item in sale["items"]},
             credit_note_date=date(2026, 5, 25),
         )
+        # The full return credits exactly the GST the reports booked.
+        note_gst = sum(Decimal(str(note[key])) for key in ("cgst_amount", "sgst_amount", "igst_amount"))
+        assert note_gst == Decimal(str(month["gst_collected"]))
 
         month = client.get("/api/analytics/sales-by-month", params=params).json()["totals"]
         assert (month["taxable_value"], month["gst_collected"], month["total_sales"]) == (0, 0, 0)
