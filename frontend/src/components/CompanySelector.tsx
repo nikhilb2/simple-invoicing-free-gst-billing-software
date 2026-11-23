@@ -4,7 +4,8 @@ import { AnimatePresence, motion } from 'framer-motion';
 import api, { getApiErrorMessage } from '../api/client';
 import ModalCloseButton from './ModalCloseButton';
 import { useEscapeClose } from '../hooks/useEscapeClose';
-import { GSTIN_LENGTH, gstinError, normalizeGstinInput } from '../utils/gstin';
+import { GSTIN_LENGTH, gstinError } from '../utils/gstin';
+import GstinInput from './GstinInput';
 import type {
   CompanyCreationCapOut,
   CompanyListItem,
@@ -263,14 +264,13 @@ export default function CompanySelector() {
                 </label>
                 <label style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', fontSize: '0.875rem', fontWeight: 500 }}>
                   GSTIN (optional)
-                  <input
+                  <GstinInput
                     className="input"
                     ref={gstInputRef}
                     value={newCompanyGst}
-                    onChange={(e) => setNewCompanyGst(normalizeGstinInput(e.target.value))}
+                    onValueChange={setNewCompanyGst}
                     onBlur={() => setGstTouched(true)}
                     placeholder="27ABCDE1234F1Z0"
-                    maxLength={GSTIN_LENGTH}
                     aria-invalid={gstError ? true : undefined}
                     aria-describedby={gstError ? 'new-company-gst-error' : undefined}
                   />

@@ -1,11 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
 import { RotateCcw } from 'lucide-react';
-import api from '../../api/client';
+import { fetchAllLedgers, fetchAllProducts } from '../../api/lookups';
 import LedgerCombobox from '../../components/LedgerCombobox';
 import ProductCombobox from '../../components/ProductCombobox';
 import { useFY } from '../../context/FYContext';
 import type { AnalyticsFilters as Filters } from '../../features/analytics/types';
-import type { Ledger, Product } from '../../types/api';
 
 type Props = {
   filters: Filters;
@@ -34,18 +33,12 @@ export default function AnalyticsFilters({
 
   const ledgersQuery = useQuery({
     queryKey: ['ledgers', 'lookup'],
-    queryFn: async () => {
-      const response = await api.get<{ items: Ledger[] }>('/ledgers/', { params: { page_size: 500 } });
-      return response.data.items ?? [];
-    },
+    queryFn: fetchAllLedgers,
   });
 
   const productsQuery = useQuery({
     queryKey: ['products', 'lookup'],
-    queryFn: async () => {
-      const response = await api.get<{ items: Product[] }>('/products/', { params: { page_size: 500 } });
-      return response.data.items ?? [];
-    },
+    queryFn: fetchAllProducts,
     enabled: showProductFilter,
   });
 

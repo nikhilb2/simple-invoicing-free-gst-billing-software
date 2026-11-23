@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import api, { getApiErrorMessage } from '../api/client';
+import GstinInput from '../components/GstinInput';
 import StatusToasts from '../components/StatusToasts';
 import type { CompanyProfile, Ledger, LedgerCreate } from '../types/api';
 import { GSTIN_LENGTH, describeGstin, gstinError, normalizeGstinInput } from '../utils/gstin';
@@ -204,14 +205,13 @@ export default function   LedgerCreatePage() {
                 </div>
                 <div className="field">
                   <label htmlFor="ledger-gst">GSTIN</label>
-                  <input
+                  <GstinInput
                     id="ledger-gst"
                     className="input"
                     value={form.gst}
-                    onChange={(e) => setForm((c) => ({ ...c, gst: normalizeGstinInput(e.target.value) }))}
+                    onValueChange={(gst) => setForm((c) => ({ ...c, gst }))}
                     onBlur={() => setGstTouched(true)}
                     placeholder="27ABCDE1234F1Z0"
-                    maxLength={GSTIN_LENGTH}
                     aria-invalid={gstError ? true : undefined}
                     aria-describedby={gstError ? 'ledger-gst-hint ledger-gst-error' : 'ledger-gst-hint'}
                   />

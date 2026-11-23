@@ -282,13 +282,10 @@ def _bootstrap_company(client, name: str) -> tuple[int, dict]:
     company_id = response.json()["id"]
     headers = {"X-Company-Id": str(company_id)}
 
-    year = _this_year()
-    response = client.post(
-        "/api/financial-years/",
-        headers=headers,
-        json={"label": str(year), "start_date": f"{year}-01-01", "end_date": f"{year}-12-31"},
-    )
-    assert response.status_code < 400, f"FY create failed: {response.text}"
+    response = client.get("/api/financial-years/", headers=headers)
+    assert response.status_code == 200, response.text
+    financial_year, = response.json()
+    assert financial_year["is_active"]
 
     response = client.post(
         "/api/ledgers/",
@@ -733,19 +730,10 @@ def test_editing_an_invoice_with_a_credit_note_is_refused_not_500(client, db_ses
     assert response.status_code == 400, response.text
     assert "credit notes against it" in response.text
 
-    # A note whose row survives with status "cancelled" (legacy data) still
-    # has items pointing at the invoice lines, so the edit stays refused.
-    stored = db_session.get(CreditNote, note["id"])
-    stored.status = "cancelled"
-    db_session.commit()
-    response = client.put(f"/api/invoices/{invoice['id']}", json=payload)
-    assert response.status_code == 400, response.text
-    assert "credit notes against it" in response.text
-
 
 def test_editing_an_invoice_after_its_credit_note_is_cancelled_works(client, db_session):
-    """Cancelling a note through the API deletes it and its items, so the
-    invoice is editable again afterwards."""
+    """A cancelled note keeps its row (#800), but its items no longer hold the
+    invoice lines: the invoice is editable again, and the note is still there."""
     invoice, note, product_id = _invoice_with_return_note(client, db_session)
 
     response = client.post(f"/api/credit-notes/{note['id']}/cancel")
@@ -757,6 +745,75 @@ def test_editing_an_invoice_after_its_credit_note_is_cancelled_works(client, db_
         "items": [{"product_id": product_id, "quantity": 10, "unit_price": 100}],
     })
     assert response.status_code == 200, response.text
+
+    kept = client.get(f"/api/credit-notes/{note['id']}").json()
+    assert (kept["credit_note_number"], kept["status"]) == (note["credit_note_number"], "cancelled")
+    assert kept["items"][0]["invoice_id"] == invoice["id"]
+    assert kept["items"][0]["invoice_item_id"] is None
+
+
+def test_a_cancelled_credit_note_is_kept_and_no_longer_counts(client, db_session):
+    """Cancelling keeps the note and its number, marked cancelled (#800). It no
+    longer credits the invoice, so the same units can be credited again."""
+    invoice, note, product_id = _invoice_with_return_note(client, db_session)
+
+    response = client.post(f"/api/credit-notes/{note['id']}/cancel")
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "cancelled"
+    assert _stock(db_session, product_id) == 90
+
+    listed = _list(client, invoice_id=invoice["id"])
+    assert [(n["credit_note_number"], n["status"]) for n in listed["items"]] == [
+        (note["credit_note_number"], "cancelled")
+    ]
+    assert listed["items"][0]["cancelled_at"] is not None
+    assert _numbers(_list(client, invoice_id=invoice["id"], status="active")) == []
+    assert client.get(f"/api/invoices/{invoice['id']}").json()["credit_status"] == "not_credited"
+
+    # All ten units can be credited again: the cancelled note's four no longer count.
+    response = client.post("/api/credit-notes/", json={
+        "ledger_id": invoice["ledger_id"],
+        "invoice_ids": [invoice["id"]],
+        "credit_note_type": "return",
+        "direction": "outward",
+        "items": [{"invoice_id": invoice["id"], "invoice_item_id": invoice["items"][0]["id"], "quantity": 10}],
+    })
+    assert response.status_code == 201, response.text
+    again = response.json()
+    assert again["credit_note_number"] != note["credit_note_number"]
+    assert again["total_amount"] == invoice["total_amount"]
+    assert _stock(db_session, product_id) == 100
+    assert client.get(f"/api/invoices/{invoice['id']}").json()["credit_status"] == "fully_credited"
+
+    # Cancelling it twice is refused and moves no stock.
+    response = client.post(f"/api/credit-notes/{note['id']}/cancel")
+    assert response.status_code == 400, response.text
+    assert "already cancelled" in response.text
+    assert _stock(db_session, product_id) == 100
+
+
+def test_a_ledger_or_product_left_with_only_a_cancelled_note_cannot_be_deleted(client, db_session):
+    """Editing the invoice to another party and product after cancelling its
+    note leaves the note on the old ones. Deleting them is refused, not a 500."""
+    invoice, note, product_id = _invoice_with_return_note(client, db_session)
+    assert client.post(f"/api/credit-notes/{note['id']}/cancel").status_code == 200
+    other_ledger = _create_ledger(client, f"Buyer {uuid4().hex[:8]}")
+    other_product = _create_product(client, f"SKU-{uuid4().hex[:8]}", "Gadget", stock=100)
+
+    response = client.put(f"/api/invoices/{invoice['id']}", json={
+        "ledger_id": other_ledger,
+        "voucher_type": "sales",
+        "items": [{"product_id": other_product, "quantity": 10, "unit_price": 100}],
+    })
+    assert response.status_code == 200, response.text
+
+    response = client.delete(f"/api/ledgers/{invoice['ledger_id']}")
+    assert response.status_code == 400, response.text
+    assert "credit notes" in response.text
+
+    response = client.delete(f"/api/products/{product_id}")
+    assert response.status_code == 400, response.text
+    assert "credit notes" in response.text
 
 
 def test_date_to_at_the_end_of_the_supported_range_does_not_overflow(client, seeded):

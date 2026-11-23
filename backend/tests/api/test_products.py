@@ -445,6 +445,46 @@ def test_search_products(client):
     assert response.status_code == 200
 
 
+def test_search_products_escapes_percent_in_sku(client):
+    client.post("/api/products/", json={
+        "sku": "DISC100%",
+        "name": "Percent Product",
+        "price": 10,
+        "gst_rate": 5,
+    })
+    client.post("/api/products/", json={
+        "sku": "DISC100X",
+        "name": "Other Product",
+        "price": 10,
+        "gst_rate": 5,
+    })
+
+    response = client.get("/api/products/", params={"search": "100%"})
+
+    assert response.status_code == 200
+    assert [item["sku"] for item in response.json()["items"]] == ["DISC100%"]
+
+
+def test_search_products_escapes_underscore_in_sku(client):
+    client.post("/api/products/", json={
+        "sku": "AB_1",
+        "name": "Underscore Product",
+        "price": 10,
+        "gst_rate": 5,
+    })
+    client.post("/api/products/", json={
+        "sku": "ABX1",
+        "name": "Wildcard Lookalike",
+        "price": 10,
+        "gst_rate": 5,
+    })
+
+    response = client.get("/api/products/", params={"search": "AB_1"})
+
+    assert response.status_code == 200
+    assert [item["sku"] for item in response.json()["items"]] == ["AB_1"]
+
+
 def test_create_untracked_product_skips_inventory(client, db_session):
     response = client.post(
         "/api/products/",

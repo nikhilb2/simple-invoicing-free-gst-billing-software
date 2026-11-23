@@ -67,5 +67,5 @@ The **Credit note feed** on the right has search and filters for status, voucher
 **View** on a Credit Note or Debit Note row in a [ledger](../ledgers/) opens the same preview.
 
 ::: danger Cancelling is immediate and permanent
-**Cancel credit note** has no confirmation step, and **deletes** the note. Its stock movement is reversed and the invoice's balance is restored. If you might need the record, do not cancel it. A cancelled note will not appear under the **Cancelled** filter.
+**Cancel credit note** has no confirmation step and cannot be undone. Its stock movement is reversed and the invoice's balance is restored, so the same goods can be credited again on a new note. The cancelled note stays in the feed, marked **Cancelled**, and keeps its number. GSTR-1 counts it in Table 13 as issued and cancelled.
 :::

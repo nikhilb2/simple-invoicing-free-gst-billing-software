@@ -22,6 +22,7 @@ import { useFY } from '../../context/FYContext';
 import { useShortcuts } from '../../context/ShortcutsContext';
 import { fetchInvoiceById, fetchInvoiceComposerData, fetchLedgerAddresses, fetchTcsSections } from '../../features/invoices/api';
 import { EMPTY_TCS_FORM, buildTcsPayload, findTcsSection, reconcileTcsSection, tcsFormForCopy, tcsFormFromDocument, tcsFormOnBuyerChange, tcsTotalsInput, type TcsFormState } from './tcsForm';
+import { editingInvoiceTitle } from './editingTitle';
 import TcsFields from './components/TcsFields';
 import { createQuotation, fetchConversionDraft, fetchQuotationById, updateQuotation } from '../../features/quotations/api';
 import { quotationQueryKeys } from '../../features/quotations/queryKeys';
@@ -117,6 +118,7 @@ export default function InvoicesPage() {
   const [serialBlockIds, setSerialBlockIds] = useState<number[]>([]);
   const [scanTargetItemId, setScanTargetItemId] = useState<number | null>(null);
   const [editingInvoiceId, setEditingInvoiceId] = useState<number | null>(null);
+  const [editingInvoiceNumber, setEditingInvoiceNumber] = useState<string | null>(null);
   /* Quotation and proforma modes. The voucher select is locked in both of these:
      a saved document's type is fixed, and a conversion can only make a sale. */
   const [editingQuotation, setEditingQuotation] = useState<Quotation | null>(null);
@@ -984,6 +986,7 @@ export default function InvoicesPage() {
     setError('');
     setSuccess('');
     setEditingInvoiceId(invoice.id);
+    setEditingInvoiceNumber(invoice.invoice_number);
     setChallanConversion(null);
     setChallanConversionOutOfDate(false);
     setChallanAlreadyInvoiced(null);
@@ -1363,7 +1366,7 @@ export default function InvoicesPage() {
             <div>
               <p className="eyebrow">Create {documentName}</p>
               <h2 className="nav-panel__title">
-                {editingInvoiceId ? `Editing invoice #${editingInvoiceId}`
+                {editingInvoiceId ? editingInvoiceTitle(editingInvoiceId, editingInvoiceNumber)
                   : editingQuotation ? `Editing ${editingQuotation.quotation_number}`
                     : conversion ? `Converting ${conversion.quotation_number}`
                       : challanConversion ? `Converting ${challanConversion.challan_number}` : 'Order entry'}

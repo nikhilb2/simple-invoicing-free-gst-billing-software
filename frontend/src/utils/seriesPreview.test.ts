@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import type { InvoiceSeries, InvoiceSeriesUpdate } from '../types/api';
-import { buildSeriesPreview, gstr1SeriesFormatError } from './seriesPreview';
+import { buildSeriesPreview, gstr1SeriesFormatError, parseNextSequenceInput } from './seriesPreview';
 
 const format: Required<InvoiceSeriesUpdate> = {
   prefix: 'INV', suffix: '', include_year: true, year_format: 'YYYY',
@@ -86,5 +86,26 @@ describe('GSTR-1 format validation', () => {
     { year_format: 'FY' }, { separator: '/' }, { pad_digits: 4 },
   ])('checks every changed format field: %j', patch => {
     expect(errorFor(patch, { ...saved, prefix: 'LEGACY_' })).not.toBeNull();
+  });
+});
+
+describe('parseNextSequenceInput', () => {
+  test('a blank box is empty, not 1, so a new number can be typed after backspacing (#922)', () => {
+    expect(parseNextSequenceInput('')).toBeNull();
+    expect(parseNextSequenceInput('  ')).toBeNull();
+  });
+
+  test('reads a whole number of 1 or more', () => {
+    expect(parseNextSequenceInput('300')).toBe(300);
+    expect(parseNextSequenceInput(' 125 ')).toBe(125);
+    expect(parseNextSequenceInput('1')).toBe(1);
+  });
+
+  test('refuses zero, negatives, decimals and other text', () => {
+    expect(parseNextSequenceInput('0')).toBeNull();
+    expect(parseNextSequenceInput('-5')).toBeNull();
+    expect(parseNextSequenceInput('2.5')).toBeNull();
+    expect(parseNextSequenceInput('1e3')).toBeNull();
+    expect(parseNextSequenceInput('abc')).toBeNull();
   });
 });

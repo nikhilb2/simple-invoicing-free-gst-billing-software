@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from src.api.deps import get_active_company, get_current_user
 from src.api.pagination import MAX_PAGE
+from src.api.search import contains_pattern
 from src.core.analytics import distinct_id_for, track
 from src.db.session import get_db
 from src.models.company import CompanyProfile
@@ -104,11 +105,12 @@ def list_credit_notes(
             q = q.filter(CreditNote.direction == direction)
 
     if search:
+        term = contains_pattern(search)
         # A supplier's note is looked up by their number, not the one we gave it.
         q = q.filter(
             or_(
-                CreditNote.credit_note_number.ilike(f"%{search}%"),
-                CreditNote.supplier_credit_note_number.ilike(f"%{search}%"),
+                CreditNote.credit_note_number.ilike(term, escape="\\"),
+                CreditNote.supplier_credit_note_number.ilike(term, escape="\\"),
             )
         )
 

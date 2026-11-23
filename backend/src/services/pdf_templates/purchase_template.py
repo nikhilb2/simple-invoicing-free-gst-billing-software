@@ -19,6 +19,7 @@ from .builders import (
     _pdf_display_quantity,
     _pdf_display_unit,
     _pdf_unit_price,
+    invoice_cancellation_html,
 )
 
 
@@ -167,7 +168,7 @@ def _build_purchase_invoice_html(
   {page_rule}
   * {{ margin: 0; padding: 0; box-sizing: border-box; }}
   body {{
-    font-family: -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    font-family: -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, 'Noto Sans', 'Noto Sans Devanagari', sans-serif;
     font-size: 10px;
     color: #1f2937;
     line-height: 1.5;
@@ -324,6 +325,7 @@ def _build_purchase_invoice_html(
 </head>
 <body>
 <div class="invoice-sheet">
+  {invoice_cancellation_html(invoice)}
   <header class="invoice-sheet__header">
     <div>
       <p class="eyebrow">Supplier</p>
@@ -376,7 +378,7 @@ def _build_purchase_invoice_html(
       <p>Total tax: {_fmt_currency(float(invoice.total_tax_amount or 0), currency)}</p>
       {invoice_discount_label}
       {round_off_html}
-      <p class="eyebrow" style="margin-top: 10px;">Total due</p>
+      <p class="eyebrow" style="margin-top: 10px;">{'Cancelled invoice total' if getattr(invoice, 'status', None) == 'cancelled' else 'Total due'}</p>
       <p class="invoice-sheet__total-value">{_fmt_currency(float(invoice.total_amount), currency)}</p>
       <p class="invoice-amount-words">{_amount_in_words_indian(float(invoice.total_amount), currency)}</p>
       {settlement_html}

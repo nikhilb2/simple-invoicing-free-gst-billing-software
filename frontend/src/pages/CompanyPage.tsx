@@ -14,10 +14,10 @@ import { setupPromptChoices } from '../utils/setupPrompt';
 import { useFY } from '../context/FYContext';
 import { PAPER_LABELS } from '../utils/paper';
 import type { CompanyProfile, CompanyProfileUpdate, InvoiceSeries, InvoiceSeriesUpdate, CompanyTermOut, PdfPaper } from '../types/api';
-import { clearSetupDraft, isCompanyConfigured, isCompanyFormDirty, missingCompanyFields, readSetupDraft, writeSetupDraft, type MissingCompanyFields } from '../utils/companySetup';
+import { clearSetupDraft, companyFormCurrency, isCompanyConfigured, isCompanyFormDirty, missingCompanyFields, readSetupDraft, writeSetupDraft, type MissingCompanyFields } from '../utils/companySetup';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { isCurrencyChange } from '../utils/currencyChange';
-import { buildSeriesPreview, gstr1SeriesFormatError } from '../utils/seriesPreview';
+import { buildSeriesPreview, gstr1SeriesFormatError, parseNextSequenceInput } from '../utils/seriesPreview';
 import { purchaseTdsSetting } from '../utils/tds';
 import { companyIdentityErrors, firstIdentityErrorField, type CompanyIdentityErrors } from '../utils/companyFieldErrors';
 import { GSTIN_LENGTH, gstinError, normalizeGstinInput } from '../utils/gstin';
@@ -415,6 +415,7 @@ function InvoiceSeriesCard({ sectionRef, savedGstin }: { sectionRef?: React.RefO
   const { activeFY, loading: fyLoading } = useFY();
   const [seriesList, setSeriesList] = useState<InvoiceSeries[]>([]);
   const [drafts, setDrafts] = useState<Record<number, SeriesRowState>>({});
+  const [nextSequenceText, setNextSequenceText] = useState<Record<number, string>>({});
   const [saving, setSaving] = useState<Record<number, boolean>>({});
   const [rowError, setRowError] = useState<Record<number, string>>({});
   const [rowSuccess, setRowSuccess] = useState<Record<number, string>>({});
@@ -434,7 +435,9 @@ function InvoiceSeriesCard({ sectionRef, savedGstin }: { sectionRef?: React.RefO
         if (cancelled) return;
         setSeriesList(res.data);
         const initial: Record<number, SeriesRowState> = {};
+        const initialText: Record<number, string> = {};
         for (const s of res.data) {
+          initialText[s.id] = String(s.next_sequence);
           initial[s.id] = {
             prefix: s.prefix,
             suffix: s.suffix,
@@ -446,6 +449,7 @@ function InvoiceSeriesCard({ sectionRef, savedGstin }: { sectionRef?: React.RefO
           };
         }
         setDrafts(initial);
+        setNextSequenceText(initialText);
       } catch {
         // non-admin users won't see this card
       } finally {
@@ -462,6 +466,16 @@ function InvoiceSeriesCard({ sectionRef, savedGstin }: { sectionRef?: React.RefO
     setDrafts((prev) => ({ ...prev, [id]: { ...prev[id], ...patch } }));
   }
 
+  function changeNextSequence(id: number, raw: string) {
+    setNextSequenceText((prev) => ({ ...prev, [id]: raw }));
+    const value = parseNextSequenceInput(raw);
+    if (value !== null) patchDraft(id, { next_sequence: value });
+  }
+
+  function nextSequenceTextOf(id: number): string {
+    return nextSequenceText[id] ?? String(drafts[id]?.next_sequence ?? '');
+  }
+
   async function saveSeries(s: InvoiceSeries) {
     const draft = drafts[s.id];
     if (!draft) return;
@@ -473,6 +487,7 @@ function InvoiceSeriesCard({ sectionRef, savedGstin }: { sectionRef?: React.RefO
     try {
       const res = await api.put<InvoiceSeries>(`/invoice-series/${s.id}`, draft);
       setSeriesList((prev) => prev.map((x) => (x.id === s.id ? res.data : x)));
+      setNextSequenceText((prev) => ({ ...prev, [s.id]: String(res.data.next_sequence) }));
       setRowSuccess((prev) => ({ ...prev, [s.id]: 'Saved' }));
       setTimeout(() => setRowSuccess((prev) => ({ ...prev, [s.id]: '' })), 2500);
     } catch (err) {
@@ -508,6 +523,7 @@ function InvoiceSeriesCard({ sectionRef, savedGstin }: { sectionRef?: React.RefO
           const preview = buildSeriesPreview(draft, draft.next_sequence, activeFY?.label);
           const longest = buildSeriesPreview(draft, Math.max(draft.next_sequence, 9999), activeFY?.label);
           const formatError = gstr1SeriesFormatError(draft, s, savedGstin, activeFY?.label);
+          const nextSequenceInvalid = parseNextSequenceInput(nextSequenceTextOf(s.id)) === null;
           return (
             <div key={s.id} className="panel" style={{ padding: '16px' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
@@ -588,9 +604,21 @@ function InvoiceSeriesCard({ sectionRef, savedGstin }: { sectionRef?: React.RefO
                     type="number"
                     min={1}
                     step={1}
-                    value={draft.next_sequence}
-                    onChange={(e) => patchDraft(s.id, { next_sequence: Math.max(1, parseInt(e.target.value, 10) || 1) })}
+                    value={nextSequenceTextOf(s.id)}
+                    onChange={(e) => changeNextSequence(s.id, e.target.value)}
+                    onBlur={() => {
+                      if (nextSequenceInvalid) {
+                        setNextSequenceText((prev) => ({ ...prev, [s.id]: String(draft.next_sequence) }));
+                      }
+                    }}
+                    aria-invalid={nextSequenceInvalid ? true : undefined}
+                    aria-describedby={nextSequenceInvalid ? `series-next-seq-error-${s.id}` : undefined}
                   />
+                  {nextSequenceInvalid && (
+                    <p className="field-error" id={`series-next-seq-error-${s.id}`} role="alert">
+                      Enter a whole number of 1 or more.
+                    </p>
+                  )}
                 </div>
 
                 <div className="field" style={{ display: 'flex', alignItems: 'center', gap: '8px', paddingTop: '22px' }}>
@@ -612,7 +640,7 @@ function InvoiceSeriesCard({ sectionRef, savedGstin }: { sectionRef?: React.RefO
                 <button
                   className="button button--primary"
                   style={{ marginTop: 0, padding: '6px 16px', fontSize: '0.875rem' }}
-                  disabled={saving[s.id] || Boolean(formatError)}
+                  disabled={saving[s.id] || Boolean(formatError) || nextSequenceInvalid}
                   onClick={() => void saveSeries(s)}
                 >
                   {saving[s.id] ? 'Saving…' : 'Save'}
@@ -817,7 +845,7 @@ export default function CompanyPage() {
         tan: data.tan || '',
         enable_purchase_tds: data.enable_purchase_tds || false,
         phone_number: data.phone_number || '',
-        currency_code: data.currency_code || 'USD',
+        currency_code: companyFormCurrency(data.currency_code),
         email: data.email || '',
         website: data.website || '',
         show_sku_on_pdf: data.show_sku_on_pdf || false,

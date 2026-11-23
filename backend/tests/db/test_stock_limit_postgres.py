@@ -194,7 +194,9 @@ def test_return_allows_maximum_stock(tenant, app_db, product, action):
         assert len(notes) == 1
         assert notes[0][1:] == ("active", None)
     else:
-        assert notes == []
+        # The cancelled note keeps its row (#800).
+        assert len(notes) == 1
+        assert notes[0][1] == "cancelled" and notes[0][2] is not None
 
 
 def test_production_database_error_is_private_and_rolls_back(tenant, app_db, product):

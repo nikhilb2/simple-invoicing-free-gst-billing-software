@@ -154,7 +154,7 @@ def _build_delivery_challan_html(
   {page_rule}
   * {{ margin: 0; padding: 0; box-sizing: border-box; }}
   body {{
-    font-family: -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    font-family: -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, 'Noto Sans', 'Noto Sans Devanagari', sans-serif;
     font-size: 10px;
     color: #1f2937;
     line-height: 1.5;

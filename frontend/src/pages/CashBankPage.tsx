@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import api, { getApiErrorMessage } from '../api/client';
+import { fetchAllLedgers } from '../api/lookups';
 import ModalCloseButton from '../components/ModalCloseButton';
 import StatusToasts from '../components/StatusToasts';
 import ScopeBar, { Metric } from '../components/ScopeBar';
@@ -93,13 +94,13 @@ export default function CashBankPage() {
       const [accountsResponse, paymentsResponse, ledgersResponse, companyResponse] = await Promise.all([
         api.get<CompanyAccount[]>('/company-accounts/'),
         api.get<Payment[]>('/payments/'),
-        api.get<{ items: Ledger[] }>('/ledgers/', { params: { page_size: 500 } }),
+        fetchAllLedgers(),
         api.get<CompanyProfile>('/company/'),
       ]);
 
       setAccounts(accountsResponse.data);
       setPayments(paymentsResponse.data);
-      setLedgers(ledgersResponse.data.items);
+      setLedgers(ledgersResponse);
       setCompany(companyResponse.data);
     } catch (err) {
       setPayments([]);

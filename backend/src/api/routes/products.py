@@ -14,6 +14,7 @@ from decimal import Decimal
 from src.db.session import get_db
 from src.models.bom import BillOfMaterial
 from src.models.company import CompanyProfile
+from src.models.credit_note import CreditNote, CreditNoteItem
 from src.models.inventory import Inventory
 from src.models.invoice import Invoice, InvoiceItem
 from src.models.marketplace import MarketplaceListing, MarketplaceOrder, MarketplaceOrderItem, MarketplaceProductLink
@@ -33,6 +34,7 @@ from src.schemas.product import (
 )
 from src.api.deps import get_active_company, get_current_user, require_company_role
 from src.api.pagination import MAX_PAGE
+from src.api.search import contains_pattern
 from src.core.analytics import distinct_id_for, track
 from src.core.document_limits import MONEY_STORAGE_CUTOFF, QUANTITY_STORAGE_CUTOFF
 from src.core.validation import hsn_sac_warning, normalize_hsn_sac
@@ -209,8 +211,8 @@ def list_products(
 ):
     query = db.query(Product).filter(Product.company_id == active_company.id)
     if search.strip():
-        term = f"%{search.strip()}%"
-        query = query.filter(or_(Product.name.ilike(term), Product.sku.ilike(term)))
+        term = contains_pattern(search)
+        query = query.filter(or_(Product.name.ilike(term, escape="\\"), Product.sku.ilike(term, escape="\\")))
     if is_producable is not None:
         query = query.filter(Product.is_producable == is_producable)
     total = query.count()
@@ -375,7 +377,30 @@ def _backfill_serials(
     # switched back on already has some of its units covered.
     on_hand = int(stock)
     already = SerialManager(db).count_in_stock(product.id, company_id=company_id)
-    missing = max(on_hand - already, 0)
+    if already > on_hand:
+        # Units sold while tracking was off left no trace on the serial rows, so
+        # the rows now outnumber the shelf. Saving anyway would break the invariant
+        # inventory == in-stock serials and let the picker offer units that are gone
+        # (#918). The merchant can name the serials of the units still on the shelf
+        # in this same save; the remaining rows are written off automatically.
+        if len(codes) == on_hand:
+            SerialManager(db).keep_only(
+                codes,
+                product_id=product.id,
+                company_id=company_id,
+                note="Voided when serial tracking was re-enabled: the unit already left",
+            )
+            return
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"{product.name} has {_plural(already, 'serial number')} in stock but only "
+                f"{_plural(on_hand, 'unit')} on the shelf. Provide the "
+                f"{_plural(on_hand, 'serial number')} of the units still on the shelf to "
+                "keep them and write off the rest."
+            ),
+        )
+    missing = on_hand - already
     if len(codes) != missing:
         raise HTTPException(
             status_code=400,
@@ -412,6 +437,17 @@ def delete_product(
     )
     if has_invoice_items:
         raise HTTPException(status_code=400, detail="Cannot delete product linked to invoices")
+
+    # A cancelled note keeps its items (#800), even once its invoice is edited
+    # to drop the product.
+    has_credit_note_items = (
+        db.query(CreditNoteItem.id)
+        .join(CreditNote, CreditNoteItem.credit_note_id == CreditNote.id)
+        .filter(CreditNoteItem.product_id == product_id, CreditNote.company_id == active_company.id)
+        .first()
+    )
+    if has_credit_note_items:
+        raise HTTPException(status_code=400, detail="Cannot delete product linked to credit notes")
 
     has_quotation_items = (
         db.query(QuotationItem.id)
@@ -525,7 +561,7 @@ def _apply_catalogue_filters(
     """
     if search.strip():
         cleaned = search.strip()
-        term = f"%{cleaned}%"
+        term = contains_pattern(search)
         # A pasted IMEI names a unit, not a product, so the search also reaches
         # into the serial register and returns the product that unit belongs to
         # — the catalogue-side counterpart of the invoice list's serial search.
@@ -537,7 +573,7 @@ def _apply_catalogue_filters(
         #
         # Sold and void rows are matched too: "which product is this unit?" is
         # asked most often about a handset that has already left the shelf.
-        serial_term = f"%{cleaned.upper()}%"
+        serial_term = contains_pattern(cleaned.upper())
         serial_subq = (
             db.query(ProductSerial.product_id)
             .filter(
@@ -545,7 +581,7 @@ def _apply_catalogue_filters(
                 # products they point at — a serial belonging to another company
                 # must never name a product here.
                 ProductSerial.company_id == company_id,
-                func.upper(ProductSerial.serial_number).like(serial_term),
+                func.upper(ProductSerial.serial_number).ilike(serial_term, escape="\\"),
             )
             # ``scalar_subquery`` rather than ``subquery``: IN() over a plain
             # Subquery is coerced with a SAWarning on SQLAlchemy 2.
@@ -553,8 +589,8 @@ def _apply_catalogue_filters(
         )
         query = query.filter(
             or_(
-                Product.name.ilike(term),
-                Product.sku.ilike(term),
+                Product.name.ilike(term, escape="\\"),
+                Product.sku.ilike(term, escape="\\"),
                 Product.id.in_(serial_subq),
             )
         )
@@ -726,6 +762,9 @@ def update_product_with_inventory(
     )
     if not product:
         raise HTTPException(status_code=404, detail=f"Product {product_id} not found")
+
+    if payload.status == "inactive" and product.track_serials:
+        raise HTTPException(status_code=400, detail="Serial-tracked products must maintain inventory")
 
     # Update product fields
     if payload.name is not None:

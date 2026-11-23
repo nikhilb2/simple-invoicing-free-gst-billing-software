@@ -23,6 +23,7 @@ from .builders import (
     _pdf_display_quantity,
     _pdf_display_unit,
     _pdf_unit_price,
+    invoice_cancellation_html,
 )
 from .purchase_template import (
     _build_item_serials_html,
@@ -50,11 +51,15 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
         return _build_purchase_invoice_html(invoice, products, serials, settlement=settlement, paper=paper)
 
     compact = paper == "a5"
+    cancelled = getattr(invoice, "status", None) == "cancelled"
+    if cancelled:
+        pay_qr_html = ""
     page_rule, paper_css = document_paper_css(paper)
     currency = invoice.company_currency_code or "USD"
     voucher_label = "Sales" if invoice.voucher_type == "sales" else "Purchase"
     inv_number = invoice.invoice_number or f"#{invoice.id}"
     inv_date = invoice.invoice_date.strftime("%d %b %Y") if invoice.invoice_date else (invoice.created_at.strftime("%d %b %Y") if invoice.created_at else "N/A")
+    due_date_line = f"<p>Due date: {invoice.due_date:%d %b %Y}</p>" if invoice.due_date else ""
     place_of_supply = getattr(invoice, "place_of_supply", None)
     # A buyer with no GSTIN gives nothing to compare, so the place of supply decides.
     interstate_supply = (
@@ -248,7 +253,7 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
   {page_rule}
   * {{ margin: 0; padding: 0; box-sizing: border-box; }}
   body {{
-    font-family: -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    font-family: -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, 'Noto Sans', 'Noto Sans Devanagari', sans-serif;
     font-size: 10px;
     color: #1f2937;
     line-height: 1.5;
@@ -565,6 +570,7 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
 <div class="invoice-sheet">
   <div class="copy-label">{copy_label}</div>
   <div class="invoice-title">{invoice_title}</div>
+  {invoice_cancellation_html(invoice)}
   <header class="invoice-sheet__header">
     <div>
       <p class="eyebrow">Billed by</p>
@@ -578,6 +584,7 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
       <span class="invoice-badge">{voucher_label}</span>
       <h2>Invoice {_e(inv_number)}</h2>
       <p>Date: {inv_date}</p>
+      {due_date_line}
       {place_of_supply_line}
       {source_challan_line}
       <p>Currency: {_e(currency)}</p>
@@ -620,7 +627,7 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
       {invoice_discount_label}
       {_build_tcs_html(invoice, currency)}
       {round_off_html}
-      <p class="eyebrow" style="margin-top: 10px;">Total due</p>
+      <p class="eyebrow" style="margin-top: 10px;">{'Cancelled invoice total' if cancelled else 'Total due'}</p>
       <p class="invoice-sheet__total-value">{_fmt_currency(float(invoice.total_amount), currency)}</p>
       <p class="invoice-amount-words">{_amount_in_words_indian(float(invoice.total_amount), currency)}</p>
       <p class="muted-text">Authorized by {_e(invoice.company_name) or 'Billing company'}</p>

@@ -34,6 +34,7 @@ from .builders import (
     _pdf_display_quantity,
     _pdf_display_unit,
     _pdf_unit_price,
+    invoice_cancellation_note,
     tcs_label,
 )
 from .purchase_template import _extract_pan_from_gstin, _is_interstate_supply
@@ -230,7 +231,7 @@ def _build_thermal_html(doc: ThermalDoc, width_mm: int) -> str:
   * {{ margin: 0; padding: 0; box-sizing: border-box; }}
   html, body {{ color: #000; background: #fff; }}
   body {{
-    font-family: 'DejaVu Sans', Arial, sans-serif;
+    font-family: 'DejaVu Sans', Arial, 'Noto Sans', 'Noto Sans Devanagari', sans-serif;
     font-size: {base_pt}pt;
     line-height: 1.3;
     padding: 3mm {side_mm}mm 5mm;
@@ -441,6 +442,7 @@ def thermal_invoice_doc(
 ) -> ThermalDoc:
     """A sales invoice, or a purchase bill with the supplier as the party."""
     purchase = invoice.voucher_type == "purchase"
+    cancelled = getattr(invoice, "status", None) == "cancelled"
     currency = invoice.company_currency_code or "USD"
     place_of_supply = getattr(invoice, "place_of_supply", None)
     if purchase:
@@ -489,6 +491,7 @@ def thermal_invoice_doc(
     return ThermalDoc(
         title=title,
         copy_label=copy_label,
+        mark=invoice_cancellation_note(invoice),
         company_name=company_name,
         company_lines=_company_lines(
             invoice.company_address,
@@ -512,13 +515,13 @@ def thermal_invoice_doc(
         interstate=interstate,
         tax_rows=_tax_rows(invoice.items or [], interstate),
         totals=_gst_totals(invoice, interstate) + _adjustment_totals(invoice, currency),
-        grand_label="Total",
+        grand_label="Cancelled invoice total" if cancelled else "Total",
         grand_total=float(invoice.total_amount or 0),
         currency=currency,
         blocks=blocks,
         # A purchase bill is ours to pay, not the supplier's: never a pay QR, as on A4.
-        qr_uri="" if purchase else qr_uri,
-        qr_caption="Scan to view and pay online" if qr_uri and not purchase else "",
+        qr_uri="" if purchase or cancelled else qr_uri,
+        qr_caption="Scan to view and pay online" if qr_uri and not purchase and not cancelled else "",
         footer=f"{'Received' if purchase else 'Authorised'} by {company_name}",
     )
 

@@ -35,10 +35,10 @@ def _plain(quantity) -> str:
 def _return_note(credit_note_number: str) -> str:
     """The mark a return stamps on each unit it takes back.
 
-    ``cancel_credit_note`` deletes the credit note row, so the serials it moved
-    have to carry their own link back to it — this is what lets one of several
-    returns against the same invoice be cancelled without disturbing the units
-    the others brought in.
+    Serials have no column pointing at the credit note, so the ones it moved
+    carry their own link back to it — this is what lets one of several returns
+    against the same invoice be cancelled without disturbing the units the
+    others brought in.
     """
     return f"Returned on credit note {credit_note_number}"
 
@@ -658,13 +658,13 @@ def cancel_credit_note(cn_id: int, db: Session, company_id: int | None = None) -
     query = db.query(CreditNote).filter(CreditNote.id == cn_id)
     if company_id is not None:
         query = query.filter(company_scope(CreditNote.company_id, company_id))
-    cn = query.first()
+    # Locked, so two cancels of one note cannot both reverse its stock.
+    cn = query.with_for_update().first()
     if not cn:
         raise HTTPException(status_code=404, detail="Credit note not found")
+    if cn.status != "active":
+        raise HTTPException(status_code=400, detail="Credit note is already cancelled")
 
-    was_active = cn.status == "active"
-
-    # Collect invoice IDs before deletion so we can recompute status after
     affected_invoice_ids = list({item.invoice_id for item in cn.items if item.invoice_id})
 
     cn.status = "cancelled"
@@ -676,7 +676,7 @@ def cancel_credit_note(cn_id: int, db: Session, company_id: int | None = None) -
     direction = cn.direction or "outward"
     source_voucher_type = "purchase" if direction == "inward" else "sales"
 
-    if was_active and cn.credit_note_type == "return":
+    if cn.credit_note_type == "return":
         serials = SerialManager(db)
         for item in cn.items:
             if item.product_id and item.quantity:
@@ -719,7 +719,9 @@ def cancel_credit_note(cn_id: int, db: Session, company_id: int | None = None) -
                     **kwargs,
                 )
 
-    db.delete(cn)
+    # The row stays, marked cancelled: its number was issued, and GSTR-1 Table 13
+    # counts it as issued and cancelled (#800). Everything that adds up notes
+    # reads active ones only.
     db.flush()
 
     for inv_id in affected_invoice_ids:

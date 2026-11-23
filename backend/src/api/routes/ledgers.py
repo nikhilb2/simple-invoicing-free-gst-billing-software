@@ -16,6 +16,7 @@ from src.services.pdf_paper import ReportPaper, page_css, render_pdf, resolve_pa
 
 from src.api.deps import get_active_company, get_current_user, require_company_role
 from src.api.pagination import MAX_PAGE
+from src.api.search import contains_pattern
 from src.core.analytics import distinct_id_for, track
 from src.db.session import get_db
 from src.models.buyer import Buyer as Ledger
@@ -755,16 +756,7 @@ def list_ledgers(
     if company_id is not None:
       query = query.filter(company_scope(Ledger.company_id, company_id))
     if search.strip():
-        # Escape LIKE wildcards so a term such as 50% matches literally
-        # instead of matching every ledger. Phone numbers match on the raw
-        # stored text only in this first version, not on digits only.
-        escaped = (
-            search.strip()
-            .replace("\\", "\\\\")
-            .replace("%", "\\%")
-            .replace("_", "\\_")
-        )
-        pattern = f"%{escaped}%"
+        pattern = contains_pattern(search)
         query = query.filter(
             or_(
                 Ledger.name.ilike(pattern, escape="\\"),
@@ -1332,6 +1324,14 @@ def delete_ledger(
     has_payments = has_payments_query.first()
     if has_payments:
         raise HTTPException(status_code=400, detail="Cannot delete ledger linked to payments")
+
+    # A cancelled note stays on the ledger it was issued to (#800), even after
+    # its invoice moves to another party.
+    has_credit_notes_query = db.query(CreditNote.id).filter(CreditNote.ledger_id == ledger_id)
+    if company_id is not None:
+        has_credit_notes_query = has_credit_notes_query.filter(company_scope(CreditNote.company_id, company_id))
+    if has_credit_notes_query.first():
+        raise HTTPException(status_code=400, detail="Cannot delete ledger linked to credit notes")
 
     db.delete(ledger)
     db.commit()
@@ -1992,12 +1992,17 @@ def _gstr1_period_error(from_date: date, to_date: date) -> str | None:
     )
 
 
-def _gstr1_credit_notes(db: Session, from_date: date, to_date: date, company_id: int | None) -> list[CreditNote]:
-    """Active credit notes on our sales dated in the range, with items eagerly loaded."""
+def _gstr1_credit_notes(
+    db: Session, from_date: date, to_date: date, company_id: int | None, *, status: str = "active"
+) -> list[CreditNote]:
+    """Credit notes on our sales dated in the range, with items eagerly loaded.
+
+    Active ones by default; only Table 13 asks for the cancelled ones.
+    """
     query = (
         db.query(CreditNote)
         .options(joinedload(CreditNote.items).joinedload(CreditNoteItem.invoice_item))
-        .filter(CreditNote.status == "active")
+        .filter(CreditNote.status == status)
         .filter(CreditNote.credit_note_date >= datetime.combine(from_date, time.min))
         .filter(CreditNote.credit_note_date <= datetime.combine(to_date, time.max))
     )
@@ -2604,6 +2609,17 @@ def _gstr1_invoice_query(db: Session, from_date: date, to_date: date, company_id
     return query.order_by(Invoice.invoice_date.asc()).all()
 
 
+def _gstr1_cancelled_credit_note_numbers(
+    db: Session, from_date: date, to_date: date, company_id: int | None
+) -> list[str]:
+    """Numbers of the credit notes on our sales cancelled in the range, which Table 13 still counts."""
+    return [
+        cn.credit_note_number
+        for cn in _gstr1_credit_notes(db, from_date, to_date, company_id, status="cancelled")
+        if cn.credit_note_number
+    ]
+
+
 def _gstr1_cancelled_numbers(db: Session, from_date: date, to_date: date, company_id: int | None) -> list[str]:
     """Numbers of the sales invoices cancelled in the range, which Table 13 still counts."""
     query = (
@@ -2755,6 +2771,13 @@ def gstr1_validate(
         if not is_gstr1_document_number(number):
             errors.append(Gstr1ValidationError(
                 invoice_number=number, field="Invoice Number",
+                message=f"Cancelled, and left out of Table 13: GSTR-1 needs a number of {GSTR1_DOCUMENT_NUMBER_RULE}",
+                severity="warning",
+            ))
+    for number in _gstr1_cancelled_credit_note_numbers(db, from_date, to_date, company_id):
+        if not is_gstr1_document_number(number):
+            errors.append(Gstr1ValidationError(
+                invoice_number=number, field="Credit Note Number",
                 message=f"Cancelled, and left out of Table 13: GSTR-1 needs a number of {GSTR1_DOCUMENT_NUMBER_RULE}",
                 severity="warning",
             ))
@@ -3132,9 +3155,16 @@ def gstr1_export_json(
     # nature 5. Splitting it by credit_note_type reported part of the series as
     # a debit note series that was never issued. `credit_notes` is already
     # filtered to outward, so notes received from suppliers — which number out
-    # of their own DN series — never reach this range. A cancelled note's row is
-    # deleted, so it cannot be counted here.
-    cn_ranges = _doc_ranges([cn.credit_note_number or f"CN-{cn.id}" for cn in credit_notes])
+    # of their own DN series — never reach this range. Like a cancelled invoice,
+    # a cancelled note keeps its number and counts as issued (#800).
+    cancelled_note_numbers = [
+        number for number in _gstr1_cancelled_credit_note_numbers(db, from_date, to_date, company_id)
+        if is_gstr1_document_number(number)
+    ]
+    cn_ranges = _doc_ranges(
+        [cn.credit_note_number or f"CN-{cn.id}" for cn in credit_notes] + cancelled_note_numbers,
+        frozenset(cancelled_note_numbers),
+    )
     if cn_ranges:  # 5 = Credit Note
         doc_det.append({"doc_num": 5, "docs": cn_ranges})
 

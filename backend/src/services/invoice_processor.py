@@ -45,14 +45,11 @@ from src.services.company_access import company_scope, legacy_default_company
 # Module-level helpers — backward-compatible shims (delegate to InventoryManager)
 # ---------------------------------------------------------------------------
 
-def invoice_has_credit_notes(db: Session, invoice_id: int, *, active_only: bool = True) -> bool:
-    """Whether any credit note item references the invoice.
+def invoice_has_credit_notes(db: Session, invoice_id: int) -> bool:
+    """Whether an active credit note credits the invoice.
 
-    With ``active_only`` (the default), cancelled credit notes do not count:
-    their stock effect has already been unwound with them. Pass
-    ``active_only=False`` where even a cancelled note's items matter — they
-    still point at the invoice's items, so deleting those items would break
-    the ``credit_note_items.invoice_item_id`` foreign key.
+    Cancelled notes do not count: their stock effect was unwound when they
+    were cancelled.
     """
     from src.models.credit_note import CreditNote, CreditNoteItem  # noqa: PLC0415
 
@@ -60,10 +57,32 @@ def invoice_has_credit_notes(db: Session, invoice_id: int, *, active_only: bool 
         db.query(CreditNoteItem.id)
         .join(CreditNote, CreditNote.id == CreditNoteItem.credit_note_id)
         .filter(CreditNoteItem.invoice_id == invoice_id)
+        .filter(CreditNote.status == "active")
     )
-    if active_only:
-        query = query.filter(CreditNote.status == "active")
     return query.first() is not None
+
+
+def detach_cancelled_credit_notes(db: Session, invoice_id: int) -> None:
+    """Let go of the invoice's lines held by its cancelled credit notes.
+
+    A cancelled note keeps its row and items, so its number stays issued
+    (#800). Its items still point at the invoice lines, which an edit deletes
+    and recreates, and the ``credit_note_items.invoice_item_id`` foreign key
+    would refuse that. The note no longer counts anywhere, so it only loses
+    the line link; it keeps the invoice, product, quantity and amounts.
+    """
+    from src.models.credit_note import CreditNote, CreditNoteItem  # noqa: PLC0415
+
+    cancelled_notes = db.query(CreditNote.id).filter(CreditNote.status == "cancelled")
+    (
+        db.query(CreditNoteItem)
+        .filter(
+            CreditNoteItem.invoice_id == invoice_id,
+            CreditNoteItem.invoice_item_id.isnot(None),
+            CreditNoteItem.credit_note_id.in_(cancelled_notes.scalar_subquery()),
+        )
+        .update({CreditNoteItem.invoice_item_id: None}, synchronize_session=False)
+    )
 
 
 def inventory_effect_for_voucher_type(quantity: float, voucher_type: str) -> Decimal:

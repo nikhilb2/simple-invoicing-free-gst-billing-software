@@ -295,8 +295,7 @@ def create_company_profile(
     act_for_company(db, profile, current_user)
     if inspect(current_user).persistent:
         add_membership(db, current_user, profile, UserRole.admin)
-    if shared:
-        _seed_current_financial_year(db, profile)
+    _seed_current_financial_year(db, profile)
     seed_default_cash_account(db, profile, created_by=getattr(current_user, "id", None))
     db.commit()
     db.refresh(profile)

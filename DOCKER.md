@@ -231,3 +231,16 @@ For more information, refer to:
 - [Docker Compose Documentation](https://docs.docker.com/compose/)
 - [FastAPI Deployment Guide](https://fastapi.tiangolo.com/deployment/)
 - [Nginx Documentation](https://nginx.org/en/docs/)
+
+## Hindi and other Indian scripts in PDFs
+
+Both backend images install `fonts-noto-core` so WeasyPrint can render Hindi
+customer and product names on A4, A5 and thermal invoices. Rebuild the backend
+image after updating an existing installation.
+
+For a backend running directly on Debian/Ubuntu, install the same package with
+`sudo apt-get install fonts-noto-core`. On macOS or Windows, install Noto Sans
+and Noto Sans Devanagari from [Noto Fonts](https://fonts.google.com/noto), then
+restart the backend. Pango needs an installed font with the requested glyphs;
+changing the CSS font name alone does not install it. Other Indian scripts use
+the corresponding Noto font from the package.

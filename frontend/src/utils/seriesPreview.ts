@@ -25,6 +25,18 @@ export function buildSeriesPreview(
   return `${prefix}${sep}${yearPart}${sep}${seq}${suffix}`;
 }
 
+/**
+ * The "Next number" box as typed: a whole number of 1 or more, or `null` while
+ * it is blank or holds anything else. The box keeps the raw text, so clearing
+ * it leaves it empty instead of snapping back to 1 (#922).
+ */
+export function parseNextSequenceInput(raw: string): number | null {
+  const text = raw.trim();
+  if (!/^\d+$/.test(text)) return null;
+  const value = Number(text);
+  return value >= 1 ? value : null;
+}
+
 /** Mirror the API's format-change check; counter-only edits remain allowed. */
 export function gstr1SeriesFormatError(
   draft: InvoiceSeriesUpdate,
