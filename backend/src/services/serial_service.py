@@ -715,6 +715,62 @@ class SerialManager:
                 row.note = note
             self.db.flush()
 
+    def keep_only(
+        self,
+        keep_codes: list[str],
+        *,
+        product_id: int,
+        company_id: int | None,
+        note: str | None = None,
+    ) -> int:
+        """Write off every in-stock serial of *product_id* except *keep_codes*.
+
+        Used when serial tracking is turned back on after units left while the
+        product was untracked (#918): the merchant names the serials of the units
+        still on the shelf, and the remaining in-stock rows are voided so the
+        invariant ``inventory.quantity == count(in_stock serials)`` holds again.
+        Each kept code must be an in-stock serial of this product.
+
+        Returns the number of rows voided.
+        """
+        self._require_no_duplicates(keep_codes)
+        rows = self._scoped(
+            self.db.query(ProductSerial).filter(
+                ProductSerial.product_id == product_id,
+                ProductSerial.status == STATUS_IN_STOCK,
+            ),
+            company_id,
+        ).all()
+        by_code = {row.serial_number.upper(): row for row in rows}
+        for code in keep_codes:
+            if code.upper() not in by_code:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"Serial {code} is not an in-stock unit of "
+                        f"{self._product_name(product_id)} — the kept serials must be "
+                        "units currently on the shelf"
+                    ),
+                )
+        keep = {code.upper() for code in keep_codes}
+        voided = 0
+        for row in rows:
+            if row.serial_number.upper() in keep:
+                continue
+            row.status = STATUS_VOID
+            if note:
+                row.note = note
+            voided += 1
+        if voided:
+            self.db.flush()
+            logger.info(
+                "serials: wrote off %s unit(s) of product_id=%s, kept %s",
+                voided,
+                product_id,
+                sorted(keep),
+            )
+        return voided
+
     def void_stock(
         self,
         codes: list[str],

@@ -1076,8 +1076,10 @@ def test_reenabling_tracking_with_more_serials_than_stock_is_refused(client, db_
 
 
 def test_reenabling_tracking_after_voiding_gone_serials_restores_invariant(client, db_session):
-    """#918 recovery path: void the serials of the units that left while tracking
-    was off, then re-enable — stock and in-stock serials match again."""
+    """#918 recovery path, entirely through the API: when serials in stock
+    outnumber the shelf, the save accepts exactly the serials of the units still
+    on the shelf and writes off the rest in the same request — stock and
+    in-stock serials match again without any direct DB write."""
     supplier_id = _create_ledger(client, name="BF2 Supplier")
     customer_id = _create_ledger(client, name="BF2 Customer", gst="27BBBBB2222F1Z9")
     product_id = _create_product(client, db_session, sku="SER-BF-VOID")
@@ -1094,26 +1096,19 @@ def test_reenabling_tracking_after_voiding_gone_serials_restores_invariant(clien
     _create_invoice(client, customer_id, "sales", product_id, 3)
     assert _inventory_quantity(db_session, product_id) == Decimal("2")
 
-    # First attempt is refused (#918).
+    # First attempt with no serials is refused (#918).
     response = client.put(
         f"/api/products/{product_id}",
         json=_product_put_payload(track_serials=True, serial_numbers=[]),
     )
     assert response.status_code == 400, response.text
+    assert "5 serial numbers in stock but only 2 units" in response.json()["detail"]
 
-    # Void the three serials whose units are gone.
-    db_session.expire_all()
-    db_session.query(ProductSerial).filter(
-        ProductSerial.product_id == product_id,
-        ProductSerial.serial_number.in_(["B3", "B4", "B5"]),
-    ).update({"status": STATUS_VOID}, synchronize_session=False)
-    db_session.commit()
-    assert _in_stock_count(db_session, product_id) == 2
-
-    # Now re-enabling with no new serials succeeds and the invariant holds.
+    # Re-enable naming the two units still on the shelf: the gone units'
+    # serials are voided in the same save.
     response = client.put(
         f"/api/products/{product_id}",
-        json=_product_put_payload(track_serials=True, serial_numbers=[]),
+        json=_product_put_payload(track_serials=True, serial_numbers=["B1", "B2"]),
     )
     assert response.status_code == 200, response.text
     assert response.json()["track_serials"] is True
@@ -1124,6 +1119,47 @@ def test_reenabling_tracking_after_voiding_gone_serials_restores_invariant(clien
     assert response.status_code == 200, response.text
     offered = sorted(row["serial_number"] for row in response.json()["items"])
     assert offered == ["B1", "B2"]
+
+    # The written-off units are void (not deleted) and carry the reason.
+    voided = client.get("/api/serials/", params={"product_id": product_id, "status": "void"})
+    assert voided.status_code == 200, voided.text
+    voided_rows = sorted(row["serial_number"] for row in voided.json()["items"])
+    assert voided_rows == ["B3", "B4", "B5"]
+
+
+def test_reenabling_tracking_with_unknown_kept_serial_is_refused(client, db_session):
+    """#918: the kept serials must be units actually on the shelf — naming an
+    unknown code does not bypass the write-off path."""
+    supplier_id = _create_ledger(client, name="BF5 Supplier")
+    customer_id = _create_ledger(client, name="BF5 Customer", gst="27CCCCC3333F1ZW")
+    product_id = _create_product(client, db_session, sku="SER-BF-KEEPBAD")
+
+    _stock_of(client, supplier_id, product_id, ["E1", "E2", "E3"])
+
+    response = client.put(
+        f"/api/products/{product_id}",
+        json=_product_put_payload(track_serials=False, serial_numbers=None),
+    )
+    assert response.status_code == 200, response.text
+
+    _create_invoice(client, customer_id, "sales", product_id, 1)
+    assert _inventory_quantity(db_session, product_id) == Decimal("2")
+
+    # Two kept codes, but X9 is not an in-stock unit of this product.
+    response = client.put(
+        f"/api/products/{product_id}",
+        json=_product_put_payload(track_serials=True, serial_numbers=["E1", "X9"]),
+    )
+    assert response.status_code == 400, response.text
+    assert "X9" in response.json()["detail"]
+
+    # Nothing was written off and the product is still untracked.
+    assert _in_stock_count(db_session, product_id) == 3
+    db_session.expire_all()
+    assert (
+        db_session.query(Product).filter(Product.id == product_id).one().track_serials
+        is False
+    )
 
 
 def test_reenabling_tracking_with_matching_counts_needs_no_serials(client, db_session):
