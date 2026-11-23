@@ -34,7 +34,7 @@ The dashboard also offers to walk you through your first invoice. Click **Show m
 ## 3. Add a customer
 
 1. Click **Ledgers** in the sidebar, then **Create ledger**.
-2. Enter the **Ledger name**, **Phone number** and **Address**, and the customer's **GSTIN** if they have one.
+2. Enter the **Ledger name**. **Phone number**, **Address** and the customer's **GSTIN** are optional; fill them in if you have them.
 3. Click **Create ledger**.
 
 The GSTIN decides how tax is split, so enter it carefully. See [Ledgers](../ledgers/).

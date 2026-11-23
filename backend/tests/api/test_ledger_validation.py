@@ -33,15 +33,15 @@ def test_update_rejects_whitespace_only_name(client):
     assert response.json()["detail"][0]["loc"][-1] == "name"
 
 
-def test_create_rejects_whitespace_only_address(client):
+def test_create_allows_whitespace_only_address_as_empty(client):
+    # Address is optional (#955); the NOT NULL column stores "" for none.
     response = client.post("/api/ledgers/", json=_ledger_payload(address="  "))
-    assert response.status_code == 422, response.text
-    assert response.json()["detail"][0]["loc"][-1] == "address"
+    assert response.status_code == 200, response.text
+    assert response.json()["address"] == ""
 
 
 def test_create_allows_empty_phone_but_strips_it(client):
-    # phone_number stays optional: tests/core/test_validation.py builds a
-    # LedgerCreate with an empty one, and the column accepts an empty string.
+    # Phone is optional (#955); the NOT NULL column stores "" for none.
     response = client.post("/api/ledgers/", json=_ledger_payload(phone_number="   "))
     assert response.status_code == 200, response.text
     assert response.json()["phone_number"] == ""

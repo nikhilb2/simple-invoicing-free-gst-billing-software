@@ -64,13 +64,13 @@ export default function   LedgerCreatePage() {
         setOpeningBalanceSide(openingBalanceSideFromValue(l.opening_balance));
         setForm({
           name: l.name,
-          address: l.address,
+          address: l.address || '',
           gst: l.gst || '',
           pan: l.pan || (l.gst ? l.gst.slice(2, 12) : ''),
           party_type: l.party_type || null,
           tcs_declaration_received: Boolean(l.tcs_declaration_received),
           opening_balance: l.opening_balance,
-          phone_number: l.phone_number,
+          phone_number: l.phone_number || '',
           email: l.email || '',
           website: l.website || '',
           bank_name: l.bank_name || '',
@@ -192,14 +192,13 @@ export default function   LedgerCreatePage() {
                   />
                 </div>
                 <div className="field">
-                  <label htmlFor="ledger-phone">Phone number *</label>
+                  <label htmlFor="ledger-phone">Phone number</label>
                   <input
                     id="ledger-phone"
                     className="input"
                     value={form.phone_number}
                     onChange={(e) => setForm((c) => ({ ...c, phone_number: e.target.value }))}
                     placeholder="+91 9876543210"
-                    required
                   />
                   <small className="field-hint">e.g. +91 98765 43210</small>
                 </div>
@@ -304,14 +303,13 @@ export default function   LedgerCreatePage() {
                   <small className="field-hint">Enter the amount only. Choose debit or credit separately. Leave blank for none.</small>
                 </div>
                 <div className="field field--full">
-                  <label htmlFor="ledger-address">Address *</label>
+                  <label htmlFor="ledger-address">Address</label>
                   <textarea
                     id="ledger-address"
                     className="textarea"
                     value={form.address}
                     onChange={(e) => setForm((c) => ({ ...c, address: e.target.value }))}
                     placeholder="12 MG Road, Pune, Maharashtra 411001"
-                    required
                   />
                 </div>
               </div>
@@ -414,7 +412,7 @@ export default function   LedgerCreatePage() {
 
             <div className="form-action-bar">
               <div className="form-action-bar__meta">
-                <strong>* Required:</strong> ledger name, phone number, and address.
+                <strong>* Required:</strong> ledger name.
               </div>
               <button type="button" className="button button--secondary" onClick={() => navigate('/ledgers')} title="Cancel and return to ledgers" aria-label="Cancel and return to ledgers">
                 Cancel

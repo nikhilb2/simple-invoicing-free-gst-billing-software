@@ -1254,13 +1254,17 @@ def update_ledger(
             raise HTTPException(status_code=400, detail="Ledger with this GST already exists")
 
     ledger.name = payload.name.strip()
-    ledger.address = payload.address.strip()
+    # Address and phone are optional (#955). One left out of the request keeps
+    # what is saved; an explicit blank or null clears it.
+    if "address" in payload.model_fields_set:
+        ledger.address = payload.address
     ledger.gst = gst
     ledger.pan = payload.pan
     ledger.party_type = payload.party_type
     if payload.tcs_declaration_received is not None:
         ledger.tcs_declaration_received = payload.tcs_declaration_received
-    ledger.phone_number = payload.phone_number.strip()
+    if "phone_number" in payload.model_fields_set:
+        ledger.phone_number = payload.phone_number
     ledger.email = payload.email.strip() if payload.email else None
     ledger.website = payload.website.strip() if payload.website else None
     ledger.bank_name = payload.bank_name.strip() if payload.bank_name else None

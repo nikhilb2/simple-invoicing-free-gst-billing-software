@@ -807,7 +807,7 @@ export default function LedgerViewPage() {
           </div>
 
           <div className="summary-box">
-            <p><strong>Address:</strong> {ledger.address}</p>
+            {ledger.address ? <p><strong>Address:</strong> {ledger.address}</p> : null}
             {ledger.website ? <p><strong>Website:</strong> {ledger.website}</p> : null}
             {(ledger.bank_name || ledger.account_number) ? (
               <p>
