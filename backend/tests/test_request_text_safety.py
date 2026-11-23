@@ -109,6 +109,36 @@ def test_deeply_nested_json_is_not_raised_by_the_guard():
     assert asyncio.run(reject_nul_characters(request)) is None
 
 
+def _nested(depth: int, leaf: object) -> str:
+    import json
+
+    return "[" * depth + json.dumps(leaf) + "]" * depth
+
+
+def test_contains_nul_deep_nesting_does_not_recurse():
+    import json
+
+    for depth in (600, 900):
+        assert _contains_nul(json.loads(_nested(depth, "a\x00b"))) is True
+        assert _contains_nul(json.loads(_nested(depth, "ok"))) is False
+    # Dict nesting too.
+    deep: object = {"k": "\x00"}
+    for _ in range(600):
+        deep = {"k": deep}
+    assert _contains_nul(deep) is True
+
+
+def test_deep_nesting_over_http_is_a_handled_response_not_a_500():
+    client = _client()
+    headers = {"content-type": "application/json"}
+    for depth in (600, 2000, 100000):
+        r = client.post("/echo", content=_nested(depth, "ok").encode(), headers=headers)
+        assert r.status_code < 500, (depth, r.status_code)
+    r = client.post("/echo", content=_nested(600, "a\x00b").encode(), headers=headers)
+    assert r.status_code == 422
+    assert "NUL" in r.text
+
+
 def test_form_encoded_and_path_params_are_scanned():
     client = _client()
     r = client.post("/form", content="a=x%00y", headers={"content-type": "application/x-www-form-urlencoded"})

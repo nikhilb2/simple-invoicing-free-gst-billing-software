@@ -20,13 +20,24 @@ NUL = "\x00"
 
 
 def _contains_nul(value: object) -> bool:
-    """Whether a NUL character appears anywhere in a JSON-decoded value."""
-    if isinstance(value, str):
-        return NUL in value
-    if isinstance(value, dict):
-        return any(_contains_nul(key) or _contains_nul(item) for key, item in value.items())
-    if isinstance(value, list):
-        return any(_contains_nul(item) for item in value)
+    """Whether a NUL character appears anywhere in a JSON-decoded value.
+
+    Iterative on purpose: ``json.loads`` accepts nesting several hundred levels
+    deep, which a recursive walk would turn into a RecursionError (a 500).
+    """
+    stack = [value]
+    while stack:
+        current = stack.pop()
+        if isinstance(current, str):
+            if NUL in current:
+                return True
+        elif isinstance(current, dict):
+            for key, item in current.items():
+                if isinstance(key, str) and NUL in key:
+                    return True
+                stack.append(item)
+        elif isinstance(current, list):
+            stack.extend(current)
     return False
 
 

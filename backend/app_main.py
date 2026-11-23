@@ -189,8 +189,8 @@ app = FastAPI(
     # A NUL character (\0) crashes Postgres with a 500 wherever it reaches a
     # query -- in a saved field or in a search/filter. One dependency applied to
     # every route turns that into a 422 instead of checking for it in every
-    # schema. The product CSV import reads a file, not JSON, so it is exempt
-    # here and checks each row itself.
+    # schema. The guard skips multipart bodies, so the product CSV import
+    # (a file upload) checks each row itself.
     dependencies=[Depends(reject_nul_characters)],
 )
 
