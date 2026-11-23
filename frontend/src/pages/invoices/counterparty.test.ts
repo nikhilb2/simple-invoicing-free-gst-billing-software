@@ -9,6 +9,7 @@ describe('counterpartyFor', () => {
       expect(c.missingMessage).toBe('Choose or add a customer first');
       expect(c.emptyPlaceholder).toBe('No customers yet');
       expect(c.addLabel).toBe('+ Add a customer');
+      expect(c.newLabel).toBe('Add customer');
     }
   });
 
@@ -19,6 +20,7 @@ describe('counterpartyFor', () => {
       expect(c.missingMessage).toBe('Choose or add a supplier first');
       expect(c.emptyPlaceholder).toBe('No suppliers yet');
       expect(c.addLabel).toBe('+ Add a supplier');
+      expect(c.newLabel).toBe('Add supplier');
     }
   });
 });

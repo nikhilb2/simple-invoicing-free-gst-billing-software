@@ -54,6 +54,7 @@ import SerialPickerModal from './components/SerialPickerModal';
 import StockUpdateModal from './components/StockUpdateModal';
 import ReceiptModal from '../../components/ReceiptModal';
 import { counterpartyFor } from './counterparty';
+import { COMPOSER_PHONE_DESCRIPTION, billingAsLine, savedDocumentsLabel, savedDocumentsRoute, totalBarLabel } from './composerMobile';
 import { FieldError, LineFieldErrors, useFormFieldErrors } from '../../hooks/useFormFieldErrors';
 import { createItem, type InvoiceFormItem } from './types';
 import { defaultPaymentAccountId } from '../../utils/cashBank';
@@ -1332,22 +1333,27 @@ export default function InvoicesPage() {
       products,
     )
     : [];
+  const isDefaultEntryTitle = !editingInvoiceId && !editingQuotation && !conversion && !challanConversion;
   const pickerItem = pickerItemId !== null ? items.find((item) => item.id === pickerItemId) ?? null : null;
   const pickerProduct = pickerItem ? findProduct(Number(pickerItem.productId)) : undefined;
 
   return (
-    <div className="page-grid">
+    <div className="page-grid invoice-composer-page">
       <section className="page-hero">
         <div>
-          <p className="eyebrow">{isQuote ? 'Quotations' : 'Invoices'}</p>
+          <p className="eyebrow composer-hide-phone">{isQuote ? 'Quotations' : 'Invoices'}</p>
           <h1 className="page-title">{isQuote ? (voucherType === 'proforma' ? 'Proforma composer' : 'Quotation composer') : 'Invoice composer'}</h1>
-          <p className="section-copy">
+          <p className="section-copy composer-hide-phone">
             {isQuote
               ? 'An offer, not a tax invoice. Saving this moves no stock and reaches no report.'
               : 'Pick who you are billing, add the items they bought, and save. Prices and tax come from your product list.'}
           </p>
+          <p className="section-copy composer-show-phone">{COMPOSER_PHONE_DESCRIPTION}</p>
+          <Link className="button button--ghost composer-saved-link" to={savedDocumentsRoute(isQuote)}>
+            {savedDocumentsLabel(isQuote)}
+          </Link>
         </div>
-        <div className="status-chip">{plural(invoiceTotal, 'invoice')} listed</div>
+        <div className="status-chip composer-hide-phone">{plural(invoiceTotal, 'invoice')} listed</div>
       </section>
 
       <StatusToasts
@@ -1365,7 +1371,7 @@ export default function InvoicesPage() {
 
       <section className="content-grid content-grid--single">
         <article className="panel stack">
-          <div className="panel__header">
+          <div className={`panel__header${isDefaultEntryTitle ? ' composer-hide-phone' : ''}`}>
             <div>
               <p className="eyebrow">Create {documentName}</p>
               <h2 className="nav-panel__title">
@@ -1375,13 +1381,14 @@ export default function InvoicesPage() {
                       : challanConversion ? `Converting ${challanConversion.challan_number}` : 'Order entry'}
               </h2>
             </div>
-            <div className="button-row" style={{ justifyContent: 'flex-end' }}>
+            <div className="button-row composer-hide-phone" style={{ justifyContent: 'flex-end' }}>
               <div className="status-chip">Projected total {formatCurrency(projectedTotalAmount, activeCurrencyCode)}</div>
-              <Link className="button button--secondary" to={isQuote ? '/quotations' : '/invoices-view'}>{isQuote ? 'Open quotations' : 'Open invoice view'}</Link>
             </div>
           </div>
 
-          <div className="summary-box">
+          <p className="muted-text composer-show-phone composer-billing-line">{billingAsLine(company?.name)}</p>
+
+          <div className="summary-box composer-hide-phone">
             <p className="eyebrow">Billing company</p>
             <p className="summary-box__value" style={{ fontSize: '1.25rem' }}>
               {company?.name?.trim() ? company.name : 'Company not configured'}
@@ -1407,29 +1414,6 @@ export default function InvoicesPage() {
               </p>
             ) : null}
           </div>
-
-          {composerQuery.data && (ledgers.length === 0 || products.length === 0) ? (
-            <div className="empty-state stack" data-testid="invoice-first-run" style={{ marginBottom: '1rem' }}>
-              <strong>Add your first customer / product</strong>
-              <p className="muted-text" style={{ margin: 0 }}>
-                An invoice needs a customer ledger and at least one product. Add what is missing to get started.
-              </p>
-              <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-                {ledgers.length === 0 ? (
-                  <button type="button" className="button button--primary" data-tour="add-customer" onClick={openLedgerCreateModal}>
-                    <Plus size={13} />
-                    Add a customer
-                  </button>
-                ) : null}
-                {products.length === 0 ? (
-                  <button type="button" className="button button--primary" data-tour="add-product" onClick={openProductCreateModal}>
-                    <Plus size={13} />
-                    Add a product
-                  </button>
-                ) : null}
-              </div>
-            </div>
-          ) : null}
 
           {alreadyConverted ? (
             <div className="summary-box" data-testid="quotation-already-converted">
@@ -1553,7 +1537,7 @@ export default function InvoicesPage() {
                   <label htmlFor="invoice-ledger">{counterparty.label}</label>
                   <button type="button" className="link-button" onClick={openLedgerCreateModal}>
                     <Plus size={13} />
-                    New ledger
+                    {counterparty.newLabel}
                   </button>
                 </div>
                 <LedgerCombobox
@@ -1571,6 +1555,28 @@ export default function InvoicesPage() {
                   <button type="button" className="button button--secondary" style={{ width: '100%', minHeight: 44 }} onClick={openLedgerCreateModal}>
                     {counterparty.addLabel}
                   </button>
+                ) : null}
+                {composerQuery.data && (ledgers.length === 0 || products.length === 0) ? (
+                  <div className="empty-state stack composer-first-run" data-testid="invoice-first-run">
+                    <strong>Add your first customer / product</strong>
+                    <p className="muted-text" style={{ margin: 0 }}>
+                      An invoice needs a customer ledger and at least one product. Add what is missing to get started.
+                    </p>
+                    <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                      {ledgers.length === 0 ? (
+                        <button type="button" className="button button--primary" data-tour="add-customer" onClick={openLedgerCreateModal}>
+                          <Plus size={13} />
+                          Add a customer
+                        </button>
+                      ) : null}
+                      {products.length === 0 ? (
+                        <button type="button" className="button button--primary" data-tour="add-product" onClick={openProductCreateModal}>
+                          <Plus size={13} />
+                          Add a product
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
                 ) : null}
               </div>
 
@@ -2254,6 +2260,8 @@ export default function InvoicesPage() {
                   {conversion || challanConversion ? 'Cancel conversion' : 'Cancel edit'}
                 </button>
               ) : null}
+              <div className="composer-submit">
+                <span className="composer-submit__total">{totalBarLabel(formatCurrency(projectedTotalAmount, activeCurrencyCode))}</span>
               {voucherType === 'payment' ? (
                 <button className="button button--primary" disabled={submitting} title="Create payment voucher" aria-label="Create payment voucher">
                   {submitting ? 'Creating payment...' : 'Create payment voucher'}
@@ -2271,6 +2279,7 @@ export default function InvoicesPage() {
                   {submitting ? (editingInvoiceId ? 'Updating invoice...' : 'Creating invoice...') : editingInvoiceId ? 'Update invoice' : 'Create invoice'}
                 </button>
               )}
+              </div>
             </div>
           </form>
         </article>

@@ -15,6 +15,8 @@ export type Counterparty = {
   emptyPlaceholder: string;
   /** The button under the error that opens the quick-add sheet. */
   addLabel: string;
+  /** The small link beside the field label that opens the quick-add sheet (#976). */
+  newLabel: string;
 };
 
 export function counterpartyFor(voucherType: string): Counterparty {
@@ -26,5 +28,6 @@ export function counterpartyFor(voucherType: string): Counterparty {
     missingMessage: `Choose or add a ${noun} first`,
     emptyPlaceholder: `No ${noun}s yet`,
     addLabel: `+ Add a ${noun}`,
+    newLabel: `Add ${noun}`,
   };
 }

@@ -9191,3 +9191,44 @@ a.ledger-chip:focus-visible {
   align-items: center;
   gap: 8px;
 }
+
+/* Invoice composer on phones (#976): the form starts in the first screen and
+   the total and the save button stay in a bar at the bottom. */
+.composer-show-phone { display: none; }
+
+.composer-saved-link {
+  min-height: 44px;
+  margin-top: 8px;
+}
+
+.composer-submit { display: contents; }
+.composer-submit__total { display: none; }
+
+@media (max-width: 767px) {
+  .invoice-composer-page { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
+  .invoice-composer-page .composer-hide-phone { display: none; }
+  .invoice-composer-page .composer-show-phone { display: block; }
+  .composer-billing-line { margin: 0; }
+  .composer-first-run p { display: none; }
+
+  .composer-submit {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 240;
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+    border-top: 1px solid var(--line);
+    background: rgb(var(--rgb-panel-sticky) / 0.97);
+    backdrop-filter: blur(14px);
+  }
+  .composer-submit__total { display: block; font-weight: 700; }
+  .composer-submit .button { min-height: 48px; }
+
+  /* Above the bar on this page only. */
+  body:has(.composer-submit) .whatsapp-bubble { bottom: calc(88px + env(safe-area-inset-bottom)); }
+}
