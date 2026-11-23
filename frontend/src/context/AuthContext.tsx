@@ -13,6 +13,8 @@ type AuthContextType = {
   isAdmin: boolean;
   /** Runs the deployment itself: SMTP, backups. See require_platform_admin. */
   canManagePlatform: boolean;
+  /** /auth/me has answered; until then the role fields above are placeholders. */
+  profileLoaded: boolean;
   isAuthenticated: boolean;
   setSession: (tokens: AuthToken) => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
@@ -44,6 +46,7 @@ export function useAuth() {
     userRole: s.userRole,
     companyRole: s.companyRole,
     canManagePlatform: s.canManagePlatform,
+    profileLoaded: s.profileLoaded,
     setSession: s.setSession,
     login: s.login,
     logout: s.logout,

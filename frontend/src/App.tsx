@@ -98,7 +98,14 @@ function PublicOnly({ children }: { children: React.ReactNode }) {
 }
 
 function AdminOnly({ platform = false, children }: { platform?: boolean; children: React.ReactNode }) {
-  const { isAdmin, canManagePlatform } = useAuth();
+  const { isAdmin, canManagePlatform, profileLoaded } = useAuth();
+
+  // After a full page load the roles are empty until /auth/me answers. Judging
+  // them then bounced a platform admin off /settings/email and /settings/backups
+  // (pages that, unlike the others, do not wait on the company query first).
+  if (!profileLoaded) {
+    return <div className="empty-state">Loading…</div>;
+  }
 
   if (platform ? !canManagePlatform : !isAdmin) {
     return <Navigate to="/" replace />;

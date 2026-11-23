@@ -26,6 +26,8 @@ type AuthState = {
   /** Role in the active company; null until /auth/me answers or without one. */
   companyRole: UserProfile['role'] | null;
   canManagePlatform: boolean;
+  /** False from page load until /auth/me has answered (or failed). Role guards must wait for it. */
+  profileLoaded: boolean;
   /** Undefined until /auth/me answers, null if the user has not answered the walkthrough. */
   firstInvoiceTourStatus: UserProfile['first_invoice_tour_status'] | undefined;
   setFirstInvoiceTourStatus: (status: UserProfile['first_invoice_tour_status']) => void;
@@ -44,6 +46,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   userRole: null,
   companyRole: null,
   canManagePlatform: false,
+  profileLoaded: false,
   firstInvoiceTourStatus: undefined,
 
   setFirstInvoiceTourStatus: (status) => set({ firstInvoiceTourStatus: status }),
@@ -53,13 +56,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   setUserRole: (role) => {
-    set(role === null ? { userRole: null, companyRole: null, canManagePlatform: false, firstInvoiceTourStatus: undefined } : { userRole: role });
+    set(role === null ? { userRole: null, companyRole: null, canManagePlatform: false, profileLoaded: false, firstInvoiceTourStatus: undefined } : { userRole: role });
   },
 
   hydrateUserRole: async () => {
     const token = get().token;
     if (!token) {
-      set({ userRole: null, companyRole: null, canManagePlatform: false, firstInvoiceTourStatus: undefined });
+      set({ userRole: null, companyRole: null, canManagePlatform: false, profileLoaded: false, firstInvoiceTourStatus: undefined });
       return;
     }
 
@@ -74,10 +77,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         userRole: res.data.role,
         companyRole: res.data.company_role ?? null,
         canManagePlatform: res.data.can_manage_platform ?? false,
+        profileLoaded: true,
         firstInvoiceTourStatus: res.data.first_invoice_tour_status ?? null,
       });
     } catch {
-      set({ userRole: null, companyRole: null, canManagePlatform: false, firstInvoiceTourStatus: undefined });
+      set({ userRole: null, companyRole: null, canManagePlatform: false, profileLoaded: true, firstInvoiceTourStatus: undefined });
     }
   },
 
@@ -125,6 +129,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     // Cached figures belong to the user who fetched them. The tab is not reloaded,
     // so without this the next login would show them until they went stale.
     queryClient.clear();
-    set({ token: null, userEmail: null, userRole: null, companyRole: null, canManagePlatform: false, firstInvoiceTourStatus: undefined });
+    set({ token: null, userEmail: null, userRole: null, companyRole: null, canManagePlatform: false, profileLoaded: false, firstInvoiceTourStatus: undefined });
   },
 }));

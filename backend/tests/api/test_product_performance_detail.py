@@ -8,10 +8,14 @@ so the expected values are exact (an 18% GST line of 100 carries 18 of tax).
 from datetime import date, datetime
 from decimal import Decimal
 
+import pytest
+
 from src.models.company import CompanyProfile
+from src.models.credit_note import CreditNote
 from src.models.product import Product
 from src.services.analytics_reports import _sales_velocity
 from tests.api.test_product_performance import (
+    MARCH,
     _create_invoice,
     _create_ledger,
     _create_note,
@@ -55,6 +59,57 @@ def _assert_months_sum_to(summary, monthly_rows):
 
 
 class TestReconciliation:
+    @pytest.mark.parametrize("filter_customer", [False, True])
+    def test_supplier_discount_reduces_cost_in_list_detail_and_months(self, client, filter_customer):
+        widget = _create_product(client, "PD-DISCOUNT", "Discounted widget", purchase_price=999)
+        supplier = _create_ledger(client, "Supplier")
+        customer = _create_ledger(client, "Customer")
+        purchase = _create_invoice(
+            client, supplier, [_line(widget, 10, 100)], voucher_type="purchase", invoice_date=None,
+        )
+        _create_note(client, purchase, {purchase["items"][0]["id"]: 236}, direction="inward", note_type="discount")
+        _create_invoice(client, customer, [_line(widget, 10, 150)], invoice_date=None)
+        params = _today_window()
+        if filter_customer:
+            params["ledger_id"] = customer
+
+        data = _detail(client, widget, **params)
+        row = _list_row(client, widget, **params)
+        assert data["summary"] == row
+        assert row["average_buying_price"] == 80
+        assert row["cogs"] == 800
+        assert row["gross_profit"] == 700
+        assert row["margin_pct"] == 46.67
+        assert row["profit_per_unit"] == 70
+        _assert_months_sum_to(row, data["monthly_rows"])
+        month, = [item for item in data["monthly_rows"] if item["units_sold"]]
+        assert month["average_buying_price"] == 80
+        if not filter_customer:
+            assert row["net_units_bought"] == 10
+            assert row["purchase_spend"] == 800
+
+    def test_supplier_return_changes_weighted_cost_when_purchase_prices_differ(self, client):
+        widget = _create_product(client, "PD-RETURN", "Returned widget")
+        supplier = _create_ledger(client, "Supplier")
+        customer = _create_ledger(client, "Customer")
+        purchase = _create_invoice(
+            client, supplier, [_line(widget, 10, 100)], voucher_type="purchase", invoice_date=None,
+        )
+        _create_invoice(client, supplier, [_line(widget, 10, 200)], voucher_type="purchase", invoice_date=None)
+        _create_note(client, purchase, {purchase["items"][0]["id"]: 5}, direction="inward")
+        _create_invoice(client, customer, [_line(widget, 3, 300)], invoice_date=None)
+
+        data = _detail(client, widget, **_today_window())
+        row = data["summary"]
+        assert row["net_units_bought"] == 15
+        assert row["purchase_spend"] == 2500
+        assert row["average_buying_price"] == 166.67
+        assert row["cogs"] == 500
+        assert row["gross_profit"] == 400
+        _assert_months_sum_to(row, data["monthly_rows"])
+        month, = [item for item in data["monthly_rows"] if item["units_bought"]]
+        assert month["average_buying_price"] == 166.67
+
     def _seed(self, client):
         widget = _create_product(client, "PD-1", "Widget", purchase_price=999)
         other = _create_product(client, "PD-2", "Other", purchase_price=5)
@@ -155,6 +210,96 @@ class TestReturns:
         assert this_month["return_value"] == 400.00
         assert this_month["net_units_sold"] == 6
         assert this_month["cogs"] == 360.00
+
+
+class TestPurchaseNotePeriods:
+    @staticmethod
+    def _note_in_march(client, db_session, purchase, note_type, amount):
+        note = _create_note(
+            client, purchase, {purchase["items"][0]["id"]: amount},
+            direction="inward", note_type=note_type,
+        )
+        db_session.get(CreditNote, note["id"]).credit_note_date = MAR
+        db_session.commit()
+
+    @pytest.mark.parametrize("note_type", ["return", "discount"])
+    @pytest.mark.parametrize("filter_customer", [False, True])
+    def test_prior_period_note_does_not_change_new_purchases(
+        self, client, db_session, note_type, filter_customer,
+    ):
+        widget = _create_product(client, "PD-OLD-NOTE", "Widget", purchase_price=999)
+        supplier = _create_ledger(client, "Supplier")
+        customer = _create_ledger(client, "Customer")
+        old = _create_invoice(
+            client, supplier, [_line(widget, 10, 200)], voucher_type="purchase", invoice_date=FEB,
+        )
+        _create_invoice(
+            client, supplier, [_line(widget, 10, 100)], voucher_type="purchase", invoice_date=MAR,
+        )
+        self._note_in_march(client, db_session, old, note_type, 8 if note_type == "return" else 1770)
+        _create_invoice(client, customer, [_line(widget, 2, 300)], invoice_date=MAR)
+        filters = {"ledger_id": customer} if filter_customer else {}
+
+        march = _detail(client, widget, **MARCH, **filters)
+        assert march["summary"] == _list_row(client, widget, **MARCH, **filters)
+        assert march["summary"]["cost_basis"] == "purchases"
+        assert march["summary"]["average_buying_price"] == 100
+        assert march["summary"]["cogs"] == 200
+        assert march["summary"]["gross_profit"] == 400
+        assert _months(march)["2026-03"]["average_buying_price"] == 100
+        _assert_months_sum_to(march["summary"], march["monthly_rows"])
+
+        quarter = _detail(client, widget, **filters)
+        assert quarter["summary"] == _list_row(client, widget, **filters)
+        assert quarter["summary"]["average_buying_price"] == (116.67 if note_type == "return" else 75)
+        assert quarter["summary"]["cogs"] == (233.33 if note_type == "return" else 150)
+        months = _months(quarter)
+        assert months["2026-02"]["average_buying_price"] == (200 if note_type == "return" else 50)
+        assert months["2026-03"]["average_buying_price"] == 100
+        _assert_months_sum_to(quarter["summary"], quarter["monthly_rows"])
+
+    @pytest.mark.parametrize("note_type", ["return", "discount"])
+    def test_note_without_new_purchases_has_no_monthly_buying_price(self, client, db_session, note_type):
+        widget = _create_product(client, "PD-NOTE-ONLY", "Widget", purchase_price=80)
+        supplier = _create_ledger(client, "Supplier")
+        customer = _create_ledger(client, "Customer")
+        old = _create_invoice(
+            client, supplier, [_line(widget, 10, 200)], voucher_type="purchase", invoice_date=FEB,
+        )
+        self._note_in_march(client, db_session, old, note_type, 8 if note_type == "return" else 1770)
+        _create_invoice(client, customer, [_line(widget, 2, 300)], invoice_date=MAR)
+
+        march = _detail(client, widget, **MARCH)
+        assert march["summary"]["cost_basis"] == "current_price"
+        assert march["summary"]["average_buying_price"] == 80
+        assert march["summary"]["cogs"] == 160
+        assert _months(march)["2026-03"]["average_buying_price"] is None
+        _assert_months_sum_to(march["summary"], march["monthly_rows"])
+
+        quarter = _detail(client, widget)
+        months = _months(quarter)
+        assert months["2026-02"]["average_buying_price"] == (200 if note_type == "return" else 50)
+        assert months["2026-03"]["average_buying_price"] is None
+
+    @pytest.mark.parametrize("note_type", ["return", "discount"])
+    def test_full_reversal_preserves_zero_cost_or_falls_back_after_return(self, client, db_session, note_type):
+        widget = _create_product(client, "PD-FULL-NOTE", "Widget", purchase_price=80)
+        supplier = _create_ledger(client, "Supplier")
+        customer = _create_ledger(client, "Customer")
+        purchase = _create_invoice(
+            client, supplier, [_line(widget, 10, 100)], voucher_type="purchase", invoice_date=FEB,
+        )
+        self._note_in_march(client, db_session, purchase, note_type, 10 if note_type == "return" else 1180)
+        _create_invoice(client, customer, [_line(widget, 2, 300)], invoice_date=MAR)
+
+        data = _detail(client, widget)
+        row = data["summary"]
+        assert row["average_buying_price"] == (80 if note_type == "return" else 0)
+        assert row["cogs"] == (160 if note_type == "return" else 0)
+        assert row["cost_basis"] == ("current_price" if note_type == "return" else "purchases")
+        assert _months(data)["2026-02"]["average_buying_price"] == (None if note_type == "return" else 0)
+        assert _months(data)["2026-03"]["average_buying_price"] is None
+        _assert_months_sum_to(row, data["monthly_rows"])
 
 
 class TestUncosted:

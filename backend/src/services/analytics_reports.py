@@ -9,6 +9,7 @@ runs on SQLite while production runs on Postgres, and the dashboard already set
 this precedent.
 """
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date, datetime, time
 from decimal import Decimal
@@ -16,6 +17,7 @@ from itertools import groupby
 from operator import attrgetter
 
 from sqlalchemy import func
+from sqlalchemy.engine import Row
 from sqlalchemy.orm import Session, lazyload, load_only, selectinload
 
 from src.models.buyer import Buyer
@@ -728,6 +730,12 @@ PRODUCT_PERFORMANCE_SORTS = (
 COST_BASIS_PURCHASES = "purchases"
 COST_BASIS_CURRENT_PRICE = "current_price"
 
+_DatedInvoiceLine = tuple[int, Decimal, Decimal, datetime, int]
+# A row of :func:`_credit_note_lines`, read by attribute (direction, credit_note_type,
+# ledger_id, product_id, quantity, taxable_amount, tax_amount, tcs_amount,
+# credit_note_date, invoice_id).
+_CreditNoteLine = Row
+
 
 @dataclass
 class ProductPerformanceData:
@@ -759,7 +767,7 @@ def _discounted_invoice_lines(
     """
     return [
         (pid, qty, taxable)
-        for pid, qty, taxable, _ in _dated_discounted_invoice_lines(
+        for pid, qty, taxable, _when, _invoice_id in _dated_discounted_invoice_lines(
             db, company_id=company_id, voucher_type=voucher_type, from_date=from_date,
             to_date=to_date, ledger_id=ledger_id, product_id=product_id,
         )
@@ -775,15 +783,18 @@ def _dated_discounted_invoice_lines(
     to_date: date,
     ledger_id: int | None,
     product_id: int | None,
-) -> list[tuple[int, Decimal, Decimal, datetime]]:
-    """``(product_id, quantity, taxable the line billed, invoice_date)``.
+) -> list[_DatedInvoiceLine]:
+    """``(product_id, quantity, taxable the line billed, invoice_date, invoice_id)``.
 
     The taxable value is after the line's share of the invoice-level discount
     and round-off, the same figure a credit note credits; see
     :func:`_billed_invoices`, which also covers the product filter.
     """
     return [
-        (item.product_id, Decimal(str(item.quantity or 0)), billed.taxable_amount, invoice.invoice_date)
+        (
+            item.product_id, Decimal(str(item.quantity or 0)), billed.taxable_amount,
+            invoice.invoice_date, invoice.id,
+        )
         for invoice, item, billed in _billed_invoice_lines(
             db, company_id=company_id, voucher_type=voucher_type, from_date=from_date,
             to_date=to_date, ledger_id=ledger_id, product_id=product_id,
@@ -799,7 +810,7 @@ def _credit_note_lines(
     to_date: date,
     ledger_id: int | None,
     product_id: int | None,
-):
+) -> list[_CreditNoteLine]:
     """Active credit/debit note lines in the period, dated by ``credit_note_date``.
 
     Strict company equality on the note header: unlike
@@ -822,6 +833,7 @@ def _credit_note_lines(
             CreditNoteItem.tax_amount,
             CreditNoteItem.tcs_amount,
             CreditNote.credit_note_date,
+            CreditNoteItem.invoice_id,
         )
         .join(CreditNote, CreditNoteItem.credit_note_id == CreditNote.id)
         .filter(
@@ -839,18 +851,44 @@ def _credit_note_lines(
     return query.all()
 
 
-def _purchase_unit_costs(lines: list[tuple[int, Decimal, Decimal]]) -> dict[int, Decimal]:
-    """Weighted average ex-GST unit cost per product from purchase lines.
+def _net_purchase_lines(
+    lines: Iterable[_DatedInvoiceLine], note_lines: Iterable[_CreditNoteLine],
+) -> list[_DatedInvoiceLine]:
+    """Net supplier notes against their in-period purchase and its original month.
+
+    Cash-flow figures still book every note on its note date. The cost of this
+    period's purchases must not absorb a refund against an earlier purchase.
+    """
+    net = list(lines)
+    purchase_dates = {(invoice_id, pid): when for pid, _qty, _taxable, when, invoice_id in net}
+    for note in note_lines:
+        pid, invoice_id = note.product_id, note.invoice_id
+        when = purchase_dates.get((invoice_id, pid))
+        if note.direction == "inward" and invoice_id is not None and when is not None:
+            net.append((
+                pid,
+                -Decimal(str(note.quantity or 0)) if note.credit_note_type == "return" else Decimal("0"),
+                -Decimal(str(note.taxable_amount or 0)),
+                when,
+                invoice_id,
+            ))
+    return net
+
+
+def _purchase_unit_costs(lines: Iterable[_DatedInvoiceLine]) -> dict[int, Decimal]:
+    """Weighted average ex-GST unit cost, net of supplier credit/debit notes.
 
     Kept unrounded: it is multiplied by unit counts for COGS, and rounding the
     unit cost first would scale a sub-paisa error by the quantity.
     """
     spend: dict[int, Decimal] = {}
     units: dict[int, Decimal] = {}
-    for pid, qty, taxable in lines:
+    for pid, qty, taxable, _when, _invoice_id in lines:
         spend[pid] = spend.get(pid, Decimal("0")) + taxable
         units[pid] = units.get(pid, Decimal("0")) + qty
-    return {pid: spend[pid] / units[pid] for pid in spend if units[pid]}
+    # Fully returned purchases intentionally fall back to the current price.
+    # A genuine full discount can still leave units with a known zero cost.
+    return {pid: spend[pid] / units[pid] for pid in spend if units[pid] > 0 and spend[pid] >= 0}
 
 
 # The raw sums every product (or month) accumulates before figures are derived.
@@ -964,9 +1002,9 @@ def build_product_performance_report(
     reduces value; only ``return`` notes move units, because a ``discount`` or ``adjustment`` note sends no
     goods back (the credit note service only touches stock for returns).
 
-    Cost: the weighted average ex-GST purchase price over the period
-    (``cost_basis="purchases"``), falling back to the product's current
-    ``purchase_price`` when it had no purchases in the period
+    Cost: the weighted average ex-GST purchase price, net of in-period inward
+    notes against those purchases (``cost_basis="purchases"``), falling back to
+    the product's current ``purchase_price`` when it had no purchases in the period
     (``cost_basis="current_price"``). With neither, the cost is unknown and
     every cost-derived field is None rather than a misleading full margin.
     COGS is net units sold x that cost, so returned units take their cost back
@@ -982,21 +1020,25 @@ def build_product_performance_report(
         db, company_id=company_id, voucher_type="sales", from_date=from_date,
         to_date=to_date, ledger_id=ledger_id, product_id=product_id,
     )
-    purchase_lines = _discounted_invoice_lines(
+    purchase_lines = _dated_discounted_invoice_lines(
         db, company_id=company_id, voucher_type="purchase", from_date=from_date,
         to_date=to_date, ledger_id=ledger_id, product_id=product_id,
     )
     cost_lines = purchase_lines
     if ledger_id is not None:
-        cost_lines = _discounted_invoice_lines(
+        cost_lines = _dated_discounted_invoice_lines(
             db, company_id=company_id, voucher_type="purchase", from_date=from_date,
             to_date=to_date, ledger_id=None, product_id=product_id,
         )
-    unit_costs = _purchase_unit_costs(cost_lines)
     note_lines = _credit_note_lines(
         db, company_id=company_id, from_date=from_date, to_date=to_date,
         ledger_id=ledger_id, product_id=product_id,
     )
+    cost_notes = note_lines if ledger_id is None else _credit_note_lines(
+        db, company_id=company_id, from_date=from_date, to_date=to_date,
+        ledger_id=None, product_id=product_id,
+    )
+    unit_costs = _purchase_unit_costs(_net_purchase_lines(cost_lines, cost_notes))
 
     acc: dict[int, dict[str, Decimal]] = {}
 
@@ -1009,7 +1051,7 @@ def build_product_performance_report(
         entry = bucket(pid)
         entry["units_sold"] += qty
         entry["sales_value"] += taxable
-    for pid, qty, taxable in purchase_lines:
+    for pid, qty, taxable, _when, _invoice_id in purchase_lines:
         entry = bucket(pid)
         entry["units_bought"] += qty
         entry["purchase_value"] += taxable
@@ -1141,8 +1183,9 @@ def build_product_performance_detail(
     :func:`_performance_figures`, and every month is costed at the *period's*
     unit cost, so units, revenue, spend, COGS and profit sum exactly to the
     summary. A month's ``average_buying_price`` is different on purpose: it is
-    what was actually paid that month (ledger-independent, like the period
-    cost), the figure a buyer compares against the selling price.
+    the net cost of purchases made that month (ledger-independent, like the
+    period cost), with in-period supplier notes assigned to their purchase's
+    month. It is the figure a buyer compares against the selling price.
     """
     product = (
         db.query(
@@ -1174,21 +1217,26 @@ def build_product_performance_detail(
         db, company_id=company_id, from_date=from_date, to_date=to_date,
         ledger_id=ledger_id, product_id=product_id,
     )
-    period_cost = _purchase_unit_costs([(pid, qty, taxable) for pid, qty, taxable, _ in cost_lines])
+    cost_notes = note_lines if ledger_id is None else _credit_note_lines(
+        db, company_id=company_id, from_date=from_date, to_date=to_date,
+        ledger_id=None, product_id=product_id,
+    )
+    net_cost_lines = _net_purchase_lines(cost_lines, cost_notes)
+    period_cost = _purchase_unit_costs(net_cost_lines)
     unit_cost, _ = _unit_cost(period_cost.get(product_id), product.purchase_price)
 
     months = months_between(from_date, to_date)
     buckets = {key: _empty_performance_bucket() for key in months}
     paid: dict[tuple[int, int], list[Decimal]] = {key: [Decimal("0"), Decimal("0")] for key in months}
-    for _, qty, taxable, when in sales_lines:
+    for _, qty, taxable, when, _invoice_id in sales_lines:
         entry = buckets[(when.year, when.month)]
         entry["units_sold"] += qty
         entry["sales_value"] += taxable
-    for _, qty, taxable, when in purchase_lines:
+    for _, qty, taxable, when, _invoice_id in purchase_lines:
         entry = buckets[(when.year, when.month)]
         entry["units_bought"] += qty
         entry["purchase_value"] += taxable
-    for _, qty, taxable, when in cost_lines:
+    for _, qty, taxable, when, _invoice_id in net_cost_lines:
         paid[(when.year, when.month)][0] += taxable
         paid[(when.year, when.month)][1] += qty
     for note in note_lines:
@@ -1214,7 +1262,7 @@ def build_product_performance_detail(
             "month": f"{year:04d}-{month:02d}",
             "label": month_label(year, month),
             **_performance_figures(entry, unit_cost, cogs=month_cogs),
-            "average_buying_price": _ratio(spend, units),
+            "average_buying_price": _ratio(spend, units) if units > 0 and spend >= 0 else None,
         })
 
     current_stock = None

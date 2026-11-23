@@ -216,7 +216,8 @@ export type ProductPerformanceProduct = {
 /**
  * One month of a product, under the same rules as its period row: units,
  * money, COGS and profit sum exactly to `summary`. `average_buying_price` is
- * what was paid that month, not the period cost COGS is taken at.
+ * the net cost of that month's purchases, with supplier notes attributed to
+ * their purchase month, rather than the period cost used for COGS.
  */
 export type ProductPerformanceMonthlyRow = Omit<
   ProductPerformanceRow,
