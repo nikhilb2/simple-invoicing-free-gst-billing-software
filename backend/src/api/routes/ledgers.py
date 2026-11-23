@@ -3023,6 +3023,7 @@ def gstr1_summary(
         total_credit_notes=len(issued_credit_notes),
         total_debit_notes=0,
         cancelled_invoices=len(_gstr1_cancelled_numbers(db, from_date, to_date, company_id)),
+        cancelled_credit_notes=len(_gstr1_cancelled_credit_note_numbers(db, from_date, to_date, company_id)),
     )
 
     return Gstr1Summary(
