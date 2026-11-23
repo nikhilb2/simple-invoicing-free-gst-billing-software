@@ -3,6 +3,7 @@ from src.models.company_membership import CompanyMembership
 from src.models.user_identity import UserIdentity
 from src.models.oauth_login_code import OAuthLoginCode
 from src.models.product import Product
+from src.models.product_bulk_update import ProductBulkUpdate
 from src.models.inventory import Inventory
 from src.models.product_serial import ProductSerial
 from src.models.invoice import Invoice, InvoiceItem

@@ -248,8 +248,12 @@ Serials are voided rather than deleted: the unit existed and the note is the rec
 ## Immutability & Cancellation
 
 - Credit notes are **immutable** after creation — no edits allowed
-- Cancellation sets `status = cancelled` and `cancelled_at = now()`
+- Cancellation sets `status = cancelled` and `cancelled_at = now()`, reverses the note's stock and serial movements, and keeps the row. A cancelled note cannot be cancelled again.
+- The number stays used. GSTR-1 Table 13 counts the note as issued and cancelled, like a cancelled invoice.
+- Everything that adds up notes (credited amounts, invoice balances, ledgers, tax ledger, GSTR-1 tables, GSTR-3B, analytics) reads active notes only, so the same units can be credited again.
+- Editing the invoice afterwards unlinks the cancelled note's items from the old invoice lines (`invoice_item_id` becomes NULL). The note keeps its invoice, product, quantity and amounts.
 - On cancel, `credit_status` is recomputed for all invoices that had items on the CN
+- Notes cancelled before this behaviour (#800) were deleted and cannot be recovered.
 
 ---
 

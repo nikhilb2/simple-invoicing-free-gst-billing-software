@@ -148,6 +148,12 @@ test.describe.serial('First invoice walkthrough', () => {
     await page.locator('#modal-product-price').focus();
     await page.locator('#modal-product-price').fill('1200');
     await page.locator('#modal-product-gst-rate').selectOption({ index: 1 });
+    // A new company's first product does not count stock, so it asks for no
+    // opening stock and its first invoice is never refused (#983). Counting it
+    // here keeps the stock-shortage guide below covered.
+    await expect(page.locator('#modal-product-maintain-inventory')).not.toBeChecked();
+    await expect(page.locator('#modal-product-opening-stock')).toHaveCount(0);
+    await page.locator('#modal-product-maintain-inventory').check();
     await page.locator('#modal-product-opening-stock').focus();
     await expect(coach(page)).toContainText('Opening stock');
     await expectRingOn(page, '#modal-product-opening-stock');

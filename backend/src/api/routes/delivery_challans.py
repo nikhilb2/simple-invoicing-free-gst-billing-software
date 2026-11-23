@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from src.api.deps import get_active_company, get_current_user
 from src.api.pagination import MAX_PAGE
+from src.api.search import contains_pattern
 from src.api.routes.invoices import build_invoice_out, track_invoice_created
 from src.core.analytics import distinct_id_for, track
 from src.core.http_headers import content_disposition
@@ -53,6 +54,7 @@ from src.services.delivery_challan import (
     update_challan,
 )
 from src.services.delivery_challan_pdf import render_delivery_challan_pdf
+from src.services.pdf_paper import Paper, resolve_paper
 from src.services.gst_tax_service import india_today
 
 logger = logging.getLogger(__name__)
@@ -197,7 +199,7 @@ def list_challans(
     if date_to is not None:
         query = query.filter(DeliveryChallan.challan_date <= date_to)
     if search.strip():
-        term = f"%{search.strip()}%"
+        term = contains_pattern(search)
         query = query.filter(
             or_(DeliveryChallan.challan_number.ilike(term), DeliveryChallan.ledger_name.ilike(term))
         )
@@ -294,12 +296,15 @@ def cancel(
 def download_pdf(
     challan_id: int,
     copies: int = Query(1, ge=1, le=MAX_PDF_COPIES),
+    paper: Paper | None = Query(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     challan = require_challan(db, active_company.id, challan_id)
-    pdf_buffer = render_delivery_challan_pdf(db, active_company.id, challan_id, copies=copies)
+    pdf_buffer = render_delivery_challan_pdf(
+        db, active_company.id, challan_id, copies=copies, paper=resolve_paper(paper, active_company)
+    )
     number = challan.challan_number.replace("/", "_")
     track(
         "delivery_challan_pdf_downloaded",

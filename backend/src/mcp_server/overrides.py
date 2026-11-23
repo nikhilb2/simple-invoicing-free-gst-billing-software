@@ -31,6 +31,8 @@ EXCLUDED_PATH_PREFIXES: tuple[str, ...] = (
     "/api/eway-bill",
     # Delivery challans (#840): not exposed to AI assistants in v1; the tool list is at its byte budget.
     "/api/delivery-challans",
+    # Bulk updates require a person to review the changes and confirm stock replacement.
+    "/api/products/bulk-update/",
 )
 
 EXCLUDED_OPERATIONS: frozenset[tuple[str, str]] = frozenset(
@@ -303,6 +305,12 @@ DESCRIPTION_OVERRIDES: dict[tuple[str, str], str] = {
     # marketplace
     ("POST", "/api/marketplace/sync-all"): "Sync every marketplace connection. Makes outbound HTTP calls and can run for a while.",
 }
+
+# --- query parameters never offered as tool arguments ---------------------
+# `paper` picks A4, A5 or a thermal roll for one PDF. A PDF fetched over MCP is
+# on the company's default paper, like an emailed or share-link PDF, so the
+# argument is left out rather than costing tokens in every PDF tool.
+HIDDEN_QUERY_PARAMS: frozenset[str] = frozenset({"paper"})
 
 # --- annotation nudges ----------------------------------------------------
 # Operations that send real, irreversible email. Gated by `invoicing:send_email`

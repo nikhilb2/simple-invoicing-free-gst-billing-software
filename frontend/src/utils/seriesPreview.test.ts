@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import type { InvoiceSeries, InvoiceSeriesUpdate } from '../types/api';
-import { buildSeriesPreview, gstr1SeriesFormatError } from './seriesPreview';
+import { buildSeriesPreview, clampNextSequenceInput, gstr1SeriesFormatError, parseNextSequenceInput } from './seriesPreview';
 
 const format: Required<InvoiceSeriesUpdate> = {
   prefix: 'INV', suffix: '', include_year: true, year_format: 'YYYY',
@@ -29,6 +29,31 @@ describe('buildSeriesPreview matches server formatting', () => {
     expect(buildSeriesPreview(
       { ...format, year_format }, 1, null, new Date(2027, 0, 1, 0, 30),
     )).toBe(expected);
+  });
+});
+
+describe('year part follows the financial year', () => {
+  test.each<[string, Date, number | null, string]>([
+    ['YYYY', new Date(2027, 0, 5), 2026, 'INV-2026-001'],
+    ['YYYY', new Date(2027, 1, 14), 2026, 'INV-2026-001'],
+    ['YYYY', new Date(2027, 2, 31), 2026, 'INV-2026-001'],
+    ['YYYY', new Date(2027, 3, 1), 2027, 'INV-2027-001'],
+    ['YYYY', new Date(2027, 0, 5), null, 'INV-2027-001'],
+    ['MM-YYYY', new Date(2027, 0, 5), 2026, 'INV-01-2027-001'],
+    ['MM-YYYY', new Date(2027, 1, 14), 2026, 'INV-02-2027-001'],
+    ['MM-YYYY', new Date(2027, 2, 31), 2026, 'INV-03-2027-001'],
+    ['MM-YYYY', new Date(2027, 3, 1), 2027, 'INV-04-2027-001'],
+  ])('%s on %s with FY start %s', (year_format, date, fyStartYear, expected) => {
+    expect(buildSeriesPreview(
+      { ...format, year_format: year_format as InvoiceSeriesUpdate['year_format'] },
+      1, null, date, fyStartYear,
+    )).toBe(expected);
+  });
+
+  test('the GSTR-1 check sees the FY year, so a long prefix is judged as issued', () => {
+    const gst = '27AAPFU0939F1ZV';
+    const original: InvoiceSeries = { ...format, id: 1, voucher_type: 'sales', created_at: null };
+    expect(gstr1SeriesFormatError({ ...original, prefix: 'ABCDEF' }, original, gst, null, new Date(2027, 0, 5), 2026)).toBeNull();
   });
 });
 
@@ -86,5 +111,41 @@ describe('GSTR-1 format validation', () => {
     { year_format: 'FY' }, { separator: '/' }, { pad_digits: 4 },
   ])('checks every changed format field: %j', patch => {
     expect(errorFor(patch, { ...saved, prefix: 'LEGACY_' })).not.toBeNull();
+  });
+});
+
+describe('parseNextSequenceInput', () => {
+  test('accepts the API ceiling and refuses larger or non-finite values', () => {
+    expect(parseNextSequenceInput('999999999')).toBe(999999999);
+    for (const raw of ['1000000000', '9007199254740992', '9'.repeat(400)]) {
+      expect(parseNextSequenceInput(raw)).toBeNull();
+      expect(clampNextSequenceInput(raw)).toBe('999999999');
+    }
+  });
+
+  test('clamping preserves clearing, normal editing and invalid-text feedback', () => {
+    for (const raw of ['', ' ', '1', '300', '000125', '0', '-5', '2.5', '1e3', 'abc']) {
+      expect(clampNextSequenceInput(raw)).toBe(raw);
+    }
+    expect(clampNextSequenceInput(' 1000000000 ')).toBe('999999999');
+  });
+
+  test('a blank box is empty, not 1, so a new number can be typed after backspacing (#922)', () => {
+    expect(parseNextSequenceInput('')).toBeNull();
+    expect(parseNextSequenceInput('  ')).toBeNull();
+  });
+
+  test('reads a whole number of 1 or more', () => {
+    expect(parseNextSequenceInput('300')).toBe(300);
+    expect(parseNextSequenceInput(' 125 ')).toBe(125);
+    expect(parseNextSequenceInput('1')).toBe(1);
+  });
+
+  test('refuses zero, negatives, decimals and other text', () => {
+    expect(parseNextSequenceInput('0')).toBeNull();
+    expect(parseNextSequenceInput('-5')).toBeNull();
+    expect(parseNextSequenceInput('2.5')).toBeNull();
+    expect(parseNextSequenceInput('1e3')).toBeNull();
+    expect(parseNextSequenceInput('abc')).toBeNull();
   });
 });

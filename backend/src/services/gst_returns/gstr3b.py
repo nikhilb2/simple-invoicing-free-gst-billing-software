@@ -45,6 +45,7 @@ from src.services.gst_returns.classification import (
     split_note_tax,
 )
 from src.services.gst_returns.setoff import HEADS, compute_setoff
+from src.services.credit_note_deadline import section34_warning
 
 FROM_BOOKS = "from_books"
 NOT_TRACKED = "not_tracked"
@@ -267,6 +268,13 @@ class _WarningSpec:
 
 # Ordered: the ones most likely to move the figure come first.
 _WARNINGS: dict[str, _WarningSpec] = {
+    "note_section_34_deadline": _WarningSpec(
+        "warning",
+        "Credit notes past the Section 34 deadline",
+        "These notes are treated as commercial credit notes and do not reduce outward GST. "
+        "The whole note is excluded if any sales invoice is past its 30 November deadline. "
+        "The note date is a proxy for declaration; an earlier annual return date is not known.",
+    ),
     "company_gstin": _WarningSpec(
         "warning",
         "Your company GSTIN needs attention",
@@ -525,9 +533,21 @@ def _read_notes(notes: list[NoteDoc], period: ReturnPeriod, tally: _Tally, warni
             continue
 
         doc = {"kind": "credit_note", "doc_id": note.id, "number": note.number}
+        deadline_warnings = {
+            warning
+            for line in note.lines
+            if line.source_voucher_type == "sales"
+            and (warning := section34_warning(
+                note.note_date, line.source_invoice_date, line.source_invoice_number or "its invoice",
+            ))
+        }
+        if deadline_warnings:
+            warnings.add("note_section_34_deadline", **doc, detail=" ".join(sorted(deadline_warnings)))
         exceeds_source = False
         for line in note.lines:
             line_side = classify_note_line(note_side, line)
+            if deadline_warnings and line_side is Side.OUTWARD:
+                continue
             if line_side is Side.EXCLUDED:
                 source = line.source_invoice_number or "its invoice"
                 detail = f"{_rupees(line.taxable)} taxable, {_rupees(line.tax)} GST against {source}"

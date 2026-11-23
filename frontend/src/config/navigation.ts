@@ -120,7 +120,7 @@ export const PRIMARY_NAV: NavEntry[] = [
     label: 'Sales',
     icon: ReceiptText,
     children: [
-      { to: '/invoices', label: 'Invoices', icon: FileText, shortcutAction: 'go_invoices' },
+      { to: '/invoices', label: 'Invoice composer', icon: FileText, shortcutAction: 'go_invoices' },
       // Labelled for what the page calls itself in its own <h1>; the document
       // title keeps the longer name, which is the more useful one in a tab
       // strip full of invoice pages.

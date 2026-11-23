@@ -10,8 +10,38 @@ from src.schemas.ledger import DayBookEntry, LedgerStatementEntry
 # Re-exported from builders.py (the shared home for currency formatting, see
 # issue #819) so existing imports of `_fmt_inr` from this module keep working.
 from .builders import _fmt_inr
+from src.services.pdf_paper import ReportPaper, page_css
 
 __all__ = ["_fmt_inr"]
+
+
+# A5 overrides, appended after the template's own styles so they win. They are only
+# emitted for A5; A4 output is unchanged.
+_A5_REPORT_CSS = """
+  body { font-size: 9px; }
+  .sheet__header { padding-bottom: 8px; margin-bottom: 8px; gap: 8px; }
+  .sheet__header h3 { font-size: 13px; }
+  .sheet__meta h2 { font-size: 11px; }
+  .ledger-info { padding: 6px 8px; margin-bottom: 8px; }
+  .summary { gap: 6px; margin-bottom: 8px; }
+  .summary-item { padding: 5px 6px; }
+  table { margin-bottom: 8px; }
+  thead th, tbody td { padding: 3px 2px; }
+  tbody td:first-child { white-space: nowrap; }
+  .footer .total-value { font-size: 14px; }
+  .pay-qr { margin-top: 6px; }
+  .pay-qr__img { width: 98px; height: 98px; }
+"""
+
+_A5_DAY_BOOK_CSS = """
+  thead th, tbody td { padding-left: 3px; padding-right: 3px; font-size: 7.5px; }
+"""
+
+
+def _a5_style(paper: ReportPaper, *extra: str) -> str:
+    if paper != "a5":
+        return ""
+    return "<style>" + _A5_REPORT_CSS + "".join(extra) + "</style>"
 
 
 def _e(text: str | None) -> str:
@@ -26,6 +56,7 @@ def _build_day_book_html(
     total_debit: float,
     total_credit: float,
     currency: str = "INR",
+    paper: ReportPaper = "a4",
 ) -> str:
     entry_rows = ""
     for entry in entries:
@@ -57,13 +88,10 @@ def _build_day_book_html(
 <head>
 <meta charset=\"utf-8\">
 <style>
-  @page {{
-    size: A4;
-    margin: 15mm 18mm;
-  }}
+  {page_css(paper)}
   * {{ margin: 0; padding: 0; box-sizing: border-box; }}
   body {{
-    font-family: -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    font-family: -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, 'Noto Sans', 'Noto Sans Devanagari', sans-serif;
     font-size: 10px;
     color: #1f2937;
     line-height: 1.45;
@@ -190,6 +218,7 @@ def _build_day_book_html(
   }}
   .muted {{ font-size: 8px; color: #9ca3af; }}
 </style>
+{_a5_style(paper, _A5_DAY_BOOK_CSS)}
 </head>
 <body>
 <div class=\"sheet\">
@@ -267,6 +296,7 @@ def _build_statement_html(
     entries: list[LedgerStatementEntry],
     currency: str = "INR",
     pay_qr_html: str = "",
+    paper: ReportPaper = "a4",
 ) -> str:
     entry_rows = ""
     for entry in entries:
@@ -307,13 +337,10 @@ def _build_statement_html(
 <head>
 <meta charset=\"utf-8\">
 <style>
-  @page {{
-    size: A4;
-    margin: 15mm 18mm;
-  }}
+  {page_css(paper)}
   * {{ margin: 0; padding: 0; box-sizing: border-box; }}
   body {{
-    font-family: -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    font-family: -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, 'Noto Sans', 'Noto Sans Devanagari', sans-serif;
     font-size: 10px;
     color: #1f2937;
     line-height: 1.5;
@@ -487,6 +514,7 @@ def _build_statement_html(
   }}
   .pay-qr__hint {{ font-size: 8px; color: #9ca3af; }}
 </style>
+{_a5_style(paper)}
 </head>
 <body>
 <div class=\"sheet\">

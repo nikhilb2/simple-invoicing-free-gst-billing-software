@@ -56,7 +56,9 @@ class InsufficientStockError(HTTPException):
             detail=(
                 f"Insufficient inventory for {product_name}: only "
                 f"{_plain_quantity(available)} in stock, and {document} needs "
-                f"{_plain_quantity(required)}. Add stock for this product and try again."
+                f"{_plain_quantity(required)}. Add stock for this product and try again. "
+                "If you don't keep count of its stock, edit the product and turn off "
+                "stock counting (Maintain inventory) instead."
             ),
         )
 
@@ -121,7 +123,7 @@ class InventoryManager:
                     case((Inventory.company_id == company_id, 0), else_=1)
                 )
             )
-        inventory = query.first()
+        inventory = query.with_for_update().first()
         if not inventory:
             inventory = Inventory(
                 company_id=company_id, product_id=product_id, quantity=0

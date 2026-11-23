@@ -181,6 +181,35 @@ def test_negative_rows_warn_without_blocking(client, seller, db_session):
     assert data["hsn"]["hsn_b2c"][0]["qty"] == -1.0
 
 
+# ── Table 13: cancelled credit notes (#800) ────────────────────────────────────
+
+
+def _credit_note_docs(data):
+    [row] = [row for row in data["doc_issue"]["doc_det"] if row["doc_num"] == 5]
+    return row["docs"]
+
+
+@pytest.mark.parametrize("cancelled", [2, 1], ids=["last", "middle"])
+def test_table_13_counts_a_cancelled_credit_note(client, seller, cancelled):
+    """A cancelled note keeps its number, so it is issued and cancelled, not missing."""
+    widget = _create_product(client, "S-1", "Widget", hsn_sac="8471")
+    sold = _sale(client, _create_ledger(client, "Walk-in"), widget, items=[_line(widget, 3, 1000)])
+    notes = [_note(client, [sold]) for _ in range(3)]
+    response = client.post(f"/api/credit-notes/{notes[cancelled]['id']}/cancel")
+    assert response.status_code == 200, response.text
+
+    assert _credit_note_docs(_export(client)) == [{
+        "num": 1,
+        "from": notes[0]["credit_note_number"],
+        "to": notes[2]["credit_note_number"],
+        "totnum": 3,
+        "cancel": 1,
+        "net_issue": 2,
+    }]
+    # The cancelled note files nothing else: two units net off in B2CS, not three.
+    assert sum(row["txval"] for row in _export(client)["b2cs"]) == 1000.0
+
+
 # ── A note on an old invoice with bad data ─────────────────────────────────────
 
 

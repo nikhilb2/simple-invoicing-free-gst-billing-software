@@ -34,7 +34,7 @@ The dashboard also offers to walk you through your first invoice. Click **Show m
 ## 3. Add a customer
 
 1. Click **Ledgers** in the sidebar, then **Create ledger**.
-2. Enter the **Ledger name**, **Phone number** and **Address**, and the customer's **GSTIN** if they have one.
+2. Enter the **Ledger name**. **Phone number**, **Address** and the customer's **GSTIN** are optional; fill them in if you have them.
 3. Click **Create ledger**.
 
 The GSTIN decides how tax is split, so enter it carefully. See [Ledgers](../ledgers/).
@@ -43,7 +43,7 @@ The GSTIN decides how tax is split, so enter it carefully. See [Ledgers](../ledg
 
 1. Go to **Catalogue → Products & Stock** and click **New product**.
 2. Enter the **Product name**, **Selling price**, **GST rate** and **HSN / SAC**. The **SKU** is optional. Leave it blank and one is made from the name.
-3. Enter how many you have now. For a service, untick **Maintain stock for this product**.
+3. Your first products don't count stock, so you can bill them straight away. To keep count of stock, click **Count stock for this item** and enter how many you have now. Once one product counts stock, new products count it too; untick **Keep count of stock for this product** for a service.
 4. Click **Create product**.
 
 See [Products and stock](../catalogue/products).

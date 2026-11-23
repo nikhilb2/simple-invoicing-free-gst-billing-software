@@ -76,8 +76,11 @@ def _validate_resource(db: Session, company_id: int, payload: ShareLinkCreate) -
     boundary at read time by filtering every query on the link's own ``company_id``.
     """
     if payload.resource_type == RESOURCE_INVOICE:
-        if get_invoice(db, company_id, payload.resource_id) is None:
+        invoice = get_invoice(db, company_id, payload.resource_id)
+        if invoice is None:
             raise HTTPException(status_code=404, detail=f"Invoice {payload.resource_id} not found")
+        if invoice.status == "cancelled":
+            raise HTTPException(status_code=400, detail="Cancelled invoices cannot be shared")
         return
 
     if payload.resource_type == RESOURCE_STATEMENT:

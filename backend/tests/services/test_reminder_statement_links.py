@@ -21,6 +21,7 @@ from starlette.requests import Request
 
 import src.models  # noqa: F401
 from src.api.routes import email, public_share
+from src.services import pdf_paper
 from src.core.config import settings
 from src.db.base import Base
 from src.db.session import get_db
@@ -133,7 +134,7 @@ def test_open_statement_landing_document_and_pdf_use_current_period_and_balance(
         def write_pdf(self):
             return b'%PDF-test'
 
-    monkeypatch.setattr(shares.weasyprint, 'HTML', PdfConverter)
+    monkeypatch.setattr(pdf_paper.weasyprint, 'HTML', PdfConverter)
     landing = case.client.get(f'/s/{link.token}')
     document = case.client.get(f'/s/{link.token}/document.html')
     pdf = case.client.get(f'/s/{link.token}/pdf')

@@ -274,3 +274,17 @@ describe('DEFAULT_DUE_MODE', () => {
     expect(buildDueWindow(DEFAULT_DUE_MODE, 30, '')).toEqual({});
   });
 });
+
+
+test.each(['100000000', '3000000', '1e8', '1.5'])('rejects an unrepresentable due date for %s days', (daysFromInvoice) => {
+  expect(resolveDueDate({ mode: 'days', invoiceDate: '2026-11-20', exactDate: '', daysFromInvoice }))
+    .toBeUndefined();
+});
+
+test('supports the last four-digit due date without allowing year 10000', () => {
+  expect(addDaysToIsoDate('2026-02-30', 1)).toBe('');
+  expect(addDaysToIsoDate('0099-12-31', 1)).toBe('0100-01-01');
+  expect(addDaysToIsoDate('9999-12-30', 1)).toBe('9999-12-31');
+  expect(addDaysToIsoDate('9999-12-30', 2)).toBe('');
+  expect(addDaysToIsoDate('2026-11-20', 30)).toBe('2026-12-20');
+});

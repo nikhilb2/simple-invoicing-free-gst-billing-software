@@ -10,6 +10,7 @@ import GstRateSelect from './GstRateSelect';
 import {
   NO_STOCK_SAVED_NOTE,
   NO_STOCK_WARNING,
+  STOCK_NOT_COUNTED_NOTE,
   hsnProblem,
   errorAfterHsnEdit,
   plainProductError,
@@ -58,6 +59,12 @@ type ProductFormModalProps = {
   onNeedsSerialBackfill: (product: BackfillTarget, payload: ProductCreate) => void;
   /** Opens the bill-of-materials editor for a saved producable product. */
   onConfigureBom: (productId: number, productName: string) => void;
+  /**
+   * Whether a brand-new product starts with stock counting on: true once the
+   * company counts stock for any product (see countsStockByDefault). Left out
+   * while unknown, which keeps the old default of on.
+   */
+  countsStock?: boolean;
 };
 
 type FormState = {
@@ -81,7 +88,7 @@ type FormState = {
   production_cost: string;
 };
 
-function emptyForm(): FormState {
+function emptyForm(countsStock: boolean): FormState {
   return {
     sku: '',
     name: '',
@@ -95,7 +102,7 @@ function emptyForm(): FormState {
     reorder_level: '0',
     unit: 'Pieces',
     allow_decimal: false,
-    maintain_inventory: true,
+    maintain_inventory: countsStock,
     track_serials: false,
     initial_quantity: '0',
     serial_numbers: [],
@@ -156,12 +163,13 @@ export default function ProductFormModal({
   onSaved,
   onNeedsSerialBackfill,
   onConfigureBom,
+  countsStock = true,
 }: ProductFormModalProps) {
   const isEdit = row !== null;
   const source = row ?? template;
   const [form, setForm] = useState<FormState>(() => {
     if (row) return formFromRow(row);
-    return template ? duplicateForm(template) : emptyForm();
+    return template ? duplicateForm(template) : emptyForm(countsStock);
   });
   const [customUnit, setCustomUnit] = useState(() =>
     source && source.unit && !UNIT_OPTIONS.includes(source.unit) ? source.unit : '',
@@ -194,7 +202,13 @@ export default function ProductFormModal({
     }));
   }
 
-  const openingQuantity = form.track_serials ? form.serial_numbers.length : Number(form.initial_quantity || 0);
+  /* A product that does not count stock opens with none: the API refuses a
+     quantity for it, so one typed before unticking is dropped. */
+  const openingQuantity = !form.maintain_inventory
+    ? 0
+    : form.track_serials
+      ? form.serial_numbers.length
+      : Number(form.initial_quantity || 0);
   const noOpeningStock = !isEdit && startsWithNoStock(form.maintain_inventory, openingQuantity);
 
   const shows = (field: AdvancedField) => isAdvancedFieldVisible(field, form, prefs);
@@ -257,7 +271,7 @@ export default function ProductFormModal({
     if (form.is_producable && form.production_cost !== '' && Number(form.production_cost) < 0) {
       return 'Production cost cannot be negative.';
     }
-    if (!isEdit && !form.track_serials && Number(form.initial_quantity || 0) < 0) {
+    if (!isEdit && form.maintain_inventory && !form.track_serials && Number(form.initial_quantity || 0) < 0) {
       return 'Opening stock cannot be negative.';
     }
     return '';
@@ -474,6 +488,21 @@ export default function ProductFormModal({
                     Opening stock is the number of serials entered: {form.serial_numbers.length}.
                   </p>
                 </>
+              ) : !form.maintain_inventory ? (
+                <div className="stack" data-testid="product-stock-not-counted">
+                  <p className="field-hint" style={{ margin: 0 }}>
+                    {STOCK_NOT_COUNTED_NOTE}
+                  </p>
+                  <div>
+                    <button
+                      type="button"
+                      className="button button--ghost button--small"
+                      onClick={() => update('maintain_inventory', true)}
+                    >
+                      Count stock for this item
+                    </button>
+                  </div>
+                </div>
               ) : (
                 <label className="field" htmlFor="product-initial-qty">
                   <span>How many do you have now? (opening quantity)</span>

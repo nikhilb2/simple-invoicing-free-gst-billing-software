@@ -87,6 +87,14 @@ On a self-hosted copy, [add a configuration and set it as active](../settings/em
 **Did my email send?**
 Check [Email History](../settings/email#email-history). The dialog simply closes on success.
 
+## Choosing software
+
+**How does Simple Invoicing compare with Vyapar, myBillBook, Zoho and Tally?**
+See [Free GST billing software compared](./free-billing-software-comparison). If you use Tally today, see [Free Tally alternative](./tally-alternative).
+
+**Is Simple Invoicing really free? Why?**
+Yes. The software is open source under the MIT licence, and the code is public on [GitHub](https://github.com/nikhilb2/simple-invoicing-free-gst-billing-software). The hosted app at [app.gstbill.in](https://app.gstbill.in) is free on shared hosting, and you can self-host your own copy free for any number of users and invoices. A dedicated server for one company and one user costs Rs 299 a month. See the [comparison](./free-billing-software-comparison) for details.
+
 ## Still stuck?
 
 Click **Request a feature or report a bug** at the top of any page, or [open an issue on GitHub](https://github.com/nikhilb2/simple-invoicing-free-gst-billing-software/issues). Please describe what you did and what you saw, and do not post customer details in the issue, because issues are public.

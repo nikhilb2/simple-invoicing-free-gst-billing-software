@@ -87,6 +87,7 @@ class NoteLine:
     source_line_quantity: Decimal | None = None
     # Whether the source line was taxed as IGST. None when the line is unknown.
     source_line_is_igst: bool | None = None
+    source_invoice_date: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -99,6 +100,7 @@ class NoteDoc:
     igst_total: Decimal
     lines: tuple[NoteLine, ...]
     supplier_note_date: date | None = None
+    note_date: datetime | None = None
 
 
 def classify_invoice(voucher_type: str | None, status: str | None) -> Side:

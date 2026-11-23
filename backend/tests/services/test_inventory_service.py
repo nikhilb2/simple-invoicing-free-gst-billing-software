@@ -258,6 +258,9 @@ class TestCheckAvailability:
         assert exc_info.value.status_code == 400
         assert "Insufficient inventory" in exc_info.value.detail
         assert "only 2 in stock, and this invoice needs 5" in exc_info.value.detail
+        # Both ways out (#983): add stock, or stop counting stock for the item.
+        assert "Add stock for this product" in exc_info.value.detail
+        assert "turn off stock counting (Maintain inventory)" in exc_info.value.detail
         assert exc_info.value.product_id == product.id
         assert exc_info.value.available == Decimal("2")
         assert exc_info.value.required == Decimal("5")

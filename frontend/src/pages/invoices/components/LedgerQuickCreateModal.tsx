@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import ModalCloseButton from '../../../components/ModalCloseButton';
+import GstinInput from '../../../components/GstinInput';
 import { useQueryClient } from '@tanstack/react-query';
 import api, { getApiErrorMessage } from '../../../api/client';
 import type { LedgerCreate } from '../../../types/api';
@@ -132,27 +133,25 @@ export default function LedgerQuickCreateModal() {
           </div>
           <div className="field">
             <label htmlFor="modal-ledger-gst">GSTIN</label>
-            <input
+            <GstinInput
               id="modal-ledger-gst"
               className="input"
               value={ledgerForm.gst}
-              onChange={(event) => setLedgerForm((current) => ({ ...current, gst: event.target.value }))}
+              onValueChange={(gst) => setLedgerForm((current) => ({ ...current, gst }))}
               placeholder="27ABCDE1234F1Z0"
               pattern="^$|[0-9]{2}[A-Za-z]{5}[0-9]{4}[A-Za-z][A-Za-z0-9]Z[A-Za-z0-9]$"
               title="Enter a valid 15-character GSTIN (e.g. 27ABCDE1234F1Z0), or leave blank"
-              maxLength={15}
             />
             <small className="field-hint">Optional. If entered, format must be 27ABCDE1234F1Z0.</small>
           </div>
           <div className="field">
-            <label htmlFor="modal-ledger-phone">Phone number *</label>
+            <label htmlFor="modal-ledger-phone">Phone number</label>
             <input
               id="modal-ledger-phone"
               className="input"
               value={ledgerForm.phone_number}
               onChange={(event) => setLedgerForm((current) => ({ ...current, phone_number: event.target.value }))}
               placeholder="+91 9876543210"
-              required
             />
           </div>
           <div className="field field--full">
@@ -218,14 +217,13 @@ export default function LedgerQuickCreateModal() {
             />
           </div>
           <div className="field">
-            <label htmlFor="modal-ledger-address">Address *</label>
+            <label htmlFor="modal-ledger-address">Address</label>
             <textarea
               id="modal-ledger-address"
               className="textarea"
               value={ledgerForm.address}
               onChange={(event) => setLedgerForm((current) => ({ ...current, address: event.target.value }))}
               placeholder="12 MG Road, Pune, Maharashtra 411001"
-              required
             />
           </div>
           <div className="field">

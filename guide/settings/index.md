@@ -12,6 +12,7 @@ Click **Settings** at the bottom of the sidebar. You only see the items your rol
 |---|---|---|
 | [Company](../getting-started/company-setup) | Everyone | Company details, logo, terms, e-way bills and invoice series. |
 | [Marketplace](../marketplace/#connect-your-company) | Admins | Connect to a marketplace and set how orders are handled. |
+| [Printing](./printing) | Everyone | Paper size: A4, A5 and thermal. |
 | [Email](./email) | Administrators of a self-hosted copy | The mail server used for sending. |
 | [Email History](./email#email-history) | Admins | Every email sent, with its status. |
 | [Security](#security) | Everyone | Your password. |

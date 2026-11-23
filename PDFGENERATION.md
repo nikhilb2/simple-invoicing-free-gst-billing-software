@@ -17,6 +17,7 @@ The backend generates downloadable PDFs using WeasyPrint. HTML template construc
 - `GET /api/invoices/{invoice_id}/pdf`
     - route: `backend/src/api/routes/invoices.py`
     - template builder: `_build_invoice_html` / `_build_multi_copy_invoice_html`
+    - A4 and A5 sales invoices print the due date below the invoice date when one is set, on every copy.
 
 - `GET /api/ledgers/day-book/pdf`
     - route: `backend/src/api/routes/ledgers.py`
@@ -67,7 +68,8 @@ apt-get install -y --no-install-recommends \
     libpangocairo-1.0-0 \
     libpangoft2-1.0-0 \
     libgdk-pixbuf2.0-0 \
-    libffi-dev
+    libffi-dev \
+    fonts-noto-core
 ```
 
 Alpine:
@@ -81,7 +83,7 @@ apk add --no-cache pango fontconfig ttf-freefont
 - `OSError: cannot load library 'libgobject-2.0-0'`:
     - Install system dependencies (`brew install pango` on macOS).
 - Missing currency symbols or glyph fallback:
-    - Install Unicode-capable fonts on host/container.
+    - Install `fonts-noto-core` on Debian/Ubuntu (included in both backend Docker images). It includes Noto Sans Devanagari for Hindi and fonts for other Indian scripts. On other hosts, install Noto Sans and Noto Sans Devanagari and restart the backend so Pango refreshes its fonts. HTML escaping preserves the text, but cannot supply missing glyphs.
 - Blank PDF output:
     - Validate generated HTML and inline CSS; run backend with debug logging.
 

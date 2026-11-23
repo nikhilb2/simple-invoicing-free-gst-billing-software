@@ -1,5 +1,6 @@
 """Purchase invoice HTML template generation."""
 
+from src.core.currency import resolve_currency_code
 from src.models.company_account import CompanyAccount
 from src.models.invoice import Invoice
 from src.models.product import Product
@@ -15,9 +16,11 @@ from .builders import (
     _amount_in_words_indian,
     _e,
     _fmt_currency,
+    document_paper_css,
     _pdf_display_quantity,
     _pdf_display_unit,
     _pdf_unit_price,
+    invoice_cancellation_html,
 )
 
 
@@ -52,15 +55,18 @@ def _build_purchase_invoice_html(
     products: list[Product],
     serials: dict[int, list[str]] | None = None,
     settlement: dict[str, float] | None = None,
+    paper: str = "a4",
 ) -> str:
     """Generate HTML for a purchase invoice (supplier at top-left, your company top-right,
     no bank details in footer, optional supplier ref row)."""
-    currency = invoice.company_currency_code or "USD"
+    currency = resolve_currency_code(invoice.company_currency_code)
     inv_number = invoice.invoice_number or f"#{invoice.id}"
     inv_date = invoice.invoice_date.strftime("%d %b %Y") if invoice.invoice_date else (invoice.created_at.strftime("%d %b %Y") if invoice.created_at else "N/A")
     interstate_supply = _is_interstate_supply(invoice.company_gst, invoice.ledger_gst)
-    tax_header_cells = _build_pdf_tax_header_cells(interstate_supply)
-    table_colgroup = _build_pdf_table_colgroup(interstate_supply)
+    compact = paper == "a5"
+    page_rule, paper_css = document_paper_css(paper)
+    tax_header_cells = _build_pdf_tax_header_cells(interstate_supply, compact=compact)
+    table_colgroup = _build_pdf_table_colgroup(interstate_supply, compact=compact)
 
     product_map = {p.id: p for p in products}
     serials_map = serials or {}
@@ -86,7 +92,7 @@ def _build_purchase_invoice_html(
         hsn = _e(item.hsn_sac or (prod.hsn_sac if prod else None) or "N/A")
         unit = _e(_pdf_display_unit(getattr(prod, "unit", None) if prod else None))
         quantity_display = _pdf_display_quantity(item.quantity, getattr(prod, "allow_decimal", None) if prod else None)
-        tax_row_cells = _build_pdf_tax_row_cells(item, currency, interstate_supply)
+        tax_row_cells = _build_pdf_tax_row_cells(item, currency, interstate_supply, compact=compact)
 
         item_discount_html = _build_item_discount_html(item, currency, tax_inclusive=tax_inclusive)
 
@@ -160,13 +166,10 @@ def _build_purchase_invoice_html(
 <head>
 <meta charset="utf-8">
 <style>
-  @page {{
-    size: A4;
-    margin: 15mm 18mm;
-  }}
+  {page_rule}
   * {{ margin: 0; padding: 0; box-sizing: border-box; }}
   body {{
-    font-family: -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    font-family: -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, 'Noto Sans', 'Noto Sans Devanagari', sans-serif;
     font-size: 10px;
     color: #1f2937;
     line-height: 1.5;
@@ -319,10 +322,11 @@ def _build_purchase_invoice_html(
     object-fit: contain;
     margin-bottom: 4px;
   }}
-</style>
+{paper_css}</style>
 </head>
 <body>
 <div class="invoice-sheet">
+  {invoice_cancellation_html(invoice)}
   <header class="invoice-sheet__header">
     <div>
       <p class="eyebrow">Supplier</p>
@@ -375,7 +379,7 @@ def _build_purchase_invoice_html(
       <p>Total tax: {_fmt_currency(float(invoice.total_tax_amount or 0), currency)}</p>
       {invoice_discount_label}
       {round_off_html}
-      <p class="eyebrow" style="margin-top: 10px;">Total due</p>
+      <p class="eyebrow" style="margin-top: 10px;">{'Cancelled invoice total' if getattr(invoice, 'status', None) == 'cancelled' else 'Total due'}</p>
       <p class="invoice-sheet__total-value">{_fmt_currency(float(invoice.total_amount), currency)}</p>
       <p class="invoice-amount-words">{_amount_in_words_indian(float(invoice.total_amount), currency)}</p>
       {settlement_html}

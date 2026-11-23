@@ -12,7 +12,10 @@ _OPENING_BALANCE_LIMIT = MONEY_LIMIT - 0.005
 
 class LedgerCreate(BaseModel):
     name: str
-    address: str
+    # Only the name is required (#955): a walk-in customer often has no address
+    # or phone. Left out, null and blank all mean "none", stored as "" because
+    # the columns are NOT NULL.
+    address: str = ""
     gst: str | None = None
     pan: str | None = None
     party_type: str | None = None
@@ -22,7 +25,7 @@ class LedgerCreate(BaseModel):
     opening_balance: float | None = Field(
         default=None, gt=-_OPENING_BALANCE_LIMIT, lt=_OPENING_BALANCE_LIMIT, allow_inf_nan=False,
     )
-    phone_number: str
+    phone_number: str = ""
     email: str | None = None
     website: str | None = None
     bank_name: str | None = None
@@ -54,7 +57,7 @@ class LedgerCreate(BaseModel):
             self.pan = pan_from_gstin(self.gst)
         return self
 
-    @field_validator("name", "address")
+    @field_validator("name")
     @classmethod
     def validate_required_text_not_blank(cls, value: str) -> str:
         normalized = value.strip()
@@ -62,11 +65,14 @@ class LedgerCreate(BaseModel):
             raise ValueError("Value must not be blank")
         return normalized
 
-    @field_validator("phone_number")
+    @field_validator("address", "phone_number", mode="before")
     @classmethod
-    def validate_phone_number(cls, value: str) -> str:
-        # Optional today: test_request_schemas_normalize_valid_gstin builds a
-        # LedgerCreate with an empty phone number, so strip without rejecting.
+    def optional_text_to_empty(cls, value):
+        return "" if value is None else value
+
+    @field_validator("address", "phone_number")
+    @classmethod
+    def strip_optional_text(cls, value: str) -> str:
         return value.strip()
 
 

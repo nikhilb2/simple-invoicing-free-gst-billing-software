@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import api, { getApiErrorMessage } from '../api/client';
+import { fetchAllLedgers } from '../api/lookups';
 import ModalCloseButton from '../components/ModalCloseButton';
 import StatusToasts from '../components/StatusToasts';
 import ScopeBar, { Metric } from '../components/ScopeBar';
@@ -74,10 +75,14 @@ export default function CashBankPage() {
 
   const activeCurrencyCode = company?.currency_code || 'INR';
 
+  // Open on the first account once, when the accounts first arrive. Not on every
+  // empty selection: "Unallocated" is also the empty value, and re-picking then
+  // made the Unallocated view impossible to open once any account existed.
+  const initialAccountPicked = useRef(false);
   useEffect(() => {
-    if (deepLinkPinned) return;
-    if (selectedAccountId !== '') return;
-    if (accounts.length === 0) return;
+    if (initialAccountPicked.current || accounts.length === 0) return;
+    initialAccountPicked.current = true;
+    if (deepLinkPinned || selectedAccountId !== '') return;
     setSelectedAccountId(String(accounts[0].id));
   }, [accounts, deepLinkPinned, selectedAccountId]);
 
@@ -89,13 +94,13 @@ export default function CashBankPage() {
       const [accountsResponse, paymentsResponse, ledgersResponse, companyResponse] = await Promise.all([
         api.get<CompanyAccount[]>('/company-accounts/'),
         api.get<Payment[]>('/payments/'),
-        api.get<{ items: Ledger[] }>('/ledgers/', { params: { page_size: 500 } }),
+        fetchAllLedgers(),
         api.get<CompanyProfile>('/company/'),
       ]);
 
       setAccounts(accountsResponse.data);
       setPayments(paymentsResponse.data);
-      setLedgers(ledgersResponse.data.items);
+      setLedgers(ledgersResponse);
       setCompany(companyResponse.data);
     } catch (err) {
       setPayments([]);
@@ -232,7 +237,9 @@ export default function CashBankPage() {
 
   async function handleSubmitEntry(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!selectedAccount) {
+    // Editing works in the Unallocated view too (the entry stays unallocated);
+    // only a new entry needs an account to go in.
+    if (!editingEntry && !selectedAccount) {
       setError('Select an account to add entry');
       return;
     }
@@ -256,7 +263,7 @@ export default function CashBankPage() {
         );
         await api.put<Payment>(`/payments/${editingEntry.id}`, payload);
         setSuccess('Entry updated');
-      } else {
+      } else if (selectedAccount) {
         const payload: PaymentCreate = {
           ledger_id: null,
           voucher_type: voucherType,

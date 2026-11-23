@@ -16,17 +16,26 @@ import {
   startsWithNoStock,
 } from '../../catalogue/productFormRules';
 
+type ProductQuickCreateModalProps = {
+  /**
+   * Whether a new product starts with stock counting on: true once the company
+   * counts stock for any product (countsStockByDefault). Off for a new company,
+   * whose first counted product with 0 in stock would refuse the first invoice.
+   */
+  countsStockByDefault: boolean;
+};
+
 const UNIT_OPTIONS = ['Pieces', 'Kg', 'g', 'm', 'l', 'Ounce'];
 const CUSTOM_UNIT_VALUE = '__custom__';
 
 /* Serial tracking is asked for here and nowhere else in the composer, so it
    rides along locally rather than widening the shared form state. */
 
-function createInitialProductForm(): ProductFormState {
-  return { name: '', sku: '', hsn_sac: '', price: '', gst_rate: '', unit: 'Pieces', allow_decimal: false, maintain_inventory: true, track_serials: false, initial_quantity: '' };
+function createInitialProductForm(countsStock: boolean): ProductFormState {
+  return { name: '', sku: '', hsn_sac: '', price: '', gst_rate: '', unit: 'Pieces', allow_decimal: false, maintain_inventory: countsStock, track_serials: false, initial_quantity: '' };
 }
 
-export default function ProductQuickCreateModal() {
+export default function ProductQuickCreateModal({ countsStockByDefault }: ProductQuickCreateModalProps) {
   const queryClient = useQueryClient();
   const showProductCreateModal = useInvoiceComposerStore((state) => state.showProductCreateModal);
   const closeProductCreateModal = useInvoiceComposerStore((state) => state.closeProductCreateModal);
@@ -34,7 +43,7 @@ export default function ProductQuickCreateModal() {
   const setFeedbackSuccess = useInvoiceComposerStore((state) => state.setFeedbackSuccess);
   const productCreateName = useInvoiceComposerStore((state) => state.productCreateName);
   const setCreatedProduct = useInvoiceComposerStore((state) => state.setCreatedProduct);
-  const [productForm, setProductForm] = useState<ProductFormState>(createInitialProductForm());
+  const [productForm, setProductForm] = useState<ProductFormState>(() => createInitialProductForm(countsStockByDefault));
   const [productSubmitting, setProductSubmitting] = useState(false);
 
   useEffect(() => {
@@ -42,6 +51,15 @@ export default function ProductQuickCreateModal() {
       setProductForm((form) => ({ ...form, name: productCreateName }));
     }
   }, [showProductCreateModal, productCreateName]);
+
+  /* Set on opening only, so a later change to the product list never flips the
+     box under the user's hand. */
+  useEffect(() => {
+    if (showProductCreateModal) {
+      setProductForm((form) => ({ ...form, maintain_inventory: countsStockByDefault || form.track_serials }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showProductCreateModal]);
 
   /* Stock is only counted here for a plain tracked product: serials are received
      on a purchase entry, and an untracked product has no stock to open with. */
@@ -96,7 +114,7 @@ export default function ProductQuickCreateModal() {
       };
 
       const created = await api.post<Product>('/products/', payload);
-      setProductForm(createInitialProductForm());
+      setProductForm(createInitialProductForm(countsStockByDefault));
       closeProductCreateModal();
       const notes = [created.data.hsn_warning, noOpeningStock ? NO_STOCK_SAVED_NOTE : null].filter(Boolean);
       setCreatedProduct(created.data);
@@ -204,7 +222,9 @@ export default function ProductQuickCreateModal() {
             <small className="field-hint">
               {productForm.track_serials
                 ? 'Always on while serial numbers are tracked — every serial is a unit of stock.'
-                : 'Disable this for service charges and other non-stock items.'}
+                : productForm.maintain_inventory
+                  ? 'Untick this for services and anything you do not count. A counted item can only be sold while it is in stock.'
+                  : 'Off: you can bill this item in any quantity. Tick it to keep count of how many you have.'}
             </small>
           </div>
           {asksOpeningStock ? (

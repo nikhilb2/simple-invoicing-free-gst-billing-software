@@ -1,11 +1,14 @@
 """Helper functions for PDF template building."""
 
 from html import escape
+from src.core.currency import resolve_currency_code
 from decimal import Decimal, ROUND_HALF_UP
 
 from src.models.company_account import CompanyAccount
 from src.models.invoice import Invoice, InvoiceItem
+from src.services.gst_tax_service import to_india_date
 from src.services.invoice_discounts import invoice_discount_amount, item_discount_amount
+from src.services.pdf_paper import page_css
 
 
 def _money(value: Decimal) -> Decimal:
@@ -15,6 +18,25 @@ def _money(value: Decimal) -> Decimal:
 def _e(text: str | None) -> str:
     """Escape HTML special characters."""
     return escape(text or "")
+
+
+def invoice_cancellation_note(invoice: Invoice) -> str:
+    """Show the recorded cancellation date; old records may have no timestamp."""
+    if getattr(invoice, "status", None) != "cancelled":
+        return ""
+    day = to_india_date(getattr(invoice, "cancelled_at", None))
+    return f"Cancelled on {day.strftime('%d %b %Y')} (IST)" if day else "Cancelled"
+
+
+def invoice_cancellation_html(invoice: Invoice) -> str:
+    note = invoice_cancellation_note(invoice)
+    if not note:
+        return ""
+    return (
+        '<div style="border: 2px solid; padding: 8px; margin: 8px 0; '
+        'text-align: center; font-weight: 700; text-transform: uppercase;">'
+        f'{_e(note)}</div>'
+    )
 
 
 def _fmt_inr(value: float, currency: str = "INR") -> str:
@@ -60,7 +82,7 @@ def _fmt_currency(value: float, currency_code: str | None = None) -> str:
     amount's minus sign is printed in front of the symbol (``-$500.00``),
     not between the symbol and the digits (``$-500.00``).
     """
-    code = currency_code or "USD"
+    code = resolve_currency_code(currency_code)
     try:
         if code == "INR":
             return _fmt_inr(value, "INR")
@@ -220,25 +242,49 @@ def _pdf_display_quantity(quantity: float | Decimal | int | None, allow_decimal:
     return as_text or "0"
 
 
-def _build_pdf_tax_header_cells(interstate_supply: bool) -> str:
-    """Build tax header cells for invoice table based on interstate/intrastate supply."""
+def _build_pdf_tax_header_cells(interstate_supply: bool, compact: bool = False) -> str:
+    """Build tax header cells for invoice table based on interstate/intrastate supply.
+
+    ``compact`` (A5) leaves out "Total Tax": it only repeats IGST, or CGST + SGST,
+    and without it the amounts fit the narrower page.
+    """
+    total = "" if compact else '<th class="right">Total Tax</th>'
     if interstate_supply:
-        return '<th class="right">IGST %</th><th class="right">IGST Amt</th><th class="right">Total Tax</th>'
+        return '<th class="right">IGST %</th><th class="right">IGST Amt</th>' + total
     return (
         '<th class="right">SGST %</th>'
         '<th class="right">SGST Amt</th>'
         '<th class="right">CGST %</th>'
         '<th class="right">CGST Amt</th>'
-        '<th class="right">Total Tax</th>'
+        + total
     )
 
 
-def _build_pdf_table_colgroup(interstate_supply: bool, show_sku: bool = True) -> str:
+def _colgroup(widths: list[int]) -> str:
+    return "<colgroup>" + "".join(f'<col style="width: {w}%;" />' for w in widths) + "</colgroup>"
+
+
+# A5 column widths. There is no "Total Tax" column, and HSN/SAC gets 11%: at A5
+# width anything narrower breaks an 8-digit code in two.
+# Key: (interstate, show_sku). Columns: #, item, [sku], hsn, qty, unit, price,
+# the tax cells, amount.
+_COMPACT_COLUMN_WIDTHS: dict[tuple[bool, bool], list[int]] = {
+    (True, True): [4, 22, 9, 11, 6, 6, 13, 6, 11, 12],
+    (True, False): [4, 31, 11, 6, 6, 13, 6, 11, 12],
+    (False, True): [3, 15, 8, 11, 5, 5, 11, 5, 9, 5, 9, 14],
+    (False, False): [3, 23, 11, 5, 5, 11, 5, 9, 5, 9, 14],
+}
+
+
+def _build_pdf_table_colgroup(interstate_supply: bool, show_sku: bool = True, compact: bool = False) -> str:
     """Build table column group for invoice PDF based on tax type and SKU visibility.
 
     HSN/SAC stays at 8% or wider in every layout: anything narrower breaks an
-    8-digit HSN code across two lines at the table's 8px font size.
+    8-digit HSN code across two lines at the table's 8px font size. ``compact`` is
+    the A5 layout, which has no "Total Tax" column.
     """
+    if compact:
+        return _colgroup(_COMPACT_COLUMN_WIDTHS[(interstate_supply, show_sku)])
     if interstate_supply:
         if show_sku:
             return (
@@ -306,8 +352,12 @@ def _build_pdf_table_colgroup(interstate_supply: bool, show_sku: bool = True) ->
     )
 
 
-def _build_pdf_tax_row_cells(item: InvoiceItem, currency: str, interstate_supply: bool) -> str:
-    """Build tax cells for a single invoice line item."""
+def _build_pdf_tax_row_cells(item: InvoiceItem, currency: str, interstate_supply: bool, compact: bool = False) -> str:
+    """Build tax cells for a single invoice line item.
+
+    ``compact`` (A5) leaves out the "Total Tax" cell, matching the header.
+    """
+    total_cell = "" if compact else f'<td class="right">{_fmt_currency(float(item.tax_amount or 0), currency)}</td>'
     gst_rate = float(item.gst_rate or 0)
     tax_amount = float(item.tax_amount or 0)
 
@@ -319,7 +369,7 @@ def _build_pdf_tax_row_cells(item: InvoiceItem, currency: str, interstate_supply
         return (
             f'<td class="right">{_fmt_rate(igst_rate)}%</td>'
             f'<td class="right">{_fmt_currency(igst_amount, currency)}</td>'
-            f'<td class="right">{_fmt_currency(tax_amount, currency)}</td>'
+            + total_cell
         )
 
     sgst_amount = float(item.sgst_amount or 0)
@@ -334,7 +384,7 @@ def _build_pdf_tax_row_cells(item: InvoiceItem, currency: str, interstate_supply
         f'<td class="right">{_fmt_currency(sgst_amount, currency)}</td>'
         f'<td class="right">{_fmt_rate(split_rate)}%</td>'
         f'<td class="right">{_fmt_currency(cgst_amount, currency)}</td>'
-        f'<td class="right">{_fmt_currency(tax_amount, currency)}</td>'
+        + total_cell
     )
 
 
@@ -406,3 +456,55 @@ def _build_pdf_payment_details_html(
         f"{pay_qr_html}"
         "</div>"
     )
+
+
+# ---------------------------------------------------------------------------
+# A5 layout for the transaction documents
+# ---------------------------------------------------------------------------
+
+# The invoice, purchase bill, credit note, delivery challan and quotation share
+# one stylesheet shape (``invoice-sheet__*`` or ``sheet__*``), so one override
+# serves all five. It is appended after the template's own styles and wins on
+# source order. It is not the A4 layout scaled down: that would print the item
+# table at about 4pt. The table builders also drop the "Total Tax" column on A5
+# (their ``compact`` flag), which is what makes the CGST + SGST table fit.
+A5_DOCUMENT_CSS = """
+  body { font-size: 9px; }
+  .invoice-title, .sheet__title { font-size: 13px; padding-bottom: 5px; margin-bottom: 8px; }
+  .invoice-sheet__header, .sheet__header { padding-bottom: 8px; margin-bottom: 8px; gap: 8px; }
+  .invoice-sheet__header h3, .sheet__header h3 { font-size: 13px; }
+  .invoice-sheet__meta h2, .sheet__meta h2, .invoice-sheet__titleblock h2 { font-size: 11px; }
+  .invoice-sheet__logo-img, .invoice-sheet__purchase-logo-img, .sheet__logo-img { max-width: 110px; max-height: 46px; }
+  .invoice-sheet__billto, .sheet__party { padding: 6px 8px; }
+  .invoice-sheet__addresses, .sheet__parties { flex-direction: column; gap: 6px; margin-bottom: 8px; }
+  .invoice-sheet__reference-notes, .sheet__note { padding: 6px 8px; margin-bottom: 8px; }
+  .invoice-sheet__table, .sheet__table { margin-bottom: 8px; font-size: 7.5px; }
+  .invoice-sheet__table thead th, .sheet__table thead th { padding: 3px 2px; font-size: 6.5px; letter-spacing: 0; }
+  .invoice-sheet__table tbody td, .sheet__table tbody td { padding: 3px 2px; }
+  /* Amounts stay on one line. Text cells still break anywhere, but only when a
+     word does not fit: the HSN column is wide enough for an 8-digit code. */
+  .invoice-sheet__table tbody td.right, .sheet__table tbody td.right { white-space: nowrap; }
+  .invoice-sheet__table tbody td:first-child, .sheet__table tbody td:first-child { white-space: nowrap; }
+  .sheet__table tbody td.nowrap { white-space: nowrap; }
+  .invoice-sheet__footer, .sheet__footer { gap: 10px; }
+  .invoice-sheet__totals, .sheet__totals { flex-basis: 165px; }
+  .invoice-sheet__total-value, .sheet__total-value { font-size: 14px !important; }
+  .pay-qr { flex-basis: 104px; padding: 5px; }
+  /* About 26mm: still above the ~25mm a printed QR needs to scan. */
+  .pay-qr__img { width: 100px; height: 100px; }
+  .invoice-sheet__pay-accounts { padding: 6px 7px; }
+  .invoice-sheet__bank-rows th, .sheet__bank-rows th { width: 46px; }
+  .invoice-sheet__terms, .sheet__terms { margin-top: 8px; padding-top: 6px; }
+"""
+
+
+def document_paper_css(paper: str) -> tuple[str, str]:
+    """``(page_rule, a5_override)`` for an invoice-family template.
+
+    The page rule replaces the template's hardcoded ``@page``; the override is
+    empty except on A5. Thermal never reaches these templates: it has a layout of
+    its own in ``thermal_template``.
+    """
+    if paper == "a5":
+        return page_css("a5"), A5_DOCUMENT_CSS
+    return page_css("a4"), ""

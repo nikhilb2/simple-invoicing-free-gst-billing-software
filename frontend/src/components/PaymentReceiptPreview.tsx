@@ -4,6 +4,8 @@ import { useEscapeClose } from '../hooks/useEscapeClose';
 import api, { getApiErrorMessage } from '../api/client';
 import ShareModal from './ShareModal';
 import PreviewToolbar from './PreviewToolbar';
+import PaperSizePicker from './PaperSizePicker';
+import { usePaperChoice } from '../hooks/usePaperChoice';
 
 type PaymentReceiptPreviewProps = {
   paymentId: number;
@@ -26,6 +28,7 @@ export default function PaymentReceiptPreview({
 }: PaymentReceiptPreviewProps) {
   const [showShareModal, setShowShareModal] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [paper, setPaper, requestPaper] = usePaperChoice();
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [loadingPdf, setLoadingPdf] = useState(true);
   const [pdfError, setPdfError] = useState('');
@@ -51,6 +54,7 @@ export default function PaymentReceiptPreview({
 
       try {
         const response = await api.get(`/payments/${paymentId}/pdf`, {
+          params: { paper: requestPaper },
           responseType: 'blob',
         });
         const nextUrl = window.URL.createObjectURL(response.data as Blob);
@@ -81,11 +85,12 @@ export default function PaymentReceiptPreview({
         window.URL.revokeObjectURL(objectUrlToRevoke);
       }
     };
-  }, [paymentId]);
+  }, [paymentId, requestPaper]);
 
   const handleDownloadPdf = async () => {
     try {
       const response = await api.get(`/payments/${paymentId}/pdf`, {
+        params: { paper: requestPaper },
         responseType: 'blob',
       });
       const url = window.URL.createObjectURL(response.data as Blob);
@@ -115,6 +120,7 @@ export default function PaymentReceiptPreview({
     <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="receipt-preview-title">
       <div className="modal-panel modal-panel--invoice-preview">
         <PreviewToolbar
+          menuExtra={<PaperSizePicker value={paper} onChange={setPaper} />}
           eyebrow="Receipt preview"
           titleId="receipt-preview-title"
           title={`Receipt ${label}`}

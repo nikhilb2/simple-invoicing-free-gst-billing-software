@@ -8,6 +8,8 @@ import SendEmailModal from './SendEmailModal';
 import ShareModal from './ShareModal';
 import PreviewToolbar from './PreviewToolbar';
 import PdfPreview, { usePdfPreview } from './PdfPreview';
+import PaperSizePicker from './PaperSizePicker';
+import { usePaperChoice } from '../hooks/usePaperChoice';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 
 type StatementPreviewProps = {
@@ -26,6 +28,7 @@ export default function StatementPreview({ ledger, statement, company, currencyC
   const [showShareModal, setShowShareModal] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [downloadingCsv, setDownloadingCsv] = useState(false);
+  const [paper, setPaper, requestPaper] = usePaperChoice(true);
 
   // The email and share modals stacked on top close themselves on Escape;
   // without this guard the same keypress tears down the preview behind them.
@@ -40,7 +43,7 @@ export default function StatementPreview({ ledger, statement, company, currencyC
   // being previewed: change them on the page behind the modal and this refetches.
   const preview = usePdfPreview({
     path: `/ledgers/${ledger.id}/statement/pdf`,
-    params: { from_date: statement.from_date, to_date: statement.to_date },
+    params: { from_date: statement.from_date, to_date: statement.to_date, paper: requestPaper },
     errorMessage: 'Unable to load statement PDF preview',
     onError,
   });
@@ -48,7 +51,7 @@ export default function StatementPreview({ ledger, statement, company, currencyC
   const handleDownloadPdf = async () => {
     try {
       const response = await api.get(`/ledgers/${ledger.id}/statement/pdf`, {
-        params: { from_date: statement.from_date, to_date: statement.to_date },
+        params: { from_date: statement.from_date, to_date: statement.to_date, paper: requestPaper },
         responseType: 'blob',
       });
       const url = window.URL.createObjectURL(response.data as Blob);
@@ -97,6 +100,7 @@ export default function StatementPreview({ ledger, statement, company, currencyC
     <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="statement-preview-title">
       <div className="modal-panel modal-panel--invoice-preview">
         <PreviewToolbar
+          menuExtra={<PaperSizePicker value={paper} onChange={setPaper} reportOnly />}
           eyebrow="Statement preview"
           titleId="statement-preview-title"
           title={ledger.name}

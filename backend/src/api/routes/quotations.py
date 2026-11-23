@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session, selectinload
 from src.api.deps import get_active_company, get_current_user
 from src.api.pagination import MAX_PAGE
 from src.api.routes.invoices import build_invoice_out, track_invoice_created
+from src.api.search import contains_pattern
 from src.core.analytics import distinct_id_for, track
 from src.core.http_headers import content_disposition
 from src.db.session import get_db
@@ -57,6 +58,7 @@ from src.services.quotation import (
     set_quotation_status,
     update_quotation,
 )
+from src.services.pdf_paper import Paper, resolve_paper
 from src.services.share_documents import render_quotation_pdf
 
 logger = logging.getLogger(__name__)
@@ -173,8 +175,8 @@ def list_quotations(
     if date_to is not None:
         query = query.filter(Quotation.quotation_date <= date_to)
     if search.strip():
-        term = f"%{search.strip()}%"
-        query = query.filter(or_(Quotation.quotation_number.ilike(term), Quotation.ledger_name.ilike(term)))
+        term = contains_pattern(search)
+        query = query.filter(or_(Quotation.quotation_number.ilike(term, escape="\\"), Quotation.ledger_name.ilike(term, escape="\\")))
 
     today = india_today()
     expired = and_(
@@ -428,6 +430,7 @@ def convert(
 @router.get("/{quotation_id}/pdf")
 def download_pdf(
     quotation_id: int,
+    paper: Paper | None = Query(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
     active_company: CompanyProfile = Depends(get_active_company),
@@ -435,7 +438,9 @@ def download_pdf(
     # Rendered in src/services/share_documents so the owner's copy and the one a
     # customer downloads from a share link are the same document.
     quotation = require_quotation(db, active_company.id, quotation_id)
-    pdf_buffer = render_quotation_pdf(db, active_company.id, quotation_id)
+    pdf_buffer = render_quotation_pdf(
+        db, active_company.id, quotation_id, paper=resolve_paper(paper, active_company)
+    )
     number = quotation.quotation_number.replace("/", "_")
     track(
         "quotation_pdf_downloaded",

@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { buildCashBankEditPayload, openingBalanceAt } from './cashBank';
+import { buildCashBankEditPayload, defaultPaymentAccountId, openingBalanceAt } from './cashBank';
 
 const account = { id: 3, account_type: 'bank' };
 const form = { entryType: 'credit' as const, amount: 500, date: '2026-10-29', description: 'Fixed date' };
@@ -101,4 +101,34 @@ test('account only edit keeps the account type as its mode', () => {
   expect(payload.mode).toBe('bank');
   expect(payload.reference).toBeUndefined();
   expect(payload).not.toHaveProperty('invoice_allocations');
+});
+
+test('an edit in the Unallocated view keeps the entry unallocated with its own mode', () => {
+  const payload = buildCashBankEditPayload(
+    {
+      id: 14,
+      voucher_type: 'receipt',
+      amount: 71,
+      date: '2026-11-21',
+      notes: '',
+      ledger_id: 56,
+      reference: null,
+      mode: 'cash',
+    },
+    null,
+    { ...form, amount: 70 },
+  );
+
+  expect(payload.account_id).toBeNull();
+  expect(payload.mode).toBe('cash');
+  expect(payload.amount).toBe(70);
+  expect(payload).not.toHaveProperty('invoice_allocations');
+});
+
+test('a new receipt starts on the first cash account, else the first account, else none', () => {
+  const bank = { id: 4, account_type: 'bank' as const };
+  const cash = { id: 9, account_type: 'cash' as const };
+  expect(defaultPaymentAccountId([bank, cash])).toBe(9);
+  expect(defaultPaymentAccountId([bank])).toBe(4);
+  expect(defaultPaymentAccountId([])).toBeNull();
 });

@@ -1,5 +1,22 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { captureEvent } from '../lib/analytics';
 import { useInvoiceComposerStore } from './useInvoiceComposerStore';
+
+vi.mock('../lib/analytics', () => ({ captureEvent: vi.fn() }));
+
+it('records each opening once with no customer properties, including after closing', () => {
+  useInvoiceComposerStore.getState().closeLedgerCreateModal();
+  vi.mocked(captureEvent).mockClear();
+  useInvoiceComposerStore.setState({ selectedLedgerId: '7', feedbackSuccess: 'Private customer name' });
+  useInvoiceComposerStore.getState().openLedgerCreateModal();
+  useInvoiceComposerStore.getState().openLedgerCreateModal();
+  expect(useInvoiceComposerStore.getState().showLedgerCreateModal).toBe(true);
+  expect(vi.mocked(captureEvent).mock.calls).toEqual([['ledger_quick_create_opened']]);
+  useInvoiceComposerStore.getState().closeLedgerCreateModal();
+  useInvoiceComposerStore.getState().openLedgerCreateModal();
+  expect(vi.mocked(captureEvent).mock.calls).toEqual([['ledger_quick_create_opened'], ['ledger_quick_create_opened']]);
+  useInvoiceComposerStore.getState().closeLedgerCreateModal();
+});
 
 describe('useInvoiceComposerStore feedback', () => {
   beforeEach(() => useInvoiceComposerStore.getState().clearFeedback());

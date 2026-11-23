@@ -37,7 +37,7 @@ Tax is reversed in the same CGST, SGST and IGST split as the original invoice.
 | | Credit note you issue | Note from a supplier |
 |---|---|---|
 | **Ledger** | Credits the customer | Debits the supplier |
-| **GST** | Lowers output tax, and is filed in GSTR-1 | Lowers input credit. Nothing to file: the supplier declares it. |
+| **GST** | Lowers output tax, and is filed in GSTR-1, subject to the Section 34 deadline below | Lowers input credit. Nothing to file: the supplier declares it. |
 | **Stock (Return)** | Goes up | Goes down |
 | **Invoice dues** | Reduces the amount owed | |
 
@@ -46,6 +46,29 @@ A note dated in an earlier month changes the GSTR-1 for that month, and later re
 :::
 
 ## Limits to keep in mind
+
+### GST deadline for a sales credit note
+
+The outer Section 34 deadline is **30 November after the original sale's financial year ends**.
+For example, a sale on 10 March 2025 has a deadline of 30 November 2025. That day is included;
+a note dated 1 December is past the limit.
+
+The app allows the note as a **commercial credit note** and shows a warning after creation.
+It still changes the customer's balance and, for returns, stock. GSTR-1 validation names it,
+but the JSON and CSV exports, HSN summary and GSTR-3B worksheet exclude its GST reduction.
+Its issued number remains in GSTR-1 Table 13.
+
+![Warning after creating a credit note past the GST deadline](/screens/credit-note-deadline.png)
+
+Each original invoice is checked. If any is past its deadline, the whole note is excluded
+from GST reductions; raise separate notes for eligible invoices and expired invoices.
+This check does not change how supplier credit notes reduce input credit.
+
+The law uses the **declaration date**, and an earlier annual return can bring the deadline
+forward. The app only has the note date, so uses that as a proxy and does not check an
+earlier annual return. A note within this date limit still needs those filing checks.
+
+### Other limits
 
 - One note covers **one ledger**, and all sales or all purchases.
 - All its invoices must share one place of supply, and for sales, one GSTR-1 table such as B2B or B2CL. Otherwise raise one note for each.
@@ -67,5 +90,5 @@ The **Credit note feed** on the right has search and filters for status, voucher
 **View** on a Credit Note or Debit Note row in a [ledger](../ledgers/) opens the same preview.
 
 ::: danger Cancelling is immediate and permanent
-**Cancel credit note** has no confirmation step, and **deletes** the note. Its stock movement is reversed and the invoice's balance is restored. If you might need the record, do not cancel it. A cancelled note will not appear under the **Cancelled** filter.
+**Cancel credit note** has no confirmation step and cannot be undone. Its stock movement is reversed and the invoice's balance is restored, so the same goods can be credited again on a new note. The cancelled note stays in the feed, marked **Cancelled**, and keeps its number. GSTR-1 counts it in Table 13 as issued and cancelled.
 :::

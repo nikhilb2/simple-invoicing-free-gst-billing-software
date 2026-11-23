@@ -172,6 +172,11 @@ def test_cancelled_challan_is_marked():
     assert "CANCELLED on 16 Nov 2026" in visible_text(render(cancelled))
 
 
+def test_cancelled_date_is_the_india_date_not_the_utc_one():
+    cancelled = make_challan(status="cancelled", cancelled_at=datetime(2026, 11, 20, 20, 0))
+    assert "CANCELLED on 21 Nov 2026" in visible_text(render(cancelled))
+
+
 def test_text_is_escaped():
     text = render(make_challan(reference_notes="<script>alert(1)</script>"))
     assert "<script>" not in text

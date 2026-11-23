@@ -23,11 +23,11 @@ from app_main import app
 from src.api.deps import get_current_user
 from src.core.config import settings
 from src.db.session import get_db
+from src.models.financial_year import FinancialYear
 from src.models.user import User, UserRole
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "api"))
 import test_tenant_isolation as iso  # noqa: E402
-from quotation_helpers import seed_financial_year  # noqa: E402
 
 pytestmark = pytest.mark.skipif(
     not settings.DATABASE_URL.startswith("postgres"),
@@ -62,7 +62,14 @@ def client(clean_rls_db, monkeypatch):
             iso._user(owner, EMAIL, role=UserRole.admin)
         test_client = TestClient(app)
         iso._create_company(test_client, "Dues Traders")
-        seed_financial_year(test_client)
+        # Company creation now seeds its year and series. Widen that fixture
+        # year so these ageing cases can cross the current year's boundary.
+        with clean_rls_db.OwnerSession() as owner:
+            financial_year = owner.query(FinancialYear).one()
+            today = date.today()
+            financial_year.start_date = date(today.year - 1, 1, 1)
+            financial_year.end_date = date(today.year + 1, 12, 31)
+            owner.commit()
         yield test_client
     finally:
         app.dependency_overrides[get_db] = previous_db

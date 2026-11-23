@@ -12,13 +12,15 @@ import { useFirstInvoiceTourStore } from '../store/useFirstInvoiceTourStore';
 import { INVOICE_PATH } from '../features/firstInvoiceTour/tourSteps';
 import { setupPromptChoices } from '../utils/setupPrompt';
 import { useFY } from '../context/FYContext';
-import type { CompanyProfile, CompanyProfileUpdate, InvoiceSeries, InvoiceSeriesUpdate, CompanyTermOut } from '../types/api';
-import { clearSetupDraft, isCompanyConfigured, isCompanyFormDirty, missingCompanyFields, readSetupDraft, writeSetupDraft, type MissingCompanyFields } from '../utils/companySetup';
+import { PAPER_LABELS } from '../utils/paper';
+import type { CompanyProfile, CompanyProfileUpdate, InvoiceSeries, InvoiceSeriesUpdate, CompanyTermOut, PdfPaper } from '../types/api';
+import { clearSetupDraft, companyFormCurrency, isCompanyConfigured, isCompanyFormDirty, missingCompanyFields, readSetupDraft, writeSetupDraft, type MissingCompanyFields } from '../utils/companySetup';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { isCurrencyChange } from '../utils/currencyChange';
-import { buildSeriesPreview, gstr1SeriesFormatError } from '../utils/seriesPreview';
+import { buildSeriesPreview, clampNextSequenceInput, gstr1SeriesFormatError, MAX_NEXT_SEQUENCE, parseNextSequenceInput } from '../utils/seriesPreview';
 import { purchaseTdsSetting } from '../utils/tds';
 import { companyIdentityErrors, firstIdentityErrorField, type CompanyIdentityErrors } from '../utils/companyFieldErrors';
+import { GSTIN_LENGTH, gstinError, normalizeGstinInput } from '../utils/gstin';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -413,6 +415,7 @@ function InvoiceSeriesCard({ sectionRef, savedGstin }: { sectionRef?: React.RefO
   const { activeFY, loading: fyLoading } = useFY();
   const [seriesList, setSeriesList] = useState<InvoiceSeries[]>([]);
   const [drafts, setDrafts] = useState<Record<number, SeriesRowState>>({});
+  const [nextSequenceText, setNextSequenceText] = useState<Record<number, string>>({});
   const [saving, setSaving] = useState<Record<number, boolean>>({});
   const [rowError, setRowError] = useState<Record<number, string>>({});
   const [rowSuccess, setRowSuccess] = useState<Record<number, string>>({});
@@ -432,7 +435,9 @@ function InvoiceSeriesCard({ sectionRef, savedGstin }: { sectionRef?: React.RefO
         if (cancelled) return;
         setSeriesList(res.data);
         const initial: Record<number, SeriesRowState> = {};
+        const initialText: Record<number, string> = {};
         for (const s of res.data) {
+          initialText[s.id] = String(s.next_sequence);
           initial[s.id] = {
             prefix: s.prefix,
             suffix: s.suffix,
@@ -444,6 +449,7 @@ function InvoiceSeriesCard({ sectionRef, savedGstin }: { sectionRef?: React.RefO
           };
         }
         setDrafts(initial);
+        setNextSequenceText(initialText);
       } catch {
         // non-admin users won't see this card
       } finally {
@@ -460,6 +466,17 @@ function InvoiceSeriesCard({ sectionRef, savedGstin }: { sectionRef?: React.RefO
     setDrafts((prev) => ({ ...prev, [id]: { ...prev[id], ...patch } }));
   }
 
+  function changeNextSequence(id: number, raw: string) {
+    const bounded = clampNextSequenceInput(raw);
+    setNextSequenceText((prev) => ({ ...prev, [id]: bounded }));
+    const value = parseNextSequenceInput(bounded);
+    if (value !== null) patchDraft(id, { next_sequence: value });
+  }
+
+  function nextSequenceTextOf(id: number): string {
+    return nextSequenceText[id] ?? String(drafts[id]?.next_sequence ?? '');
+  }
+
   async function saveSeries(s: InvoiceSeries) {
     const draft = drafts[s.id];
     if (!draft) return;
@@ -471,6 +488,7 @@ function InvoiceSeriesCard({ sectionRef, savedGstin }: { sectionRef?: React.RefO
     try {
       const res = await api.put<InvoiceSeries>(`/invoice-series/${s.id}`, draft);
       setSeriesList((prev) => prev.map((x) => (x.id === s.id ? res.data : x)));
+      setNextSequenceText((prev) => ({ ...prev, [s.id]: String(res.data.next_sequence) }));
       setRowSuccess((prev) => ({ ...prev, [s.id]: 'Saved' }));
       setTimeout(() => setRowSuccess((prev) => ({ ...prev, [s.id]: '' })), 2500);
     } catch (err) {
@@ -503,9 +521,11 @@ function InvoiceSeriesCard({ sectionRef, savedGstin }: { sectionRef?: React.RefO
         {seriesList.map((s) => {
           const draft = drafts[s.id];
           if (!draft) return null;
-          const preview = buildSeriesPreview(draft, draft.next_sequence, activeFY?.label);
-          const longest = buildSeriesPreview(draft, Math.max(draft.next_sequence, 9999), activeFY?.label);
-          const formatError = gstr1SeriesFormatError(draft, s, savedGstin, activeFY?.label);
+          const fyStartYear = activeFY?.start_date ? Number(activeFY.start_date.slice(0, 4)) : null;
+          const preview = buildSeriesPreview(draft, draft.next_sequence, activeFY?.label, undefined, fyStartYear);
+          const longest = buildSeriesPreview(draft, Math.max(draft.next_sequence, 9999), activeFY?.label, undefined, fyStartYear);
+          const formatError = gstr1SeriesFormatError(draft, s, savedGstin, activeFY?.label, undefined, fyStartYear);
+          const nextSequenceInvalid = parseNextSequenceInput(nextSequenceTextOf(s.id)) === null;
           return (
             <div key={s.id} className="panel" style={{ padding: '16px' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
@@ -585,10 +605,23 @@ function InvoiceSeriesCard({ sectionRef, savedGstin }: { sectionRef?: React.RefO
                     className="input"
                     type="number"
                     min={1}
+                    max={MAX_NEXT_SEQUENCE}
                     step={1}
-                    value={draft.next_sequence}
-                    onChange={(e) => patchDraft(s.id, { next_sequence: Math.max(1, parseInt(e.target.value, 10) || 1) })}
+                    value={nextSequenceTextOf(s.id)}
+                    onChange={(e) => changeNextSequence(s.id, e.target.value)}
+                    onBlur={() => {
+                      if (nextSequenceInvalid) {
+                        setNextSequenceText((prev) => ({ ...prev, [s.id]: String(draft.next_sequence) }));
+                      }
+                    }}
+                    aria-invalid={nextSequenceInvalid ? true : undefined}
+                    aria-describedby={nextSequenceInvalid ? `series-next-seq-error-${s.id}` : undefined}
                   />
+                  {nextSequenceInvalid && (
+                    <p className="field-error" id={`series-next-seq-error-${s.id}`} role="alert">
+                      Enter a number from 1 to 999,999,999.
+                    </p>
+                  )}
                 </div>
 
                 <div className="field" style={{ display: 'flex', alignItems: 'center', gap: '8px', paddingTop: '22px' }}>
@@ -610,7 +643,7 @@ function InvoiceSeriesCard({ sectionRef, savedGstin }: { sectionRef?: React.RefO
                 <button
                   className="button button--primary"
                   style={{ marginTop: 0, padding: '6px 16px', fontSize: '0.875rem' }}
-                  disabled={saving[s.id] || Boolean(formatError)}
+                  disabled={saving[s.id] || Boolean(formatError) || nextSequenceInvalid}
                   onClick={() => void saveSeries(s)}
                 >
                   {saving[s.id] ? 'Saving…' : 'Save'}
@@ -758,6 +791,7 @@ export default function CompanyPage() {
     email: '',
     website: '',
     show_sku_on_pdf: false,
+    default_pdf_paper: 'a4' as PdfPaper,
     eway_enabled: true,
     eway_local_threshold: 50000,
     eway_interstate_threshold: 50000,
@@ -785,7 +819,9 @@ export default function CompanyPage() {
   const [initialSetupRequired, setInitialSetupRequired] = useState<boolean | null>(null);
   // GSTIN / PAN / TAN messages from a failed save, shown under each input.
   const [identityErrors, setIdentityErrors] = useState<CompanyIdentityErrors>({});
-  const gstError = identityErrors.gst ?? '';
+  const [gstTouched, setGstTouched] = useState(false);
+  const invalidGst = gstinError(form.gst);
+  const gstError = identityErrors.gst ?? (gstTouched || form.gst.length >= GSTIN_LENGTH ? invalidGst : null);
   const [showFirstSetupPrompt, setShowFirstSetupPrompt] = useState(false);
   // No "Complete company setup" popup any more: it was one more click between a
   // new user and the form, and read as homework. The short form says it instead.
@@ -812,10 +848,11 @@ export default function CompanyPage() {
         tan: data.tan || '',
         enable_purchase_tds: data.enable_purchase_tds || false,
         phone_number: data.phone_number || '',
-        currency_code: data.currency_code || 'USD',
+        currency_code: companyFormCurrency(data.currency_code),
         email: data.email || '',
         website: data.website || '',
         show_sku_on_pdf: data.show_sku_on_pdf || false,
+        default_pdf_paper: data.default_pdf_paper || 'a4',
         eway_enabled: data.eway_enabled ?? true,
         eway_local_threshold: data.eway_local_threshold ?? 50000,
         eway_interstate_threshold: data.eway_interstate_threshold ?? 50000,
@@ -873,6 +910,15 @@ export default function CompanyPage() {
     }
   }
 
+  function checkGstinBeforeSave() {
+    if (invalidGst) {
+      setGstTouched(true);
+      gstInputRef.current?.focus();
+      gstInputRef.current?.scrollIntoView({ block: 'center' });
+    }
+    return invalidGst;
+  }
+
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -883,6 +929,10 @@ export default function CompanyPage() {
     if (firstMissing) {
       firstMissing.focus();
       firstMissing.scrollIntoView({ block: 'center' });
+      return;
+    }
+    if (checkGstinBeforeSave()) {
+      pendingNavRef.current = null;
       return;
     }
 
@@ -907,7 +957,7 @@ export default function CompanyPage() {
       const payload: CompanyProfileUpdate = {
         name: form.name.trim(),
         address: form.address.trim(),
-        gst: form.gst.trim().toUpperCase(),
+        gst: normalizeGstinInput(form.gst),
         pan: (form.pan || '').trim().toUpperCase(),
         tan: (form.tan || '').trim().toUpperCase(),
         // Never send the setting on without a TAN: the server refuses that save.
@@ -917,6 +967,7 @@ export default function CompanyPage() {
         email: form.email.trim(),
         website: form.website.trim(),
         show_sku_on_pdf: form.show_sku_on_pdf,
+        default_pdf_paper: form.default_pdf_paper,
         eway_enabled: form.eway_enabled,
         eway_local_threshold: form.eway_local_threshold,
         eway_interstate_threshold: form.eway_interstate_threshold,
@@ -952,6 +1003,7 @@ export default function CompanyPage() {
       if (initialSetupRequired && payload.name) {
         setShowFirstSetupPrompt(true);
       }
+      await queryClient.invalidateQueries({ queryKey: ['company', 'profile'] });
       setIdentityErrors({});
       await loadCompanyProfile();
       const next = pendingNavRef.current;
@@ -979,10 +1031,13 @@ export default function CompanyPage() {
   }
 
   async function handleAdditionalInfoSave(value: string) {
+    const gstMessage = checkGstinBeforeSave();
+    if (gstMessage) throw new Error(gstMessage);
     setAdditionalSaving(true);
     try {
       const payload: CompanyProfileUpdate = {
         ...form,
+        gst: normalizeGstinInput(form.gst),
         additional_company_info: value,
       };
       await api.put('/company/', payload);
@@ -1189,9 +1244,11 @@ export default function CompanyPage() {
                     className="input"
                     value={form.gst}
                     onChange={(event) => {
+                      const gst = normalizeGstinInput(event.target.value);
                       setIdentityErrors((current) => ({ ...current, gst: undefined }));
-                      setForm((current) => ({ ...current, gst: event.target.value }));
+                      setForm((current) => ({ ...current, gst }));
                     }}
+                    onBlur={() => setGstTouched(true)}
                     autoCapitalize="characters"
                     aria-invalid={gstError ? true : undefined}
                     aria-describedby={gstError ? 'company-gst-error' : undefined}
@@ -1341,6 +1398,22 @@ export default function CompanyPage() {
                   </div>
                   <small className="field-hint" style={{ marginLeft: '24px' }}>
                     When disabled, SKU is hidden and the item description gets more horizontal space.
+                  </small>
+                </div>
+
+                <div className="field">
+                  <label htmlFor="company-default-paper">Default paper size</label>
+                  <select
+                    id="company-default-paper"
+                    value={form.default_pdf_paper}
+                    onChange={(e) => setForm((current) => ({ ...current, default_pdf_paper: e.target.value as PdfPaper }))}
+                  >
+                    {(Object.keys(PAPER_LABELS) as PdfPaper[]).map((paper) => (
+                      <option key={paper} value={paper}>{PAPER_LABELS[paper]}</option>
+                    ))}
+                  </select>
+                  <small className="field-hint">
+                    The paper used for downloads, emails and share links. Thermal applies to bills, receipts, notes, challans and quotations; reports fall back to A4.
                   </small>
                 </div>
 

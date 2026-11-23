@@ -2,7 +2,14 @@ import type { AxiosResponse } from 'axios';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import api from '../api/client';
 import { queryClient } from '../lib/queryClient';
+import { identifyUser } from '../lib/analytics';
+import { exchangeOAuthCode, verifyEmail } from '../api/auth';
+import { verifiedSession } from '../utils/verifyEmailForm';
 import { useAuthStore } from './useAuthStore';
+
+vi.mock('../lib/analytics', () => ({
+  identifyUser: vi.fn(), resetAnalyticsUser: vi.fn(), getSessionId: () => null,
+}));
 
 /* The store reads localStorage the moment its module loads, so the in-memory
    stub has to be in place before the imports above run. */
@@ -36,6 +43,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.mocked(identifyUser).mockClear();
   vi.unstubAllGlobals();
   postMessage.mockReset();
   for (const key of Object.keys(store)) {
@@ -44,6 +52,23 @@ afterEach(() => {
 });
 
 describe('auth store and the native bridge', () => {
+  it.each(['email', 'google'] as const)('identifies the confirmed %s sign-up through setSession', async (kind) => {
+    const email = 'signup@example.invalid';
+    const tokens = { access_token: `fixture.${btoa(JSON.stringify({ sub: email }))}.fixture`, refresh_token: 'refresh', token_type: 'bearer' };
+    api.defaults.adapter = async (config): Promise<AxiosResponse> => ({
+      data: config.url === '/auth/me' ? { role: 'admin', active_company_id: null } : tokens,
+      status: 200, statusText: 'OK', headers: {}, config,
+    });
+    const response = kind === 'email'
+      ? verifiedSession(await verifyEmail('verification-fixture', 'Password-fixture', 'Demo'))
+      : await exchangeOAuthCode('oauth-fixture');
+    // These are the same public API and shared session path used by the two pages.
+    expect(response).not.toBeNull();
+    await useAuthStore.getState().setSession(response!);
+    expect(identifyUser).toHaveBeenCalledExactlyOnceWith(email, { email });
+    expect(useAuthStore.getState().userEmail).toBe(email);
+  });
+
   it('posts the new pair on login', async () => {
     await useAuthStore.getState().login('a@example.com', 'secret');
 

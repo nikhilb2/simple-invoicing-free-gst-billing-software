@@ -14,10 +14,11 @@ the note below before release.
 
 from datetime import date
 
+from src.core.currency import resolve_currency_code
 from src.models.company_account import CompanyAccount
 from src.models.product import Product
 from src.models.quotation import DOCUMENT_PROFORMA, STATUS_CANCELLED, Quotation
-from src.services.gst_tax_service import india_today
+from src.services.gst_tax_service import india_today, to_india_date
 
 from .builders import (
     _amount_in_words_indian,
@@ -33,6 +34,7 @@ from .builders import (
     _pdf_display_quantity,
     _pdf_display_unit,
     _pdf_unit_price,
+    document_paper_css,
 )
 from .purchase_template import _extract_pan_from_gstin, _is_interstate_supply
 
@@ -109,14 +111,17 @@ def _build_quotation_html(
     *,
     show_sku: bool = True,
     today: date | None = None,
+    paper: str = "a4",
 ) -> str:
-    """Generate HTML for a quotation or a proforma invoice."""
+    """Generate HTML for a quotation or a proforma invoice, for A4 or A5 ``paper``."""
+    compact = paper == "a5"
+    page_rule, paper_css = document_paper_css(paper)
     today = today or india_today()
     is_proforma = quotation.document_type == DOCUMENT_PROFORMA
     title = "Proforma Invoice" if is_proforma else "Quotation"
     party_eyebrow = "Proforma for" if is_proforma else "Quotation for"
 
-    currency = quotation.company_currency_code or "USD"
+    currency = resolve_currency_code(quotation.company_currency_code)
     number = _e(quotation.quotation_number)
     interstate_supply = _is_interstate_supply(quotation.company_gst, quotation.ledger_gst)
     tax_inclusive = bool(quotation.tax_inclusive)
@@ -144,7 +149,7 @@ def _build_quotation_html(
           <td class="right">{quantity}</td>
           <td>{unit}</td>
           <td class="right">{_fmt_currency(_pdf_unit_price(item, tax_inclusive=tax_inclusive), currency)}</td>
-          {_build_pdf_tax_row_cells(item, currency, interstate_supply)}
+          {_build_pdf_tax_row_cells(item, currency, interstate_supply, compact=compact)}
           <td class="right">{_fmt_currency(float(item.line_total), currency)}</td>
         </tr>"""
 
@@ -195,7 +200,7 @@ def _build_quotation_html(
 
     mark_html = ""
     if cancelled:
-        mark_html = f'<div class="sheet__mark">Cancelled on {_fmt_date(quotation.cancelled_at)}</div>'
+        mark_html = f'<div class="sheet__mark">Cancelled on {_fmt_date(to_india_date(quotation.cancelled_at))}</div>'
     elif expired:
         mark_html = f'<div class="sheet__mark">Expired on {_fmt_date(quotation.valid_until)}</div>'
 
@@ -217,13 +222,10 @@ def _build_quotation_html(
 <head>
 <meta charset="utf-8">
 <style>
-  @page {{
-    size: A4;
-    margin: 15mm 18mm;
-  }}
+  {page_rule}
   * {{ margin: 0; padding: 0; box-sizing: border-box; }}
   body {{
-    font-family: -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    font-family: -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, 'Noto Sans', 'Noto Sans Devanagari', sans-serif;
     font-size: 10px;
     color: #1f2937;
     line-height: 1.5;
@@ -432,7 +434,7 @@ def _build_quotation_html(
     break-inside: avoid;
     page-break-inside: avoid;
   }}
-</style>
+{paper_css}</style>
 </head>
 <body>
 <div class="sheet">
@@ -470,7 +472,7 @@ def _build_quotation_html(
 
   <section>
     <table class="sheet__table">
-      {_build_pdf_table_colgroup(interstate_supply, show_sku=show_sku)}
+      {_build_pdf_table_colgroup(interstate_supply, show_sku=show_sku, compact=compact)}
       <thead>
         <tr>
           <th>#</th>
@@ -480,7 +482,7 @@ def _build_quotation_html(
           <th class="right">Qty</th>
           <th>Unit</th>
           <th class="right">Unit Price<br><span style="font-size: 6px; font-weight: 500; text-transform: none;">{"(with tax)" if tax_inclusive else "(without tax)"}</span></th>
-          {_build_pdf_tax_header_cells(interstate_supply)}
+          {_build_pdf_tax_header_cells(interstate_supply, compact=compact)}
           <th class="right">Amount</th>
         </tr>
       </thead>

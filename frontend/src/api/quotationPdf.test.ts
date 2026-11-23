@@ -23,7 +23,7 @@ describe('fetchQuotationPdf', () => {
     const get = vi.spyOn(api, 'get').mockResolvedValue({ data: pdf });
 
     await expect(fetchQuotationPdf(7, 'Unable to load PDF preview')).resolves.toBe(pdf);
-    expect(get).toHaveBeenCalledWith('/quotations/7/pdf', { responseType: 'blob' });
+    expect(get).toHaveBeenCalledWith('/quotations/7/pdf', { params: { paper: undefined }, responseType: 'blob' });
   });
 
   it("shows the server's reason, not the status code, when the PDF cannot be made", async () => {

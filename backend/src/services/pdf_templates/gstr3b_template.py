@@ -7,6 +7,7 @@ printed and passed around without the screen it came from.
 from datetime import datetime
 
 from src.schemas.gstr3b import Gstr3bRow, Gstr3bRowComponent, Gstr3bWorksheetOut
+from src.services.pdf_paper import ReportPaper, page_css
 
 from .builders import _e
 from .ledger_template import _fmt_inr
@@ -14,6 +15,21 @@ from .ledger_template import _fmt_inr
 # A warning can name hundreds of invoices. The page and the CSV list all of them;
 # here a sample is enough to act on, and the count says how many there are.
 _MAX_DOCUMENTS_PER_WARNING = 15
+
+# A5 landscape is 210mm wide against A4 landscape's 297mm: smaller type and tighter cells
+# keep every table inside the page. Emitted only for A5.
+_A5_CSS = """
+    body { font-size: 8pt; }
+    h1 { font-size: 14pt; }
+    .subtitle { font-size: 9.5pt; }
+    h2 { font-size: 9.5pt; margin: 10px 0 4px; }
+    .disclaimer { padding: 5px 8px; margin-bottom: 8px; }
+    th, td { padding: 2px 4px; }
+    th { font-size: 7pt; }
+    .component td { font-size: 7pt; }
+    .badge { font-size: 6.5pt; }
+    .docs, .generated { font-size: 7pt; }
+"""
 
 _SOURCE_LABELS = {"from_books": "From books", "not_tracked": "Not tracked"}
 
@@ -91,6 +107,7 @@ def build_gstr3b_worksheet_html(
     company_name: str | None,
     company_gstin: str | None,
     generated_at: datetime,
+    paper: ReportPaper = "a4",
 ) -> str:
     sections = "".join(
         f'<div class="section"><h2>{_e(section.title)}</h2>'
@@ -114,12 +131,14 @@ def build_gstr3b_worksheet_html(
     )
     limits = "".join(f"<li>{_e(limit)}</li>" for limit in worksheet.known_limits)
 
+    page_rule = page_css(paper, landscape=True, a4_margin="18mm 12mm 14mm", a5_margin="11mm 8mm 9mm")
+    a5_style = f"<style>{_A5_CSS}</style>" if paper == "a5" else ""
+
     return f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8">
 <style>
+    {page_rule}
     @page {{
-        size: A4 landscape;
-        margin: 18mm 12mm 14mm;
         @top-center {{ content: "{_e(worksheet.headline)}. Estimate from your books, not a filing."; font-size: 8pt; color: #8a1c1c; font-family: Arial, sans-serif; }}
         @bottom-right {{ content: "Page " counter(page) " of " counter(pages); font-size: 8pt; color: #666; font-family: Arial, sans-serif; }}
     }}
@@ -153,7 +172,8 @@ def build_gstr3b_worksheet_html(
     ul {{ margin: 4px 0; padding-left: 16px; }}
     li {{ margin-bottom: 3px; }}
     .generated {{ font-size: 8pt; color: #888; margin-top: 12px; }}
-</style></head><body>
+</style>
+{a5_style}</head><body>
 <h1>{_e(worksheet.headline)}</h1>
 <p class="subtitle">{_e(worksheet.title)} for {_e(worksheet.period_label)}</p>
 <p class="meta">{_e(company_name)}{" &middot; GSTIN " + _e(company_gstin) if company_gstin else ""} &middot; {worksheet.from_date} to {worksheet.to_date}</p>

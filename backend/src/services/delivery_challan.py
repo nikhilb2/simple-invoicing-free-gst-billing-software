@@ -54,7 +54,7 @@ from src.schemas.delivery_challan import (
 from src.schemas.invoice import InvoiceItemCreate
 from src.services.company_access import company_scope
 from src.services.document_totals import require_money_fits, snapshot_company_fields
-from src.services.financial_year import get_active_fy, get_fy_for_date
+from src.services.financial_year import get_active_fy, get_fy_for_date, require_same_financial_year
 from src.services.gst_tax_service import (
     assign_invoice_tax_totals,
     assign_item_tax_split,
@@ -426,9 +426,14 @@ def update_challan(
 
     challan_date = payload.challan_date or challan.challan_date
     if challan_date != challan.challan_date:
-        fy = get_fy_for_date(db, challan_date, company_id=company.id)
-        if fy is not None:
-            challan.financial_year_id = fy.id
+        if challan.financial_year_id is None:
+            fy = get_fy_for_date(db, challan_date, company_id=company.id)
+            if fy is not None:
+                challan.financial_year_id = fy.id
+        else:
+            require_same_financial_year(
+                db, challan.financial_year_id, challan_date, company_id=company.id, document="delivery challan"
+            )
     challan.challan_date = challan_date
 
     old = challan_quantities(challan)

@@ -501,6 +501,45 @@ class TestDiscountedLineAmounts:
         for item, share in zip(items, shares):
             assert lines[item.id].taxable_amount == Decimal(str(item.taxable_amount)) - share
 
+    @pytest.mark.parametrize("place_of_supply", [None, "27"], ids=["intrastate", "interstate"])
+    def test_round_off_on_an_undiscounted_invoice_goes_on_taxable_values_only(
+        self, db_session, processor, place_of_supply,
+    ):
+        """#891 review: round-off is not tax; each line keeps exactly its stored GST."""
+        extra = {"place_of_supply": place_of_supply} if place_of_supply else {}
+        invoice = self._invoice(db_session, processor, apply_round_off=True, **extra)
+        round_off = Decimal(str(invoice.round_off_amount))
+        assert round_off != 0
+        assert invoice_discount_amount(invoice) == 0
+
+        lines = discounted_line_amounts(invoice, include_round_off=True)
+
+        for item in invoice.items:
+            assert lines[item.id].tax_amount == Decimal(str(item.tax_amount))
+        taxable_added = sum(
+            (lines[item.id].taxable_amount - Decimal(str(item.taxable_amount)) for item in invoice.items),
+            Decimal("0"),
+        )
+        assert taxable_added == round_off
+        assert sum(line.line_total for line in lines.values()) == Decimal(str(invoice.total_amount))
+
+    @pytest.mark.parametrize("discount_value", [7.5, 3.2])
+    def test_round_off_on_a_discounted_invoice_leaves_the_discounted_gst_alone(
+        self, db_session, processor, discount_value,
+    ):
+        """Sharing the round-off changes only taxable values, never the GST after discount."""
+        invoice = self._invoice(
+            db_session, processor, discount_type="percentage", discount_value=discount_value, apply_round_off=True,
+        )
+        assert Decimal(str(invoice.round_off_amount)) != 0
+
+        with_round_off = discounted_line_amounts(invoice, include_round_off=True)
+        without = discounted_line_amounts(invoice)
+
+        for item in invoice.items:
+            assert with_round_off[item.id].tax_amount == without[item.id].tax_amount
+        assert sum(line.line_total for line in with_round_off.values()) == Decimal(str(invoice.total_amount))
+
     def test_intrastate_lines_keep_gst_that_halves_evenly(self, db_session, processor):
         invoice = self._invoice(
             db_session, processor, discount_type="percentage", discount_value=7.5, apply_round_off=True,

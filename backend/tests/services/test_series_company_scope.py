@@ -91,11 +91,14 @@ def test_series_less_fallback_numbers_per_company(db_session, mode):
     company_b = CompanyProfile(name="B", address="")
     db_session.add_all([company_a, company_b])
     db_session.commit()
-    db_session.add(Invoice(invoice_number="INV-000000", company_id=company_b.id, total_amount=0, created_by=1))
+    for number in ("INV-000000", "INV-000001", "INV-000002"):
+        db_session.add(Invoice(invoice_number=number, company_id=company_b.id, total_amount=0, created_by=1))
     db_session.commit()
 
-    assert generate_next_number(db_session, "sales", company_id=company_a.id) == "INV-000000"
-    assert generate_next_number(db_session, "sales", company_id=company_b.id) == "INV-000001"
+    assert generate_next_number(db_session, "sales", company_id=company_a.id) == "INV-000001"
+    assert generate_next_number(db_session, "sales", company_id=company_b.id) == "INV-000003"
+    # Reading older books keeps their existing zero-based number intact.
+    assert db_session.query(Invoice).filter_by(company_id=company_b.id, invoice_number="INV-000000").count() == 1
 
 
 def test_a_company_never_draws_from_a_legacy_shared_series(db_session, mode):

@@ -21,9 +21,11 @@ import ProductFormModal from './catalogue/ProductFormModal';
 import type { BackfillTarget } from './catalogue/ProductFormModal';
 import StockAdjustModal from './catalogue/StockAdjustModal';
 import SerialHistoryDrawer from './catalogue/SerialHistoryDrawer';
+import BulkUpdateModal from './catalogue/BulkUpdateModal';
 import ImportModal from './catalogue/ImportModal';
 import { exportCatalogueCsv, exportCataloguePdf } from './catalogue/exports';
 import { isLowStock, isSerialFilter, rowEditFrom } from './catalogue/types';
+import { pageAfterOutOfRange } from '../utils/pagination';
 import type {
   CatalogueRow,
   PaginatedCatalogue,
@@ -103,6 +105,7 @@ export default function CataloguePage() {
     null,
   );
   const [importOpen, setImportOpen] = useState(false);
+  const [bulkUpdateOpen, setBulkUpdateOpen] = useState(false);
   const [deleteRow, setDeleteRow] = useState<CatalogueRow | null>(null);
   const [exporting, setExporting] = useState<'csv' | 'pdf' | null>(null);
 
@@ -141,6 +144,12 @@ export default function CataloguePage() {
       });
       if (latestRequest.current !== requestId) return;
 
+      const lastPage = pageAfterOutOfRange(page, response.data.total_pages);
+      if (lastPage !== null) {
+        setParams({ page: lastPage === 1 ? null : String(lastPage) });
+        return;
+      }
+
       setRows(response.data.items);
       setTotal(response.data.total);
       setTotalPages(response.data.total_pages);
@@ -170,6 +179,17 @@ export default function CataloguePage() {
       .then((response) => setCompany(response.data))
       .catch(() => setCompany(null));
   }, []);
+
+  /* Whether the company counts stock for any product, which sets the default
+     for a new one (#983). Asked again whenever the product count changes, so
+     the first counted product turns the default on for the next. */
+  const [countsStock, setCountsStock] = useState<boolean | undefined>(undefined);
+  useEffect(() => {
+    api
+      .get<PaginatedCatalogue>('/products/with-inventory', { params: { status: 'active', page_size: 1 } })
+      .then((response) => setCountsStock(response.data.total > 0))
+      .catch(() => setCountsStock(undefined));
+  }, [total]);
 
   const currencyCode = company?.currency_code || 'INR';
 
@@ -425,6 +445,10 @@ export default function CataloguePage() {
                 <FileText size={15} aria-hidden="true" />
                 Report
               </button>
+              <button type="button" className="button button--ghost button--small"
+                onClick={() => setBulkUpdateOpen(true)}>
+                Bulk update
+              </button>
               <button
                 type="button"
                 className="button button--ghost button--small"
@@ -562,6 +586,7 @@ export default function CataloguePage() {
         <ProductFormModal
           row={formRow}
           template={formTemplate}
+          countsStock={countsStock}
           onCancel={() => setFormOpen(false)}
           onSaved={(message) => {
             setFormOpen(false);
@@ -626,6 +651,17 @@ export default function CataloguePage() {
           onCancel={() => setBackfill(null)}
         />
       ) : null}
+
+      {bulkUpdateOpen && (
+        <BulkUpdateModal
+          onClose={() => setBulkUpdateOpen(false)}
+          onSaved={(count) => {
+            setBulkUpdateOpen(false);
+            setSuccess(count === 1 ? '1 product updated.' : count + ' products updated.');
+            void loadData();
+          }}
+        />
+      )}
 
       {importOpen ? (
         <ImportModal

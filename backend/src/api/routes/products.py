@@ -5,7 +5,15 @@ import unicodedata
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File as FastAPIFile, HTTPException, Query, UploadFile
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File as FastAPIFile,
+    HTTPException,
+    Query,
+    UploadFile,
+)
 from fastapi.responses import StreamingResponse
 from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
@@ -14,6 +22,7 @@ from decimal import Decimal
 from src.db.session import get_db
 from src.models.bom import BillOfMaterial
 from src.models.company import CompanyProfile
+from src.models.credit_note import CreditNote, CreditNoteItem
 from src.models.inventory import Inventory
 from src.models.invoice import Invoice, InvoiceItem
 from src.models.marketplace import MarketplaceListing, MarketplaceOrder, MarketplaceOrderItem, MarketplaceProductLink
@@ -33,9 +42,14 @@ from src.schemas.product import (
 )
 from src.api.deps import get_active_company, get_current_user, require_company_role
 from src.api.pagination import MAX_PAGE
+from src.api.search import contains_pattern
 from src.core.analytics import distinct_id_for, track
 from src.core.document_limits import MONEY_STORAGE_CUTOFF, QUANTITY_STORAGE_CUTOFF
 from src.core.validation import hsn_sac_warning, normalize_hsn_sac
+from src.services.marketplace.listings import (
+    push_resync_to_marketplace,
+    resync_listings_for_product,
+)
 from src.services.serial_service import SerialManager
 
 router = APIRouter()
@@ -209,8 +223,8 @@ def list_products(
 ):
     query = db.query(Product).filter(Product.company_id == active_company.id)
     if search.strip():
-        term = f"%{search.strip()}%"
-        query = query.filter(or_(Product.name.ilike(term), Product.sku.ilike(term)))
+        term = contains_pattern(search)
+        query = query.filter(or_(Product.name.ilike(term, escape="\\"), Product.sku.ilike(term, escape="\\")))
     if is_producable is not None:
         query = query.filter(Product.is_producable == is_producable)
     total = query.count()
@@ -233,6 +247,7 @@ def list_products(
 def update_product(
     product_id: int,
     payload: ProductCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     _: User = Depends(require_company_role(UserRole.admin, UserRole.manager)),
     active_company: CompanyProfile = Depends(get_active_company),
@@ -339,8 +354,16 @@ def update_product(
     if payload.track_serials and not was_tracking_serials:
         _backfill_serials(db, product, serial_codes, company_id=active_company.id)
 
+    # Listings copy the tax fields once at creation, so a correction has to
+    # reach them too, or they keep quoting the old rate (#888).
+    pending = resync_listings_for_product(db, active_company.id, product)
+
     db.commit()
     db.refresh(product)
+    if pending:
+        background_tasks.add_task(
+            push_resync_to_marketplace, db.get_bind(), active_company.id, pending
+        )
     return product
 
 
@@ -375,7 +398,30 @@ def _backfill_serials(
     # switched back on already has some of its units covered.
     on_hand = int(stock)
     already = SerialManager(db).count_in_stock(product.id, company_id=company_id)
-    missing = max(on_hand - already, 0)
+    if already > on_hand:
+        # Units sold while tracking was off left no trace on the serial rows, so
+        # the rows now outnumber the shelf. Saving anyway would break the invariant
+        # inventory == in-stock serials and let the picker offer units that are gone
+        # (#918). The merchant can name the serials of the units still on the shelf
+        # in this same save; the remaining rows are written off automatically.
+        if len(codes) == on_hand:
+            SerialManager(db).keep_only(
+                codes,
+                product_id=product.id,
+                company_id=company_id,
+                note="Voided when serial tracking was re-enabled: the unit already left",
+            )
+            return
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"{product.name} has {_plural(already, 'serial number')} in stock but only "
+                f"{_plural(on_hand, 'unit')} on the shelf. Provide the "
+                f"{_plural(on_hand, 'serial number')} of the units still on the shelf to "
+                "keep them and write off the rest."
+            ),
+        )
+    missing = on_hand - already
     if len(codes) != missing:
         raise HTTPException(
             status_code=400,
@@ -412,6 +458,17 @@ def delete_product(
     )
     if has_invoice_items:
         raise HTTPException(status_code=400, detail="Cannot delete product linked to invoices")
+
+    # A cancelled note keeps its items (#800), even once its invoice is edited
+    # to drop the product.
+    has_credit_note_items = (
+        db.query(CreditNoteItem.id)
+        .join(CreditNote, CreditNoteItem.credit_note_id == CreditNote.id)
+        .filter(CreditNoteItem.product_id == product_id, CreditNote.company_id == active_company.id)
+        .first()
+    )
+    if has_credit_note_items:
+        raise HTTPException(status_code=400, detail="Cannot delete product linked to credit notes")
 
     has_quotation_items = (
         db.query(QuotationItem.id)
@@ -525,7 +582,7 @@ def _apply_catalogue_filters(
     """
     if search.strip():
         cleaned = search.strip()
-        term = f"%{cleaned}%"
+        term = contains_pattern(search)
         # A pasted IMEI names a unit, not a product, so the search also reaches
         # into the serial register and returns the product that unit belongs to
         # — the catalogue-side counterpart of the invoice list's serial search.
@@ -537,7 +594,7 @@ def _apply_catalogue_filters(
         #
         # Sold and void rows are matched too: "which product is this unit?" is
         # asked most often about a handset that has already left the shelf.
-        serial_term = f"%{cleaned.upper()}%"
+        serial_term = contains_pattern(cleaned.upper())
         serial_subq = (
             db.query(ProductSerial.product_id)
             .filter(
@@ -545,7 +602,7 @@ def _apply_catalogue_filters(
                 # products they point at — a serial belonging to another company
                 # must never name a product here.
                 ProductSerial.company_id == company_id,
-                func.upper(ProductSerial.serial_number).like(serial_term),
+                func.upper(ProductSerial.serial_number).ilike(serial_term, escape="\\"),
             )
             # ``scalar_subquery`` rather than ``subquery``: IN() over a plain
             # Subquery is coerced with a SAWarning on SQLAlchemy 2.
@@ -553,8 +610,8 @@ def _apply_catalogue_filters(
         )
         query = query.filter(
             or_(
-                Product.name.ilike(term),
-                Product.sku.ilike(term),
+                Product.name.ilike(term, escape="\\"),
+                Product.sku.ilike(term, escape="\\"),
                 Product.id.in_(serial_subq),
             )
         )
@@ -714,6 +771,7 @@ def list_products_with_inventory(
 def update_product_with_inventory(
     product_id: int,
     payload: ProductWithInventoryUpdate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     _: User = Depends(require_company_role(UserRole.admin, UserRole.manager)),
     active_company: CompanyProfile = Depends(get_active_company),
@@ -726,6 +784,9 @@ def update_product_with_inventory(
     )
     if not product:
         raise HTTPException(status_code=404, detail=f"Product {product_id} not found")
+
+    if payload.status == "inactive" and product.track_serials:
+        raise HTTPException(status_code=400, detail="Serial-tracked products must maintain inventory")
 
     # Update product fields
     if payload.name is not None:
@@ -777,7 +838,7 @@ def update_product_with_inventory(
                 Inventory.product_id == product_id,
                 Inventory.company_id == active_company.id,
             )
-            .first()
+            .with_for_update().first()
         )
         # Setting stock outright would leave a tracked product with a quantity
         # no set of serials backs. It has to move through /inventory/adjust.
@@ -801,8 +862,16 @@ def update_product_with_inventory(
                 )
             )
 
+    # Listings copy the tax fields once at creation, so a correction has to
+    # reach them too, or they keep quoting the old rate (#888).
+    pending = resync_listings_for_product(db, active_company.id, product)
+
     db.commit()
     db.refresh(product)
+    if pending:
+        background_tasks.add_task(
+            push_resync_to_marketplace, db.get_bind(), active_company.id, pending
+        )
 
     # Return joined data
     inv = (
@@ -910,6 +979,7 @@ def export_products_csv(
 
 @router.post("/import-csv", response_model=ImportCSVResult)
 async def import_products_csv(
+    background_tasks: BackgroundTasks,
     file: UploadFile = FastAPIFile(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_company_role(UserRole.admin, UserRole.manager)),
@@ -921,7 +991,27 @@ async def import_products_csv(
     Returns a summary of created, updated, and error counts.
     """
     content = await file.read()
-    result = _import_csv_from_content(content, db, active_company)
+    result, changed_ids = _import_csv_from_content(content, db, active_company)
+
+    # A CSV row is the most likely way a seller corrects a rate on many
+    # products at once, so tax edits from an import resync listings too (#888).
+    pending = []
+    for product_id in changed_ids:
+        product = (
+            db.query(Product)
+            .filter(
+                Product.id == product_id,
+                Product.company_id == active_company.id,
+            )
+            .first()
+        )
+        if product is not None:
+            pending.extend(resync_listings_for_product(db, active_company.id, product))
+    if pending:
+        db.commit()
+        background_tasks.add_task(
+            push_resync_to_marketplace, db.get_bind(), active_company.id, pending
+        )
 
     # A wholly failed import is still an import attempt worth counting: rows that
     # error are the reason someone gives up on the feature.
@@ -947,19 +1037,30 @@ def _csv_number(raw) -> float:
     return value
 
 
-def _import_csv_from_content(content: bytes, db: Session, active_company: CompanyProfile) -> dict:
+def _import_csv_from_content(
+    content: bytes, db: Session, active_company: CompanyProfile
+) -> tuple[dict, list[int]]:
     created = 0
     updated = 0
     errors: list[dict] = []
+    changed_ids: list[int] = []
 
     try:
         text = content.decode("utf-8-sig")
     except UnicodeDecodeError as e:
-        return {"created": 0, "updated": 0, "errors": [{"row": 0, "message": f"Invalid file encoding: {e}"}]}
+        return {
+            "created": 0,
+            "updated": 0,
+            "errors": [{"row": 0, "message": f"Invalid file encoding: {e}"}],
+        }, []
 
     reader = csv.DictReader(io.StringIO(text))
     if not reader.fieldnames:
-        return {"created": 0, "updated": 0, "errors": [{"row": 0, "message": "CSV file appears to be empty"}]}
+        return {
+            "created": 0,
+            "updated": 0,
+            "errors": [{"row": 0, "message": "CSV file appears to be empty"}],
+        }, []
 
     # Normalise column names
     normalised = [h.strip().lower().replace(" ", "_") for h in reader.fieldnames]
@@ -991,6 +1092,19 @@ def _import_csv_from_content(content: bytes, db: Session, active_company: Compan
         values = dict(
             zip(normalised, [v.strip() if isinstance(v, str) else "" for v in row.values()])
         )
+
+        # Postgres cannot store a NUL character (\0); pasted-from-PDF or
+        # other-software exports can carry one. Fail this row only, not the
+        # whole import -- the request-wide check in src/core/request_text_safety.py
+        # does not run here, since this endpoint reads a file, not JSON.
+        if any("\x00" in value for value in values.values()):
+            errors.append(
+                {
+                    "row": row_num,
+                    "message": "This row contains a character that is not allowed (NUL).",
+                }
+            )
+            continue
 
         item_code = values.get("item_code") or values.get("sku") or values.get("item_code")
         item_name = values.get("item_name") or values.get("name")
@@ -1072,6 +1186,10 @@ def _import_csv_from_content(content: bytes, db: Session, active_company: Compan
                 )
                 continue
 
+            old_rate = existing.gst_rate
+            old_hsn = existing.hsn_sac
+            old_unit = existing.unit
+
             existing.name = item_name
             if "selling_price" in headers:
                 existing.price = selling_price
@@ -1088,6 +1206,20 @@ def _import_csv_from_content(content: bytes, db: Session, active_company: Compan
             if values.get("unit"):
                 existing.unit = values["unit"]
 
+            # Only the tax fields reach the marketplace: a row that changed
+            # one of them leaves this product's listings stale (#888).
+            tax_changed = (
+                (
+                    has_tax_column
+                    and Decimal(str(existing.gst_rate or 0))
+                    != Decimal(str(old_rate or 0))
+                )
+                or (bool(hsn_sac) and existing.hsn_sac != old_hsn)
+                or (bool(values.get("unit")) and existing.unit != old_unit)
+            )
+            if tax_changed:
+                changed_ids.append(existing.id)
+
             # Same reason as the with-inventory update: a CSV cannot carry the
             # serials that a tracked product's stock has to be backed by.
             if existing.track_serials:
@@ -1102,7 +1234,7 @@ def _import_csv_from_content(content: bytes, db: Session, active_company: Compan
                         Inventory.product_id == existing.id,
                         Inventory.company_id == active_company.id,
                     )
-                    .first()
+                    .with_for_update().first()
                 )
                 if inv:
                     inv.quantity = Decimal(str(stock))
@@ -1141,7 +1273,7 @@ def _import_csv_from_content(content: bytes, db: Session, active_company: Compan
             created += 1
 
     db.commit()
-    return {"created": created, "updated": updated, "errors": errors}
+    return {"created": created, "updated": updated, "errors": errors}, changed_ids
 
 
 # Declared last on purpose: a path parameter this greedy would otherwise shadow

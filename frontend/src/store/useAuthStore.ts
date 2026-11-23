@@ -91,8 +91,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       userEmail: identifiedEmail,
     });
 
-    // The one piece of analytics the browser still owns. Events are captured
-    // server-side and keyed by this same email, so identifying here is what puts
+    // Login, verified email sign-up and Google sign-up all establish identity
+    // here. Committed events are captured server-side and keyed by this same
+    // email, so identifying here is what puts
     // the recording of a session and the events that session produced on one
     // person instead of two. Role and active company are set on the person by
     // the backend, on login and on every company switch.

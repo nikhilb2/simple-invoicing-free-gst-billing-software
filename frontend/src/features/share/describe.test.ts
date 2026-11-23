@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { describeShareLinkPeriod, describeViews } from './describe';
 import type { ShareLink } from '../../types/api';
 
@@ -48,5 +48,39 @@ describe('describeViews', () => {
 
   it('counts several openings', () => {
     expect(describeViews(4, null)).toBe('Opened 4 times');
+  });
+
+  describe('last opened time', () => {
+    beforeEach(() => {
+      vi.stubEnv('TZ', 'Asia/Kolkata');
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-11-22T21:26:09Z'));
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+      vi.unstubAllEnvs();
+    });
+
+    it.each([
+      '2026-11-22T21:25:39.259550',
+      '2026-11-22T21:25:39Z',
+      '2026-11-23T02:55:39+05:30',
+      '2026-11-23T02:55:39+0530',
+      '2026-11-23T02:55:38.750+05:30',
+      '2026-11-22T16:25:39-05:00',
+    ])('shows the elapsed time for %s in Asia/Kolkata', (timestamp) => {
+      const elapsed = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' }).format(-30, 'second');
+      expect(describeViews(4, timestamp)).toBe(`Opened 4 times · last ${elapsed}`);
+    });
+
+    it('reports an invalid timestamp as recently', () => {
+      expect(describeViews(4, 'not-a-date')).toBe('Opened 4 times · last recently');
+    });
+
+    it('reads a date-only timestamp as midnight UTC', () => {
+      const elapsed = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' }).format(-21, 'hour');
+      expect(describeViews(4, '2026-11-22')).toBe(`Opened 4 times · last ${elapsed}`);
+    });
   });
 });

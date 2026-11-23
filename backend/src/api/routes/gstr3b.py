@@ -9,7 +9,6 @@ import csv
 from datetime import date, datetime
 from io import BytesIO, StringIO
 
-import weasyprint
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
@@ -28,7 +27,7 @@ from src.services.gst_returns.gstr3b import (
     resolve_return_period,
 )
 from src.services.gst_returns.gstr3b_data import load_invoices, load_notes
-from src.services.pdf_render import safe_url_fetcher
+from src.services.pdf_paper import ReportPaper, render_pdf, resolve_paper
 from src.services.pdf_templates.gstr3b_template import build_gstr3b_worksheet_html
 
 router = APIRouter()
@@ -188,19 +187,22 @@ def gstr3b_export_csv(
 def gstr3b_export_pdf(
     from_date: date = Query(...),
     to_date: date = Query(...),
+    paper: ReportPaper | None = Query(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     period = _period(from_date, to_date)
     worksheet = _worksheet(db, period, active_company)
+    resolved_paper = resolve_paper(paper, active_company, report=True)
     html = build_gstr3b_worksheet_html(
         worksheet,
         company_name=getattr(active_company, "name", None),
         company_gstin=getattr(active_company, "gst", None),
         generated_at=datetime.now(),
+        paper=resolved_paper,
     )
-    pdf_bytes = weasyprint.HTML(string=html, url_fetcher=safe_url_fetcher).write_pdf()
+    pdf_bytes = render_pdf(html, resolved_paper)
     track("gstr3b_exported", distinct_id_for(current_user), {"format": "pdf", "period_type": period.kind})
     return StreamingResponse(
         BytesIO(pdf_bytes),

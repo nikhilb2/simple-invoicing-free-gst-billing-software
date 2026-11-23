@@ -3,6 +3,8 @@ import { Download, ExternalLink, Printer } from 'lucide-react';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import { fetchDeliveryChallanPdf } from '../features/deliveryChallans/api';
 import CopiesStepper from './CopiesStepper';
+import PaperSizePicker from './PaperSizePicker';
+import { usePaperChoice } from '../hooks/usePaperChoice';
 import PreviewToolbar, { type PreviewAction } from './PreviewToolbar';
 import type { DeliveryChallan } from '../types/api';
 import { MAX_CHALLAN_COPIES, challanPdfFileName } from '../utils/deliveryChallan';
@@ -19,6 +21,7 @@ type DeliveryChallanPreviewProps = {
 export default function DeliveryChallanPreview({ challan, menuActions = [], meta, onClose, onError }: DeliveryChallanPreviewProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [copies, setCopies] = useState(1);
+  const [paper, setPaper, requestPaper] = usePaperChoice();
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [loadingPdf, setLoadingPdf] = useState(true);
   const [pdfError, setPdfError] = useState('');
@@ -42,7 +45,7 @@ export default function DeliveryChallanPreview({ challan, menuActions = [], meta
       setPdfUrl(null);
       setPreviewFailed(false);
       try {
-        const blob = await fetchDeliveryChallanPdf(challan.id, copies, 'Unable to load PDF preview');
+        const blob = await fetchDeliveryChallanPdf(challan.id, copies, 'Unable to load PDF preview', requestPaper);
         const nextUrl = window.URL.createObjectURL(blob);
         objectUrlToRevoke = nextUrl;
         if (!isMounted) {
@@ -66,11 +69,11 @@ export default function DeliveryChallanPreview({ challan, menuActions = [], meta
     };
     // The status is in the key: the PDF prints a mark when it is cancelled.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [challan.id, challan.status, copies]);
+  }, [challan.id, challan.status, copies, requestPaper]);
 
   const handleDownload = async () => {
     try {
-      const blob = await fetchDeliveryChallanPdf(challan.id, copies, 'Unable to download PDF');
+      const blob = await fetchDeliveryChallanPdf(challan.id, copies, 'Unable to download PDF', requestPaper);
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
@@ -112,7 +115,7 @@ export default function DeliveryChallanPreview({ challan, menuActions = [], meta
               title: 'Print delivery challan',
             },
           ]}
-          menuExtra={<CopiesStepper value={copies} onChange={setCopies} max={MAX_CHALLAN_COPIES} />}
+          menuExtra={<><CopiesStepper value={copies} onChange={setCopies} max={MAX_CHALLAN_COPIES} /><PaperSizePicker value={paper} onChange={setPaper} /></>}
           menu={[
             ...menuActions,
             {

@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { captureEvent } from '../lib/analytics';
 import type { StockShortage } from '../features/invoices/stockShortage';
 import type { Product } from '../types/api';
 
@@ -38,7 +39,7 @@ type InvoiceComposerStore = {
   clearFeedbackSuccess: () => void;
 };
 
-export const useInvoiceComposerStore = create<InvoiceComposerStore>((set) => ({
+export const useInvoiceComposerStore = create<InvoiceComposerStore>((set, get) => ({
   selectedLedgerId: '',
   showLedgerCreateModal: false,
   showProductCreateModal: false,
@@ -53,7 +54,11 @@ export const useInvoiceComposerStore = create<InvoiceComposerStore>((set) => ({
   feedbackError: '',
   feedbackSuccess: '',
   setSelectedLedgerId: (selectedLedgerId) => set({ selectedLedgerId }),
-  openLedgerCreateModal: () => set({ showLedgerCreateModal: true }),
+  openLedgerCreateModal: () => {
+    if (get().showLedgerCreateModal) return;
+    set({ showLedgerCreateModal: true });
+    captureEvent('ledger_quick_create_opened');
+  },
   closeLedgerCreateModal: () => set({ showLedgerCreateModal: false }),
   openProductCreateModal: () => set({ showProductCreateModal: true, productCreateName: '', productCreateLineId: null }),
   openProductCreateFromLine: (name, lineId) => set({ showProductCreateModal: true, productCreateName: name, productCreateLineId: lineId }),

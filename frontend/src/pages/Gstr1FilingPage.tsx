@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api, { getApiErrorMessage, getBlobErrorMessage } from '../api/client';
 import StatusToasts from '../components/StatusToasts';
+import PaperSizePicker from '../components/PaperSizePicker';
+import { usePaperChoice } from '../hooks/usePaperChoice';
 import ScopeBar, { Metric } from '../components/ScopeBar';
 import DateRangePresets from '../components/DateRangePresets';
 import Gstr1HsnSummary from '../components/Gstr1HsnSummary';
@@ -31,6 +33,7 @@ export default function Gstr1FilingPage() {
   const [loading, setLoading] = useState(false);
   const [downloading, setDownloading] = useState<'json' | 'csv' | 'pdf' | null>(null);
   const [error, setError] = useState('');
+  const [paper, setPaper, requestPaper] = usePaperChoice(true);
   const [success, setSuccess] = useState('');
   const requestId = useRef(0);
 
@@ -141,7 +144,7 @@ export default function Gstr1FilingPage() {
       setDownloading(format);
       setError('');
       const response = await api.get(`/ledgers/tax-ledger/gstr1/export-${format}`, {
-        params: { from_date: period.fromDate, to_date: period.toDate },
+        params: { from_date: period.fromDate, to_date: period.toDate, paper: format === 'pdf' ? requestPaper : undefined },
         responseType: 'blob',
       });
       if (id !== requestId.current) return;
@@ -255,6 +258,7 @@ export default function Gstr1FilingPage() {
                 <button type="button" className="button button--ghost button--small" onClick={reset}>
                   Back
                 </button>
+                <PaperSizePicker value={paper} onChange={setPaper} reportOnly inline />
                 {(['json', 'csv', 'pdf'] as const).map((format) => (
                   <button
                     key={format}

@@ -303,15 +303,20 @@ def _make_db_for_generate(
 
 
 class TestGenerateNextNumber:
-    def test_returns_fallback_when_no_series(self):
+    @pytest.mark.parametrize("voucher_type,prefix", [
+        ("sales", "INV"), ("purchase", "INV"), ("payment", "INV"),
+        ("receipt", "INV"), ("credit_note", "INV"), ("debit_note", "INV"),
+        ("quotation", "QT"), ("proforma", "PI"), ("delivery_challan", "DC"),
+    ])
+    def test_returns_fallback_when_no_series(self, voucher_type, prefix):
         db = MagicMock()
         # Both series lookups return None
         mock_q = MagicMock()
         mock_q.filter.return_value.with_for_update.return_value.first.return_value = None
         mock_q.filter.return_value.first.return_value = None
         db.query.return_value = mock_q
-        result = generate_next_number(db, "sales")
-        assert result == "INV-000000"
+        result = generate_next_number(db, voucher_type)
+        assert result == f"{prefix}-000001"
 
     def test_basic_fy_format_within_active_fy(self):
         """Generating for the active FY uses the target series + target FY label."""

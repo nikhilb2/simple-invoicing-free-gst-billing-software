@@ -150,4 +150,6 @@ def test_tool_list_stays_inside_a_sane_token_budget(mcp_call, company, writes_on
 
     monkeypatch.setattr(settings, "MCP_DEFAULT_PROFILE", "all")
     all_bytes = len(json.dumps(mcp_call.list_tools(principal=principal)).encode())
-    assert all_bytes < 150_000, f"full profile grew to {all_bytes} bytes"
+    # 151k since the company's default PDF paper (a4/a5/thermal80/thermal58)
+    # joined the company create and update tools.
+    assert all_bytes < 151_000, f"full profile grew to {all_bytes} bytes"

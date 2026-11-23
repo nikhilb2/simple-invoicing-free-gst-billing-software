@@ -13,8 +13,8 @@ from decimal import Decimal
 
 logger = logging.getLogger(__name__)
 
-import weasyprint
-from src.services.pdf_render import safe_url_fetcher
+from src.services.pdf_paper import Paper, is_thermal, render_pdf, resolve_paper
+from src.services.pdf_templates.thermal_template import build_thermal_copies, thermal_invoice_doc
 
 from src.db.session import get_db
 from src.models.company_account import CompanyAccount
@@ -33,6 +33,7 @@ from src.schemas.invoice import (
 )
 from src.api.deps import get_active_company, get_current_user
 from src.api.pagination import MAX_PAGE
+from src.api.search import contains_pattern
 from src.core.analytics import distinct_id_for, track
 from src.services.financial_year import get_active_fy, get_fy_for_date
 from src.services.gst_tax_service import india_today
@@ -49,7 +50,7 @@ from src.services.pdf_templates import (
     _copy_label,
 )
 from src.services.invoice_creation import create_invoice_record
-from src.services.invoice_processor import InvoiceProcessor, invoice_has_credit_notes
+from src.services.invoice_processor import InvoiceProcessor, detach_cancelled_credit_notes, invoice_has_credit_notes
 from src.services.delivery_challan import (
     close_challan_after_invoice_restored,
     lock_source_challan,
@@ -228,10 +229,10 @@ def _apply_invoice_filters(
         query = query.filter(func.date(Invoice.invoice_date) <= date_to)
     if search.strip():
         cleaned = search.strip()
-        term = f"%{cleaned}%"
-        product_match = Product.name.ilike(term)
+        term = contains_pattern(search)
+        product_match = Product.name.ilike(term, escape="\\")
         if include_description:
-            product_match = or_(product_match, InvoiceItem.description.ilike(term))
+            product_match = or_(product_match, InvoiceItem.description.ilike(term, escape="\\"))
         product_match_subq = (
             db.query(InvoiceItem.invoice_id)
             .join(Product, Product.id == InvoiceItem.product_id)
@@ -257,13 +258,13 @@ def _apply_invoice_filters(
         # Void rows are deliberately included: a unit whose purchase was later
         # cancelled must still lead back to the voucher it arrived on, which is
         # exactly the trace an operator is doing when they type an IMEI.
-        serial_term = f"%{cleaned.upper()}%"
+        serial_term = contains_pattern(cleaned.upper())
         serial_matches = db.query(ProductSerial).filter(
             # Tenancy: the serial rows themselves are scoped, not just the
             # invoices they point at — a serial must never be able to name an
             # invoice belonging to another company.
             ProductSerial.company_id == active_company.id,
-            func.upper(ProductSerial.serial_number).like(serial_term),
+            func.upper(ProductSerial.serial_number).ilike(serial_term, escape="\\"),
         )
         # scalar_subquery() rather than subquery(): these feed IN() directly,
         # and a plain Subquery is coerced with a SAWarning on every call.
@@ -275,13 +276,13 @@ def _apply_invoice_filters(
         ).scalar_subquery()
         query = query.filter(
             or_(
-                Invoice.ledger_name.ilike(term),
+                Invoice.ledger_name.ilike(term, escape="\\"),
                 # Our own document number, plus the counterparty's number as
                 # recorded on a purchase — an operator typing "the invoice
                 # number" means whichever of the two is printed on the paper in
                 # front of them.
-                Invoice.invoice_number.ilike(term),
-                Invoice.supplier_invoice_number.ilike(term),
+                Invoice.invoice_number.ilike(term, escape="\\"),
+                Invoice.supplier_invoice_number.ilike(term, escape="\\"),
                 Invoice.id.in_(product_match_subq),
                 Invoice.id.in_(serial_purchase_subq),
                 Invoice.id.in_(serial_sales_subq),
@@ -715,11 +716,10 @@ def update_invoice(
                 detail="Cancelled invoices cannot be edited. Restore the invoice first.",
             )
 
-        # The items are deleted and recreated below, but credit note items
-        # point at them with no ON DELETE rule — even a cancelled note's
-        # items would fail the flush with a foreign key error. Refuse up
-        # front instead of surfacing a 500.
-        if invoice_has_credit_notes(db, invoice.id, active_only=False):
+        # The items are deleted and recreated below. An active note credits
+        # them, so the edit is refused; a cancelled note only lets go of them
+        # (detach_cancelled_credit_notes, just before they are deleted).
+        if invoice_has_credit_notes(db, invoice.id):
             raise HTTPException(
                 status_code=400,
                 detail=(
@@ -803,6 +803,7 @@ def update_invoice(
             company_id=active_company.id,
         )
 
+        detach_cancelled_credit_notes(db, invoice.id)
         for item in list(invoice.items):
             db.delete(item)
         db.flush()
@@ -855,20 +856,28 @@ def update_invoice(
 
 
 
-def _build_invoice_pdf(invoice: Invoice, products: list[Product], invoice_bank_accounts: list[CompanyAccount], active_company: CompanyProfile | None = None, serials: dict[int, list[str]] | None = None, pay_qr_html: str = "", settlement: dict[str, float] | None = None) -> BytesIO:
+def _build_invoice_pdf(invoice: Invoice, products: list[Product], invoice_bank_accounts: list[CompanyAccount], active_company: CompanyProfile | None = None, serials: dict[int, list[str]] | None = None, pay_qr_html: str = "", settlement: dict[str, float] | None = None, paper: Paper = "a4", qr_uri: str = "") -> BytesIO:
+    """One copy of an invoice as a PDF. ``qr_uri`` is the pay QR for the thermal layout."""
+    if is_thermal(paper):
+        doc = thermal_invoice_doc(
+            invoice,
+            products,
+            bank_accounts=invoice_bank_accounts,
+            copy_label="" if invoice.voucher_type == "purchase" else _copy_label(1),
+            serials=serials,
+            qr_uri=qr_uri,
+            settlement=settlement,
+        )
+        return BytesIO(render_pdf(build_thermal_copies([doc], paper), paper))
     show_sku = active_company.show_sku_on_pdf if active_company else True
-    html = _build_invoice_html(invoice, products, invoice_bank_accounts, copy_label=_copy_label(1), show_sku=show_sku, serials=serials, pay_qr_html=pay_qr_html, settlement=settlement)
-    pdf_bytes = weasyprint.HTML(string=html, url_fetcher=safe_url_fetcher).write_pdf()
-    buf = BytesIO(pdf_bytes)
-    return buf
+    html = _build_invoice_html(invoice, products, invoice_bank_accounts, copy_label=_copy_label(1), show_sku=show_sku, serials=serials, pay_qr_html=pay_qr_html, settlement=settlement, paper=paper)
+    return BytesIO(render_pdf(html, paper))
 
 
 def _build_multi_copy_invoice_pdf(invoice: Invoice, products: list[Product], invoice_bank_accounts: list[CompanyAccount], copies: int, active_company: CompanyProfile | None = None, serials: dict[int, list[str]] | None = None, pay_qr_html: str = "", settlement: dict[str, float] | None = None) -> BytesIO:
     show_sku = active_company.show_sku_on_pdf if active_company else True
     html = _build_multi_copy_invoice_html(invoice, products, invoice_bank_accounts, copies, show_sku=show_sku, serials=serials, pay_qr_html=pay_qr_html, settlement=settlement)
-    pdf_bytes = weasyprint.HTML(string=html, url_fetcher=safe_url_fetcher).write_pdf()
-    buf = BytesIO(pdf_bytes)
-    return buf
+    return BytesIO(render_pdf(html))
 
 
 @router.get("/{invoice_id}/pdf")
@@ -876,6 +885,7 @@ def download_invoice_pdf(
     invoice_id: int,
     request: Request,
     copies: int = Query(default=1, ge=1, le=10),
+    paper: Paper | None = Query(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
     active_company: CompanyProfile = Depends(get_active_company),
@@ -897,7 +907,12 @@ def download_invoice_pdf(
         )
 
     pdf_buffer = render_invoice_pdf(
-        db, active_company.id, invoice_id, copies=copies, share_url=share_url
+        db,
+        active_company.id,
+        invoice_id,
+        copies=copies,
+        share_url=share_url,
+        paper=resolve_paper(paper, active_company),
     )
     filename = f"invoice_{invoice.invoice_number or invoice.id}.pdf"
 
@@ -978,6 +993,7 @@ def cancel_invoice(
         processor.reverse_serials(invoice)
         processor.reverse_inventory(invoice)
         invoice.status = "cancelled"
+        invoice.cancelled_at = datetime.utcnow()
         reopen_after_invoice_cancelled(source_quotation)
         # The challan's goods are out on it again, now the invoice's are back.
         reopen_challan_after_invoice_cancelled(db, source_challan)
@@ -1032,6 +1048,7 @@ def restore_invoice(
         close_challan_after_invoice_restored(db, source_challan)
         processor.restore_inventory(invoice, company_id=active_company.id)
         invoice.status = "active"
+        invoice.cancelled_at = None
         close_after_invoice_restored(source_quotation)
         db.commit()
         db.refresh(invoice)

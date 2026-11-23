@@ -132,13 +132,14 @@ def test_errors_come_back_as_tool_errors_not_http_errors(mcp_call, company):
 
 
 def test_validation_errors_are_flattened_to_readable_lines(mcp_call, company, writes_on):
-    body = mcp_call.call_tool("ledgers_create", {"name": "Missing Fields"})
+    # Only the name is required (#955), so an invalid party type is the 422.
+    body = mcp_call.call_tool("ledgers_create", {"name": "Bad Party", "party_type": "bogus"})
     result = body["result"]
     assert result["isError"] is True
     text = result["content"][0]["text"]
     assert "Invalid arguments (422)" in text
     # `field: message`, one per line — not a dumped list of dicts.
-    assert "address:" in text
+    assert "party_type:" in text
     assert "{'loc'" not in text
 
 

@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import api, { getApiErrorMessage } from '../api/client';
 import StatusToasts from '../components/StatusToasts';
+import PaperSizePicker from '../components/PaperSizePicker';
+import { usePaperChoice } from '../hooks/usePaperChoice';
 import ScopeBar, { Metric } from '../components/ScopeBar';
 import DateRangePresets from '../components/DateRangePresets';
 import LoadingState from '../components/LoadingState';
@@ -57,6 +59,7 @@ export default function DayBookPage() {
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState<'pdf' | 'csv' | null>(null);
   const [error, setError] = useState('');
+  const [paper, setPaper, requestPaper] = usePaperChoice(true);
 
   const activeCurrencyCode = company?.currency_code || 'INR';
 
@@ -194,6 +197,7 @@ export default function DayBookPage() {
         params: {
           from_date: period.fromDate,
           to_date: period.toDate,
+          paper: format === 'pdf' ? requestPaper : undefined,
         },
         responseType: 'blob',
       });
@@ -242,6 +246,7 @@ export default function DayBookPage() {
         )}
         actions={(
           <>
+            <PaperSizePicker value={paper} onChange={setPaper} reportOnly inline />
             <button
               type="button"
               className="button button--primary button--small"

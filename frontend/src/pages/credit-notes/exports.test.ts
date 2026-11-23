@@ -1,9 +1,8 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
   buildCreditNotesCsv,
   CREDIT_NOTES_CSV_HEADERS,
   creditNoteToCsvRow,
-  fetchAllPages,
 } from './exports';
 import type { CreditNote, Invoice, Ledger } from '../../types/api';
 import { formatDate } from '../../utils/formatting';
@@ -37,48 +36,6 @@ const ledger = (overrides: Partial<Ledger> = {}): Ledger =>
 
 const invoice = (overrides: Partial<Invoice> = {}): Invoice =>
   ({ id: 10, invoice_number: 'INV-1', ...overrides }) as Invoice;
-
-describe('fetchAllPages', () => {
-  it('calls the callback for pages 1..N and joins the items in order', async () => {
-    const fetchPage = vi.fn(async (page: number) => ({
-      items: [`page-${page}-a`, `page-${page}-b`],
-      total_pages: 3,
-    }));
-
-    const items = await fetchAllPages<string>(fetchPage, 2);
-
-    expect(items).toEqual([
-      'page-1-a',
-      'page-1-b',
-      'page-2-a',
-      'page-2-b',
-      'page-3-a',
-      'page-3-b',
-    ]);
-    expect(fetchPage.mock.calls).toEqual([
-      [1, 2],
-      [2, 2],
-      [3, 2],
-    ]);
-  });
-
-  it('stops at total_pages and does not fetch beyond it', async () => {
-    const fetchPage = vi.fn(async () => ({ items: ['only'], total_pages: 1 }));
-
-    expect(await fetchAllPages<string>(fetchPage, 500)).toEqual(['only']);
-    expect(fetchPage).toHaveBeenCalledTimes(1);
-  });
-
-  it('stops on an empty page even when more pages are claimed', async () => {
-    const fetchPage = vi.fn(async (page: number) => ({
-      items: page === 1 ? ['first'] : [],
-      total_pages: 5,
-    }));
-
-    expect(await fetchAllPages<string>(fetchPage, 500)).toEqual(['first']);
-    expect(fetchPage).toHaveBeenCalledTimes(2);
-  });
-});
 
 describe('creditNoteToCsvRow', () => {
   it('maps a credit note to the header order', () => {

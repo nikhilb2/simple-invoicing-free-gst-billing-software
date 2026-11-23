@@ -62,6 +62,7 @@ class Invoice(Base):
     supplier_invoice_number = Column(String, nullable=True)
     reference_notes = Column(String, nullable=True)
     status = Column(String, nullable=False, default="active")
+    cancelled_at = Column(DateTime, nullable=True)
     credit_status = Column(String, nullable=False, default="not_credited")
     created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
     taxable_amount = Column(Numeric(10, 2), nullable=False, default=0)

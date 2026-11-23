@@ -27,6 +27,7 @@ import { dueBadgeLabel, formatInvoiceDateLabel } from '../utils/invoiceDueDate.t
 import EmptyState from '../components/EmptyState';
 import LedgerPhoneLinks from '../components/LedgerPhoneLinks';
 import { toIsoDate, toLocalDateTimeInput } from '../utils/dateRanges';
+import { defaultPaymentAccountId } from '../utils/cashBank';
 
 function defaultDateRange() {
   const today = new Date();
@@ -34,12 +35,12 @@ function defaultDateRange() {
   return { fromDate: toIsoDate(firstDay), toDate: toIsoDate(today) };
 }
 
-function createDefaultPaymentForm(ledgerId: number): PaymentCreate {
+function createDefaultPaymentForm(ledgerId: number, accountId: number | null = null): PaymentCreate {
   return {
     ledger_id: ledgerId,
     voucher_type: 'receipt',
     amount: 0,
-    account_id: null,
+    account_id: accountId,
     date: toLocalDateTimeInput(new Date()),
     mode: '',
     reference: '',
@@ -172,9 +173,10 @@ export default function LedgerViewPage() {
   useEffect(() => {
     if (showPaymentForm) return;
     setAllocationCreateSearch('');
-    setPaymentForm(createDefaultPaymentForm(ledgerId));
+    // Start on the company's Cash account rather than Unallocated.
+    setPaymentForm(createDefaultPaymentForm(ledgerId, defaultPaymentAccountId(companyAccounts)));
     setOutstandingInvoices([]);
-  }, [showPaymentForm, ledgerId]);
+  }, [showPaymentForm, ledgerId, companyAccounts]);
 
   useEffect(() => {
     if (!editingPayment) setAllocationEditSearch('');
@@ -805,7 +807,7 @@ export default function LedgerViewPage() {
           </div>
 
           <div className="summary-box">
-            <p><strong>Address:</strong> {ledger.address}</p>
+            {ledger.address ? <p><strong>Address:</strong> {ledger.address}</p> : null}
             {ledger.website ? <p><strong>Website:</strong> {ledger.website}</p> : null}
             {(ledger.bank_name || ledger.account_number) ? (
               <p>

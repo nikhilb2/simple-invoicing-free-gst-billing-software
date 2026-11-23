@@ -3,6 +3,8 @@ from decimal import Decimal
 from typing import Annotated, List, Literal, Optional
 from pydantic import BaseModel, BeforeValidator, Field, field_validator, model_validator
 
+from src.core.document_limits import QUANTITY_LIMIT
+
 
 # A note built in memory has no tcs_amount until it is flushed; read that as zero.
 ZeroIfNone = Annotated[float, BeforeValidator(lambda v: 0 if v is None else v)]
@@ -11,7 +13,7 @@ ZeroIfNone = Annotated[float, BeforeValidator(lambda v: 0 if v is None else v)]
 class CreditNoteItemCreate(BaseModel):
     invoice_id: int
     invoice_item_id: int
-    quantity: Optional[int] = Field(default=None, gt=0)
+    quantity: Optional[Decimal] = Field(default=None, gt=0, lt=QUANTITY_LIMIT, decimal_places=3)
     discount_amount_inclusive: Optional[Decimal] = Field(default=None, gt=0)
     # Which physical units are coming back — required on a return over a
     # serial-tracked product.
@@ -94,7 +96,7 @@ class CreditNoteItemOut(BaseModel):
     invoice_id: Optional[int] = None
     invoice_item_id: Optional[int] = None
     product_id: Optional[int] = None
-    quantity: int
+    quantity: float
     unit_price: float
     gst_rate: float
     taxable_amount: float
@@ -128,6 +130,8 @@ class CreditNoteOut(BaseModel):
     cancelled_at: Optional[datetime] = None
     invoice_ids: List[int] = Field(default_factory=list)
     items: List[CreditNoteItemOut] = Field(default_factory=list)
+    # Creation-time warnings; the return reports re-evaluate eligibility.
+    gst_warnings: List[str] = Field(default_factory=list)
 
     @field_validator("direction", mode="before")
     @classmethod

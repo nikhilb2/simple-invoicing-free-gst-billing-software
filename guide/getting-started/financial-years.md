@@ -6,6 +6,8 @@ description: "How financial years (1 April to 31 March) work in Simple Invoicing
 
 Financial years run from 1 April to 31 March. They set the default dates for reports and statements, and each year has its own document numbering.
 
+Every newly created company starts with the current financial year active and its document numbering ready, on both self-hosted and shared-hosting installs.
+
 The **Financial Year** switcher is in the sidebar, below the company. Only admins can use it. Everyone else sees the active year as plain text.
 
 ## Switch the active year

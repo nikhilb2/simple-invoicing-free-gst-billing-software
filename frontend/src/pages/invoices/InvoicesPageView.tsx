@@ -22,6 +22,7 @@ import { useFY } from '../../context/FYContext';
 import { useShortcuts } from '../../context/ShortcutsContext';
 import { fetchInvoiceById, fetchInvoiceComposerData, fetchLedgerAddresses, fetchTcsSections } from '../../features/invoices/api';
 import { EMPTY_TCS_FORM, buildTcsPayload, findTcsSection, reconcileTcsSection, tcsFormForCopy, tcsFormFromDocument, tcsFormOnBuyerChange, tcsTotalsInput, type TcsFormState } from './tcsForm';
+import { editingInvoiceTitle } from './editingTitle';
 import TcsFields from './components/TcsFields';
 import { createQuotation, fetchConversionDraft, fetchQuotationById, updateQuotation } from '../../features/quotations/api';
 import { quotationQueryKeys } from '../../features/quotations/queryKeys';
@@ -47,12 +48,15 @@ import { useFirstInvoiceTourStore } from '../../store/useFirstInvoiceTourStore';
 import { useInvoiceComposerStore } from '../../store/useInvoiceComposerStore';
 import LedgerQuickCreateModal from './components/LedgerQuickCreateModal';
 import ProductQuickCreateModal from './components/ProductQuickCreateModal';
+import { countsStockByDefault } from '../catalogue/productFormRules';
 import SerialChips from './components/SerialChips';
 import SerialPickerModal from './components/SerialPickerModal';
 import StockUpdateModal from './components/StockUpdateModal';
 import ReceiptModal from '../../components/ReceiptModal';
+import { counterpartyFor } from './counterparty';
 import { FieldError, LineFieldErrors, useFormFieldErrors } from '../../hooks/useFormFieldErrors';
 import { createItem, type InvoiceFormItem } from './types';
+import { defaultPaymentAccountId } from '../../utils/cashBank';
 
 export default function InvoicesPage() {
   const { activeFY } = useFY();
@@ -116,6 +120,7 @@ export default function InvoicesPage() {
   const [serialBlockIds, setSerialBlockIds] = useState<number[]>([]);
   const [scanTargetItemId, setScanTargetItemId] = useState<number | null>(null);
   const [editingInvoiceId, setEditingInvoiceId] = useState<number | null>(null);
+  const [editingInvoiceNumber, setEditingInvoiceNumber] = useState<string | null>(null);
   /* Quotation and proforma modes. The voucher select is locked in both of these:
      a saved document's type is fixed, and a conversion can only make a sale. */
   const [editingQuotation, setEditingQuotation] = useState<Quotation | null>(null);
@@ -151,6 +156,7 @@ export default function InvoicesPage() {
   const [submitting, setSubmitting] = useState(false);
   /* The save buttons stay enabled; a click on one marks what is missing. */
   const fieldErrors = useFormFieldErrors();
+  const counterparty = counterpartyFor(voucherType);
   const [error, setError] = useState('');
   /* Adding stock from the "not enough stock" notice is the answer to that error,
      so it should not sit beside the confirmation. */
@@ -214,6 +220,8 @@ export default function InvoicesPage() {
         const res = await api.get<CompanyAccount[]>('/company-accounts/');
         if (cancelled) return;
         setCompanyAccounts(res.data);
+        // Start on the company's Cash account rather than Unallocated.
+        setSelectedPaymentAccountId((current) => current || String(defaultPaymentAccountId(res.data) ?? ''));
       } catch {
         // Keep payment voucher flow usable even when accounts fail to load.
       }
@@ -741,7 +749,7 @@ export default function InvoicesPage() {
     setStockShortage(null);
     setPaymentMode('cash');
     setPaymentReference('');
-    setSelectedPaymentAccountId('');
+    setSelectedPaymentAccountId(String(defaultPaymentAccountId(companyAccounts) ?? ''));
     setPaymentAmount('');
     itemsRef.current = [createItem(1)];
     setItems(itemsRef.current);
@@ -981,6 +989,7 @@ export default function InvoicesPage() {
     setError('');
     setSuccess('');
     setEditingInvoiceId(invoice.id);
+    setEditingInvoiceNumber(invoice.invoice_number);
     setChallanConversion(null);
     setChallanConversionOutOfDate(false);
     setChallanAlreadyInvoiced(null);
@@ -1360,7 +1369,7 @@ export default function InvoicesPage() {
             <div>
               <p className="eyebrow">Create {documentName}</p>
               <h2 className="nav-panel__title">
-                {editingInvoiceId ? `Editing invoice #${editingInvoiceId}`
+                {editingInvoiceId ? editingInvoiceTitle(editingInvoiceId, editingInvoiceNumber)
                   : editingQuotation ? `Editing ${editingQuotation.quotation_number}`
                     : conversion ? `Converting ${conversion.quotation_number}`
                       : challanConversion ? `Converting ${challanConversion.challan_number}` : 'Order entry'}
@@ -1541,7 +1550,7 @@ export default function InvoicesPage() {
 
               <div className="field">
                 <div className="field__label-row">
-                  <label htmlFor="invoice-ledger">Ledger</label>
+                  <label htmlFor="invoice-ledger">{counterparty.label}</label>
                   <button type="button" className="link-button" onClick={openLedgerCreateModal}>
                     <Plus size={13} />
                     New ledger
@@ -1553,8 +1562,16 @@ export default function InvoicesPage() {
                   value={selectedLedgerId}
                   onChange={setSelectedLedgerId}
                   required
+                  requiredMessage={counterparty.missingMessage}
+                  emptyPlaceholder={counterparty.emptyPlaceholder}
+                  keepEnabledWhenEmpty
                 />
                 <FieldError id="invoice-ledger" errors={fieldErrors.errors} />
+                {fieldErrors.errors['invoice-ledger'] ? (
+                  <button type="button" className="button button--secondary" style={{ width: '100%', minHeight: 44 }} onClick={openLedgerCreateModal}>
+                    {counterparty.addLabel}
+                  </button>
+                ) : null}
               </div>
 
               {voucherType === 'sales' && company?.gst?.trim() ? (
@@ -2196,6 +2213,7 @@ export default function InvoicesPage() {
                 <p style={{ margin: 0 }}>
                   Only {stockShortage.available} of {stockShortage.productName} in stock, and this invoice needs {stockShortage.required}.
                   Add the missing stock and your invoice stays as you filled it in.
+                  If you don&apos;t keep count of stock for this item, edit it in Products and turn off stock counting instead.
                 </p>
                 <button
                   type="button"
@@ -2281,7 +2299,7 @@ export default function InvoicesPage() {
         />
       ) : null}
 
-      <ProductQuickCreateModal />
+      <ProductQuickCreateModal countsStockByDefault={countsStockByDefault(products)} />
 
       <StockUpdateModal />
 
