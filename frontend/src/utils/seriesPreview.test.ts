@@ -32,6 +32,31 @@ describe('buildSeriesPreview matches server formatting', () => {
   });
 });
 
+describe('year part follows the financial year', () => {
+  test.each<[string, Date, number | null, string]>([
+    ['YYYY', new Date(2027, 0, 5), 2026, 'INV-2026-001'],
+    ['YYYY', new Date(2027, 1, 14), 2026, 'INV-2026-001'],
+    ['YYYY', new Date(2027, 2, 31), 2026, 'INV-2026-001'],
+    ['YYYY', new Date(2027, 3, 1), 2027, 'INV-2027-001'],
+    ['YYYY', new Date(2027, 0, 5), null, 'INV-2027-001'],
+    ['MM-YYYY', new Date(2027, 0, 5), 2026, 'INV-01-2027-001'],
+    ['MM-YYYY', new Date(2027, 1, 14), 2026, 'INV-02-2027-001'],
+    ['MM-YYYY', new Date(2027, 2, 31), 2026, 'INV-03-2027-001'],
+    ['MM-YYYY', new Date(2027, 3, 1), 2027, 'INV-04-2027-001'],
+  ])('%s on %s with FY start %s', (year_format, date, fyStartYear, expected) => {
+    expect(buildSeriesPreview(
+      { ...format, year_format: year_format as InvoiceSeriesUpdate['year_format'] },
+      1, null, date, fyStartYear,
+    )).toBe(expected);
+  });
+
+  test('the GSTR-1 check sees the FY year, so a long prefix is judged as issued', () => {
+    const gst = '27AAPFU0939F1ZV';
+    const original: InvoiceSeries = { ...format, id: 1, voucher_type: 'sales', created_at: null };
+    expect(gstr1SeriesFormatError({ ...original, prefix: 'ABCDEF' }, original, gst, null, new Date(2027, 0, 5), 2026)).toBeNull();
+  });
+});
+
 const saved: InvoiceSeries = { ...format, id: 1, voucher_type: 'sales', created_at: null };
 const gstin = '27AAPFU0939F1ZV';
 const errorFor = (patch: Partial<InvoiceSeriesUpdate>, original = saved, gst = gstin) =>

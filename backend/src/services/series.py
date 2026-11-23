@@ -29,7 +29,9 @@ def _format_number(
             year_part = fy.label if fy else "FY"
         elif series.year_format == "MM-YYYY":
             ref = invoice_date if invoice_date is not None else datetime.utcnow().date()
-            year_part = ref.strftime("%m") + sep + str(fy.start_date.year if fy else ref.year)
+            # Month plus calendar year is already unique across financial years,
+            # so this format keeps the calendar year (01-2027 for January 2027).
+            year_part = ref.strftime("%m") + sep + str(ref.year)
         else:
             ref = invoice_date if invoice_date is not None else datetime.utcnow().date()
             # Counters are per financial year, so a whole FY shares one label:

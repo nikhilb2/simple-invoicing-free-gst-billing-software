@@ -520,9 +520,10 @@ function InvoiceSeriesCard({ sectionRef, savedGstin }: { sectionRef?: React.RefO
         {seriesList.map((s) => {
           const draft = drafts[s.id];
           if (!draft) return null;
-          const preview = buildSeriesPreview(draft, draft.next_sequence, activeFY?.label);
-          const longest = buildSeriesPreview(draft, Math.max(draft.next_sequence, 9999), activeFY?.label);
-          const formatError = gstr1SeriesFormatError(draft, s, savedGstin, activeFY?.label);
+          const fyStartYear = activeFY?.start_date ? Number(activeFY.start_date.slice(0, 4)) : null;
+          const preview = buildSeriesPreview(draft, draft.next_sequence, activeFY?.label, undefined, fyStartYear);
+          const longest = buildSeriesPreview(draft, Math.max(draft.next_sequence, 9999), activeFY?.label, undefined, fyStartYear);
+          const formatError = gstr1SeriesFormatError(draft, s, savedGstin, activeFY?.label, undefined, fyStartYear);
           const nextSequenceInvalid = parseNextSequenceInput(nextSequenceTextOf(s.id)) === null;
           return (
             <div key={s.id} className="panel" style={{ padding: '16px' }}>
