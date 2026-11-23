@@ -136,6 +136,8 @@ export default defineConfig({
         items: [
           { text: 'Troubleshooting', link: '/help/faq' },
           { text: 'Glossary', link: '/help/glossary' },
+          { text: 'Free billing software compared', link: '/help/free-billing-software-comparison' },
+          { text: 'Tally alternative', link: '/help/tally-alternative' },
         ],
       },
     ],

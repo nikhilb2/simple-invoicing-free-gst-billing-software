@@ -1,3 +1,5 @@
+from datetime import date
+
 from fastapi import Depends
 from sqlalchemy.orm import Session
 
@@ -121,6 +123,54 @@ def test_company_create_list_and_select(client):
         active_after = [item for item in listed_after.json() if item["is_active"]]
         assert len(active_after) == 1
         assert active_after[0]["id"] == company_b_id
+    finally:
+        _restore_user_override(old_override)
+
+
+@pytest.mark.parametrize("today,start_year", [(date(2026, 3, 31), 2025), (date(2026, 4, 1), 2026)])
+def test_second_single_tenant_company_starts_with_a_year_and_numbered_invoice(
+    client, db_session, monkeypatch, today, start_year,
+):
+    from src.api.routes import company as company_routes
+    from src.core.config import settings
+    from src.models.invoice import Invoice
+
+    class Today(date):
+        @classmethod
+        def today(cls):
+            return today
+
+    monkeypatch.setattr(company_routes, "date", Today)
+    monkeypatch.setattr(settings, "DEPLOYMENT_MODE", "single_tenant")
+    old_override = _with_persistent_user_override()
+    try:
+        _create_company(client, "First company")
+        company_id = _create_company(client, "Second company")
+        headers = _headers(company_id)
+        response = client.get("/api/financial-years/", headers=headers)
+        assert response.status_code == 200, response.text
+        year, = response.json()
+        assert year["is_active"]
+        assert year["start_date"] == f"{start_year}-04-01"
+        assert year["end_date"] == f"{start_year + 1}-03-31"
+
+        product = client.post("/api/products/", headers=headers, json={
+            "sku": "NEW-CO", "name": "Service", "price": 10, "maintain_inventory": False,
+        })
+        buyer = client.post("/api/ledgers/", headers=headers, json={
+            "name": "New buyer", "address": "Test address", "phone_number": "1234567890",
+        })
+        assert product.status_code == buyer.status_code == 200
+        invoice = client.post("/api/invoices/", headers=headers, json={
+            "ledger_id": buyer.json()["id"], "invoice_date": today.isoformat(),
+            "items": [{"product_id": product.json()["id"], "quantity": 1, "unit_price": 10, "gst_rate": 0}],
+        })
+        assert invoice.status_code == 200, invoice.text
+        assert invoice.json()["invoice_number"] == f"INV-{start_year}-001"
+        assert db_session.get(Invoice, invoice.json()["id"]).financial_year_id == year["id"]
+        feed = client.get("/api/invoices/", headers=headers)
+        assert feed.status_code == 200, feed.text
+        assert [item["id"] for item in feed.json()["items"]] == [invoice.json()["id"]]
     finally:
         _restore_user_override(old_override)
 
@@ -347,29 +397,57 @@ def test_financial_year_same_label_allowed_across_companies(client):
     try:
         company_a_id = _create_company(client, "FY Scope A")
         company_b_id = _create_company(client, "FY Scope B")
+        seeded, = client.get("/api/financial-years/", headers=_headers(company_a_id)).json()
+        next_year = date.fromisoformat(seeded["start_date"]).year + 1
+        label = f"{next_year}-{str(next_year + 1)[-2:]}"
+        payload = _financial_year_payload(label, f"{next_year}-04-01", f"{next_year + 1}-03-31")
 
         create_a = client.post(
             "/api/financial-years/",
-            json=_financial_year_payload("2026-27", "2026-04-01", "2027-03-31"),
+            json=payload,
             headers=_headers(company_a_id),
         )
         assert create_a.status_code == 201, create_a.text
 
         create_b = client.post(
             "/api/financial-years/",
-            json=_financial_year_payload("2026-27", "2026-04-01", "2027-03-31"),
+            json=payload,
             headers=_headers(company_b_id),
         )
         assert create_b.status_code == 201, create_b.text
 
         list_a = client.get("/api/financial-years/", headers=_headers(company_a_id))
         assert list_a.status_code == 200, list_a.text
-        assert [fy["label"] for fy in list_a.json()] == ["2026-27"]
+        assert {fy["label"] for fy in list_a.json()} == {seeded["label"], label}
 
         list_b = client.get("/api/financial-years/", headers=_headers(company_b_id))
         assert list_b.status_code == 200, list_b.text
-        assert [fy["label"] for fy in list_b.json()] == ["2026-27"]
+        assert {fy["label"] for fy in list_b.json()} == {seeded["label"], label}
     finally:
         _restore_user_override(old_override)
 
 
+
+
+def test_new_company_starts_with_one_cash_account(client, db_session: Session):
+    """A new company's receipts need an account to land in, or they show as Unallocated."""
+    old_override = _with_persistent_user_override()
+    try:
+        company_id = _create_company(client, "Cash Seed Co")
+        accounts = client.get("/api/company-accounts/", headers=_headers(company_id))
+        assert accounts.status_code == 200, accounts.text
+        assert [(a["display_name"], a["account_type"], a["display_on_invoice"]) for a in accounts.json()] == [
+            ("Cash", "cash", False)
+        ]
+
+        # Seeding again (or for a company that set up accounts) adds nothing.
+        from src.models.company import CompanyProfile
+        from src.services.company_accounts import seed_default_cash_account
+
+        company = db_session.query(CompanyProfile).filter(CompanyProfile.id == company_id).one()
+        assert seed_default_cash_account(db_session, company) is None
+        db_session.commit()
+        again = client.get("/api/company-accounts/", headers=_headers(company_id))
+        assert len(again.json()) == 1
+    finally:
+        _restore_user_override(old_override)

@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { ERROR_TOAST_MS, SUCCESS_TOAST_MS, scheduleToastDismiss } from '../utils/toastTiming';
 
 type ToastKind = 'success' | 'error';
 
@@ -14,6 +15,7 @@ type StatusToastsProps = {
   onClearError: () => void;
   onClearSuccess: () => void;
   successDurationMs?: number;
+  errorDurationMs?: number;
 };
 
 function Toast({ kind, message, onDismiss }: ToastProps) {
@@ -43,19 +45,33 @@ export default function StatusToasts({
   success,
   onClearError,
   onClearSuccess,
-  successDurationMs = 5000,
+  successDurationMs = SUCCESS_TOAST_MS,
+  errorDurationMs = ERROR_TOAST_MS,
 }: StatusToastsProps) {
+  // Callers often pass inline arrows. Reading them through refs keeps a parent re-render
+  // (every keystroke in a form) from restarting the countdown.
+  const onClearErrorRef = useRef(onClearError);
+  const onClearSuccessRef = useRef(onClearSuccess);
+  useEffect(() => {
+    onClearErrorRef.current = onClearError;
+    onClearSuccessRef.current = onClearSuccess;
+  });
+
   useEffect(() => {
     if (!success) {
       return undefined;
     }
 
-    const timeoutId = window.setTimeout(() => {
-      onClearSuccess();
-    }, successDurationMs);
+    return scheduleToastDismiss(successDurationMs, () => onClearSuccessRef.current());
+  }, [success, successDurationMs]);
 
-    return () => window.clearTimeout(timeoutId);
-  }, [success, successDurationMs, onClearSuccess]);
+  useEffect(() => {
+    if (!error) {
+      return undefined;
+    }
+
+    return scheduleToastDismiss(errorDurationMs, () => onClearErrorRef.current());
+  }, [error, errorDurationMs]);
 
   // An error that was already showing belongs to an earlier action, so a new success replaces
   // it instead of stacking beside it. An error that arrives together with the success stays.

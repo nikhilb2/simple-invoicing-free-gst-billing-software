@@ -1,4 +1,4 @@
-import type { Payment, PaymentUpdate } from '../types/api';
+import type { CompanyAccount, Payment, PaymentUpdate } from '../types/api';
 
 /** Carry earlier register movements into the opening balance for this period. */
 export function openingBalanceAt(
@@ -47,20 +47,34 @@ export type CashBankEntryForm = {
  */
 export function buildCashBankEditPayload(
   editingEntry: CashBankEditingEntry,
-  selectedAccount: { id: number; account_type: string },
+  selectedAccount: { id: number; account_type: string } | null,
   entryForm: CashBankEntryForm,
 ): PaymentUpdate {
   const voucherType = entryForm.entryType === 'debit' ? 'payment' : 'receipt';
   return {
     voucher_type: voucherType,
     amount: entryForm.amount,
-    account_id: selectedAccount.id,
+    // No selected account is the Unallocated view: the entry stays unallocated.
+    account_id: selectedAccount?.id ?? null,
     date: `${entryForm.date}T00:00:00`,
     mode:
-      editingEntry.ledger_id != null
+      editingEntry.ledger_id != null || selectedAccount == null
         ? (editingEntry.mode ?? undefined)
         : selectedAccount.account_type,
     reference: editingEntry.reference ?? undefined,
     notes: entryForm.description.trim() || undefined,
   };
+}
+
+/**
+ * The account a new receipt or payment form starts on: the first cash
+ * account, else the first account, else none (Unallocated). Every new company
+ * gets a "Cash" account, so a form only starts Unallocated when the company has
+ * no account at all.
+ */
+export function defaultPaymentAccountId(
+  accounts: Pick<CompanyAccount, 'id' | 'account_type'>[],
+): number | null {
+  const cash = accounts.find((account) => account.account_type === 'cash');
+  return (cash ?? accounts[0])?.id ?? null;
 }

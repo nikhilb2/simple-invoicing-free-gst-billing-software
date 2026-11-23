@@ -28,7 +28,7 @@ from src.mcp_server.schema import (
 )
 
 # Measured against the real spec on 2026-09-08.
-EXPECTED_OPERATIONS = 188  # Includes GET /api/tax-withholding-sections, the four /api/tds routes and the two TCS report routes
+EXPECTED_OPERATIONS = 191  # Includes GET /api/tax-withholding-sections, the four /api/tds routes, the two TCS report routes and the three /api/products/bulk-update routes
 EXPECTED_TOOLS = 151  # generated only; `search` and `fetch` are added on top
 # The /api/quotations routes added ten operations and ten tools, and the GSTR-3B
 # worksheet three of each.
@@ -50,7 +50,8 @@ EXPECTED_TOOLS = 151  # generated only; `search` and `fetch` are added on top
 # The ten /api/delivery-challans routes (#840: eight of the challan itself, two for
 # its e-way bill) add ten operations and no tool: the whole prefix is excluded in v1,
 # the list being at its byte budget.
-EXPECTED_EXCLUDED = 36
+# The three bulk product update routes are browser-only and add no tools.
+EXPECTED_EXCLUDED = 39
 EXPECTED_MULTIPART_SKIPPED = 1
 
 
@@ -75,6 +76,13 @@ def test_eway_bill_routes_are_not_exposed_as_tools(registry):
     # settings, transporters (x2), invoice precheck and generate, challan precheck and generate
     assert len(eway_paths) == 7
     assert not [tool.name for tool in registry.specs.values() if "eway-bill" in tool.path]
+
+
+def test_bulk_product_update_routes_are_not_exposed_as_tools(registry):
+    prefix = "/api/products/bulk-update/"
+    paths = {path for path in app.openapi()["paths"] if path.startswith(prefix)}
+    assert paths == {prefix + action for action in ("export", "preview", "confirm")}
+    assert not [tool.name for tool in registry.specs.values() if tool.path.startswith(prefix)]
 
 
 def test_exclusion_counts(registry):

@@ -12,12 +12,13 @@ from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import case
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
+from src.db.tenant_context import set_tenant_context
 from src.models.inventory import Inventory
 from src.models.marketplace import MarketplaceConnection, MarketplaceListing
 from src.models.product import Product
-from src.services.marketplace.client import MarketplaceError
+from src.services.marketplace.client import MarketplaceError, client_for_connection
 from src.services.company_access import company_scope
 
 logger = logging.getLogger(__name__)
@@ -170,6 +171,164 @@ def update_listing(
             raise
     db.commit()
     return listing
+
+
+def resync_listings_for_product(
+    db: Session, company_id: int, product: Product
+) -> list[dict]:
+    """Bring a product's open listings in line with its tax fields.
+
+    A listing copies gst_rate/hsn_sac/unit from the product master once, at
+    creation. When the seller later corrects the product (a GST council
+    reclassification, a fixed HSN, a corrected unit), the listing kept
+    advertising the old figures and new orders booked the stale rate, which
+    the posted invoice then filed. This closes that gap: every open listing
+    for the product (anything not withdrawn) is brought back in line with
+    the product master.
+
+    Local phase only: the listing rows are updated in the caller's
+    transaction, and the remote pushes still needed come back as a list of
+    ``{"listing_id", "product_id", "remote_listing_id", "changes"}`` dicts,
+    one per changed listing that has a remote id. No network call happens
+    here, so the product edit never waits on the marketplace. Hand the list
+    to push_resync_to_marketplace after the edit commits.
+
+    Clearing an HSN is a change like any other: when the new hsn_sac is
+    None, the change carries ``"hsn_sac": None`` so the remote listing is
+    cleared too instead of keeping the old HSN.
+    """
+    connection = (
+        db.query(MarketplaceConnection)
+        .filter(MarketplaceConnection.company_id == company_id)
+        .first()
+    )
+    if connection is None:
+        return []
+
+    listings = (
+        db.query(MarketplaceListing)
+        .filter(
+            MarketplaceListing.company_id == company_id,
+            MarketplaceListing.product_id == product.id,
+            MarketplaceListing.status != "withdrawn",
+        )
+        .order_by(MarketplaceListing.id.asc())
+        .all()
+    )
+    if not listings:
+        return []
+
+    new_rate = Decimal(str(product.gst_rate or 0))
+    new_hsn = product.hsn_sac
+    new_unit = product.unit or "Pieces"
+
+    pending: list[dict] = []
+    for listing in listings:
+        changes: dict = {}
+        if Decimal(str(listing.gst_rate or 0)) != new_rate:
+            listing.gst_rate = new_rate
+            changes["gst_rate"] = str(new_rate)
+        if listing.hsn_sac != new_hsn:
+            listing.hsn_sac = new_hsn
+            changes["hsn_sac"] = new_hsn
+        if listing.unit != new_unit:
+            listing.unit = new_unit
+            changes["unit"] = new_unit
+        if not changes:
+            continue
+        if listing.remote_listing_id:
+            pending.append(
+                {
+                    "listing_id": listing.id,
+                    "product_id": product.id,
+                    "remote_listing_id": listing.remote_listing_id,
+                    "changes": changes,
+                }
+            )
+    return pending
+
+
+def push_resync_to_marketplace(bind, company_id: int, pending: list[dict]) -> int:
+    """Push already-committed local resyncs to the remote marketplace.
+
+    Runs after the product edit commits, usually as a FastAPI background
+    task, so a slow or down marketplace never holds the product save open
+    and a failed push can never roll the edit back. Opens its own session:
+    the request's session is closed by the time a background task runs, so
+    the session is built on the ``bind`` the caller passes (the request
+    session's engine), which keeps this working wherever the app's data
+    lives. Each listing is pushed and committed on its own, so one
+    listing's failure does not lose another's success, and a failure is
+    recorded on the listing (last_error) and logged rather than raised.
+
+    The pushed values come from the product row as it stands when the push
+    runs, not from the pending snapshot: if the seller edited the product
+    again before this task ran, the remote gets the newest figures.
+    """
+    factory = sessionmaker(bind=bind)
+    db = factory()
+    pushed = 0
+    try:
+        set_tenant_context(db, company_id=company_id, user_id=None)
+        connection = (
+            db.query(MarketplaceConnection)
+            .filter(MarketplaceConnection.company_id == company_id)
+            .first()
+        )
+        if connection is None:
+            return 0
+
+        client = None
+        try:
+            for item in pending:
+                listing = (
+                    db.query(MarketplaceListing)
+                    .filter(
+                        MarketplaceListing.id == item["listing_id"],
+                        MarketplaceListing.company_id == company_id,
+                    )
+                    .first()
+                )
+                if listing is None or listing.status == "withdrawn":
+                    continue
+                remote_id = listing.remote_listing_id or item["remote_listing_id"]
+                if not remote_id:
+                    continue
+                product = (
+                    db.query(Product).filter(Product.id == item["product_id"]).first()
+                )
+                if product is None:
+                    continue
+                targets = {
+                    "gst_rate": str(Decimal(str(product.gst_rate or 0))),
+                    "hsn_sac": product.hsn_sac,
+                    "unit": product.unit or "Pieces",
+                }
+                changes = {key: targets[key] for key in item["changes"]}
+                if client is None:
+                    client = client_for_connection(connection)
+                try:
+                    client.update_listing(remote_id, changes)
+                    listing.last_error = None
+                    listing.last_published_at = datetime.utcnow()
+                    pushed += 1
+                except MarketplaceError as exc:
+                    logger.warning(
+                        "marketplace: tax resync for %s failed: %s",
+                        remote_id,
+                        exc,
+                    )
+                    listing.last_error = f"{exc.code}: {exc}"[:1000]
+                db.commit()
+        finally:
+            if client is not None:
+                try:
+                    client.close()
+                except Exception:  # noqa: BLE001 - close is best effort here
+                    pass
+    finally:
+        db.close()
+    return pushed
 
 
 def withdraw_listing(

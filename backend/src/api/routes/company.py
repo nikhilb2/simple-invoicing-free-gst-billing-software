@@ -25,6 +25,7 @@ from src.models.company_term import CompanyTerm
 from src.models.financial_year import FinancialYear
 from src.models.global_settings import GlobalSettings
 from src.models.user import User, UserRole
+from src.services.company_accounts import seed_default_cash_account
 from src.services.company_access import (
     accessible_company_ids,
     add_membership,
@@ -155,6 +156,8 @@ def _create_blank_company_profile(db: Session) -> CompanyProfile:
         ifsc_code="",
     )
     db.add(profile)
+    db.flush()
+    seed_default_cash_account(db, profile)
     db.commit()
     db.refresh(profile)
     return profile
@@ -292,8 +295,8 @@ def create_company_profile(
     act_for_company(db, profile, current_user)
     if inspect(current_user).persistent:
         add_membership(db, current_user, profile, UserRole.admin)
-    if shared:
-        _seed_current_financial_year(db, profile)
+    _seed_current_financial_year(db, profile)
+    seed_default_cash_account(db, profile, created_by=getattr(current_user, "id", None))
     db.commit()
     db.refresh(profile)
 

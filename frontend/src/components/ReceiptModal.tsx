@@ -12,6 +12,7 @@ import ModalCloseButton from './ModalCloseButton';
 import { useFY } from '../context/FYContext';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import { toLocalDateTimeInput } from '../utils/dateRanges';
+import { defaultPaymentAccountId } from '../utils/cashBank';
 
 interface ReceiptModalProps {
   ledgerId: number;
@@ -105,7 +106,12 @@ export default function ReceiptModal({
   useEffect(() => {
     let cancelled = false;
     api.get<CompanyAccount[]>('/company-accounts/')
-      .then((res) => { if (!cancelled) setCompanyAccounts(res.data); })
+      .then((res) => {
+        if (cancelled) return;
+        setCompanyAccounts(res.data);
+        // Start on the company's Cash account rather than Unallocated.
+        setForm((f) => (f.account_id == null ? { ...f, account_id: defaultPaymentAccountId(res.data) } : f));
+      })
       .catch(() => {});
     return () => { cancelled = true; };
   }, []);

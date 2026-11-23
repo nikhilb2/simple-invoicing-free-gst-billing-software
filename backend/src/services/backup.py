@@ -321,12 +321,13 @@ def _prepare_uploaded_backup(upload: UploadFile) -> _PreparedBackup:
     return _PreparedBackup(temp_dir=temp_dir, dump_path=dump_path, manifest=manifest)
 
 
-def _probe_dump(dump_path: Path) -> None:
+def _probe_dump(dump_path: Path) -> str:
     logger.debug(f"probing dump start: {dump_path}")
     command = ["pg_restore", "--list", str(dump_path)]
     try:
-        subprocess.run(command, check=True, capture_output=True, text=True)
+        result = subprocess.run(command, check=True, capture_output=True, text=True)
         logger.debug("probing dump success")
+        return result.stdout
     except FileNotFoundError as err:
         logger.error("probing dump failed: pg_restore not found")
         raise HTTPException(status_code=500, detail="pg_restore is not available on the server") from err
@@ -334,6 +335,31 @@ def _probe_dump(dump_path: Path) -> None:
         detail = (err.stderr or err.stdout or "pg_restore failed").strip()
         logger.error(f"probing dump failed: {detail}")
         raise HTTPException(status_code=400, detail=f"Backup file is not restorable: {detail}") from err
+
+
+def _post_backup_table_drops(table_of_contents: str) -> str:
+    """Remove app tables absent from an older archive before its DROP commands.
+
+    pg_restore --clean only removes objects present in the archive. A newer
+    table's foreign keys can otherwise prevent restoring an older primary key.
+    Keep the public schema (including its grants) and non-application objects.
+    These statements must run in the same transaction as the restore itself.
+    """
+    import src.models  # noqa: F401 -- populate the application's table registry
+    from src.db.base import Base
+
+    archived_tables = set()
+    for line in table_of_contents.splitlines():
+        fields = line.split()
+        if len(fields) >= 7 and fields[0].endswith(";") and fields[3:5] == ["TABLE", "public"]:
+            archived_tables.add(fields[5])
+
+    quote = engine.dialect.identifier_preparer.quote_identifier
+    return "".join(
+        f"DROP TABLE IF EXISTS public.{quote(table.name)} CASCADE;\n"
+        for table in sorted(Base.metadata.tables.values(), key=lambda table: table.name)
+        if table.schema in (None, "public") and table.name not in archived_tables
+    )
 
 
 def _classify_compatibility(backup_migrations: list[str], current_migrations: list[str]) -> tuple[str, str | None, int]:
@@ -469,7 +495,7 @@ def restore_backup(upload: UploadFile) -> tuple[str, int]:
     prepared = _prepare_uploaded_backup(upload)
     try:
         logger.debug(f"backup prepared: dump={prepared.dump_path}")
-        _probe_dump(prepared.dump_path)
+        table_of_contents = _probe_dump(prepared.dump_path)
 
         current = get_applied_migrations()
         logger.debug(f"current migration count before restore: {len(current)}")
@@ -524,15 +550,19 @@ def restore_backup(upload: UploadFile) -> tuple[str, int]:
             if not any(line.strip().startswith(p) for p in _UNSUPPORTED_SET_PREFIXES)
         ]
         filtered_sql = "\n".join(filtered_lines)
+        if compatibility == "requires_migration":
+            filtered_sql = _post_backup_table_drops(table_of_contents) + filtered_sql
         logger.debug(f"filtered SQL lines={len(filtered_lines)}")
 
         # Step 3: apply via psql in a single transaction; ON_ERROR_STOP=1 rolls
         # back and surfaces the first error (equivalent to --exit-on-error).
         psql_cmd = [
             "psql",
+            "--no-psqlrc",
             "--single-transaction",
             "--set", "ON_ERROR_STOP=1",
             "--dbname", _database_dsn(),
+            "--file", "-",
         ]
         try:
             subprocess.run(

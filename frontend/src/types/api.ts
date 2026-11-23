@@ -740,6 +740,8 @@ export type CreditNote = {
   cancelled_at: string | null;
   invoice_ids: number[];
   items: CreditNoteItem[];
+  /** Creation-time GST eligibility warnings. */
+  gst_warnings?: string[];
 };
 
 export type CreditNoteItemCreate = {

@@ -10,7 +10,7 @@ Only admins and managers can record, edit or delete receipts and payments. Staff
 
 ## Bank and cash accounts
 
-**Sales → Cash & Bank → Manage Account** opens your accounts. Set these up first.
+**Sales → Cash & Bank → Manage Account** opens your accounts. Every new company starts with a **Cash** account. Add your bank accounts here.
 
 ![Cash & Bank Accounts](/screens/accounts.webp)
 
@@ -30,7 +30,7 @@ A receipt is money you receive. You can start one from a [ledger's page](../ledg
 ![Recording a receipt](/screens/receipt-modal.webp)
 
 1. Enter the **Amount**.
-2. Choose the **Account** it went into, or **Unallocated**.
+2. Choose the **Account** it went into. It starts on your Cash account.
 3. Check the **Date**, and choose the **Mode**: Cash, Bank Transfer, UPI or Cheque.
 4. Add a **Reference (optional)**, such as a cheque number or transaction ID.
 5. Under **Invoice Allocation**, click **Auto Select Oldest** to settle the oldest invoices first, or tick invoices and enter the **Allocated amount** yourself.
@@ -58,7 +58,7 @@ A payment is money you pay out, usually to a supplier.
 
 ![The Cash & Bank register](/screens/cash-bank.webp)
 
-Choose an **Account**, or **Unallocated** for entries with no account, and a date range. It defaults to the active financial year.
+Choose an **Account**, or **Unallocated** for older entries saved without an account, and a date range. It defaults to the active financial year.
 
 - **Credit** is money in. **Debit** is money out.
 - **Available balance** = opening balance + credits − debits.

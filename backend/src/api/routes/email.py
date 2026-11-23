@@ -6,23 +6,21 @@ from src.services.upi import render_qr_png_data_uri
 from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from jinja2 import Environment, FileSystemLoader
 from pydantic import BaseModel
-from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
 from src.api.deps import get_active_company, require_company_role
 from src.core.analytics import distinct_id_for, track
 from src.api.routes.invoices import _build_invoice_pdf
 from src.services.serial_service import SerialManager
-from src.api.routes.ledgers import _build_ledger_statement_data, _build_statement_html
+from src.api.routes.ledgers import _build_ledger_statement_data, _build_statement_html, _ledger_balances
 from src.api.routes.public_share import ad_context
 from src.db.session import get_db
 from src.models.buyer import Buyer as Ledger
 from src.models.company import CompanyProfile
 from src.models.invoice import Invoice
-from src.models.payment import Payment, PaymentInvoiceAllocation
+from src.models.payment import Payment
 from src.models.product import Product
 from src.models.user import User, UserRole
-from src.services.credit_note_reporting import get_credit_note_ledger_summary
 from src.services.invoice_payments import (
     build_invoice_payment_summaries,
     is_offset_by_payables,
@@ -128,6 +126,8 @@ async def send_invoice_email(
     invoice = invoice_query.first()
     if not invoice:
         raise HTTPException(status_code=404, detail=f"Invoice {invoice_id} not found")
+    if invoice.status == "cancelled":
+        raise HTTPException(status_code=400, detail="Cancelled invoices cannot be emailed")
 
     to_email = payload.to or (invoice.ledger.email if invoice.ledger else None)
     if not to_email:
@@ -389,34 +389,18 @@ async def send_payment_reminder_email(
     company = active_company if company_id is not None else legacy_default_company(db)
     currency_code = company.currency_code if company and company.currency_code else "INR"
 
-    credit_note_summary = get_credit_note_ledger_summary(db, ledger_id=ledger_id, company_id=company_id)
-
-    # Outstanding balance = active sales invoices − active sales credit notes − active receipts for this ledger
-    total_sales_query = (
-        db.query(func.coalesce(func.sum(Invoice.total_amount), 0))
-        .filter(Invoice.ledger_id == ledger_id, Invoice.voucher_type == "sales", Invoice.status == "active")
+    # Outstanding balance = the ledger's closing balance (debit − credit), the same
+    # number the statement page and the ledger list show. Unlike sales − credit
+    # notes − receipts, it also counts the opening balance and payment vouchers,
+    # so the reminder and the statement link it points at always agree (#920).
+    # _ledger_balances sums plain floats from several queries, so a settled
+    # account can end up a tiny bit above/below zero (e.g. -2.84e-14). Round
+    # the way _build_ledger_statement_data does (round(x, 2) + 0.0) so the
+    # reminder shows a clean 0.00 and never offers "View & pay online" for a
+    # settled ledger.
+    outstanding_balance = (
+        round(_ledger_balances(db, [ledger_id], company_id=company_id).get(ledger_id, 0.0), 2) + 0.0
     )
-    if company_id is not None:
-        total_sales_query = total_sales_query.filter(company_scope(Invoice.company_id, company_id))
-    total_sales = float(total_sales_query.scalar())
-
-    total_receipts_query = (
-        db.query(func.coalesce(func.sum(Payment.amount), 0))
-        .filter(Payment.ledger_id == ledger_id, Payment.voucher_type == "receipt", Payment.status == "active")
-    )
-    if company_id is not None:
-        total_receipts_query = total_receipts_query.filter(company_scope(Payment.company_id, company_id))
-    total_receipts = float(total_receipts_query.scalar())
-    # TDS the customer kept back settles their invoices too (#768).
-    total_receipt_tds_query = (
-        db.query(func.coalesce(func.sum(PaymentInvoiceAllocation.tds_amount), 0))
-        .join(Payment, Payment.id == PaymentInvoiceAllocation.payment_id)
-        .filter(Payment.ledger_id == ledger_id, Payment.voucher_type == "receipt", Payment.status == "active")
-    )
-    if company_id is not None:
-        total_receipt_tds_query = total_receipt_tds_query.filter(company_scope(Payment.company_id, company_id))
-    total_receipts += float(total_receipt_tds_query.scalar())
-    outstanding_balance = total_sales - credit_note_summary.sales_credit_total - total_receipts
 
     last_payment_date = _last_receipt_date(db, ledger_id, company_id)
 

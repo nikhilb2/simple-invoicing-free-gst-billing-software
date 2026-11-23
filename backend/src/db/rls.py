@@ -82,6 +82,7 @@ DIRECT_TABLES: tuple[str, ...] = (
     "marketplace_processed_events",
     "marketplace_product_links",
     "payments",
+    "product_bulk_updates",
     "product_serials",
     "production_transactions",
     "products",

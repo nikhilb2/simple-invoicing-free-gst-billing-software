@@ -3,6 +3,11 @@ import type { CompanyProfile } from '../types/api';
 
 export const COMPANY_SETUP_PATH = '/settings/company?setup=required';
 
+/** Use the GST app's default only when the profile has no saved currency. */
+export function companyFormCurrency(currency: string | null | undefined): string {
+  return currency || 'INR';
+}
+
 export function isCompanyConfigured(company: CompanyProfile | null | undefined): boolean {
   return Boolean(company?.name?.trim());
 }

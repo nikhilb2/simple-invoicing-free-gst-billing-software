@@ -2193,7 +2193,43 @@ textarea {
   font-size: 1.15rem;
   line-height: 1;
   cursor: pointer;
+  /* 44x44 tap target; the negative margin keeps the toast no taller than before. */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  margin: -12px -10px -12px 0;
   padding: 2px;
+}
+
+/* On a phone the stack spans the top edge, compact, so it does not sit over the
+   Save button or a dialog's footer. Empty stack area still lets taps through. */
+@media (max-width: 767px) {
+  .toast-stack {
+    top: 8px;
+    right: 8px;
+    left: 8px;
+    width: auto;
+    gap: 8px;
+  }
+
+  .toast {
+    padding: 10px 12px;
+    border-radius: 14px;
+  }
+
+  .toast-stack--app {
+    top: auto;
+    bottom: 8px;
+  }
+
+  /* A dialog pins its Save and close buttons in its header at the top, so while
+     one is open the page's toasts move to the bottom edge instead (#956). */
+  body:has(.modal-overlay) .toast-stack:not(.toast-stack--app) {
+    top: auto;
+    bottom: 8px;
+  }
 }
 
 .change-password-card {

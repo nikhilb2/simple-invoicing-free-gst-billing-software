@@ -50,7 +50,7 @@ from src.schemas.quotation import (
 )
 from src.services.company_access import company_scope
 from src.services.document_totals import apply_discount_and_round_off, require_money_fits, snapshot_company_fields
-from src.services.financial_year import get_active_fy, get_fy_for_date
+from src.services.financial_year import get_active_fy, get_fy_for_date, require_same_financial_year
 from src.services.gst_tax_service import (
     assign_invoice_tax_totals,
     assign_item_tax_split,
@@ -402,9 +402,18 @@ def update_quotation(db: Session, quotation: Quotation, payload: QuotationUpdate
     if valid_until is not None and valid_until < quotation_date:
         raise HTTPException(status_code=400, detail="valid_until must be on or after quotation_date")
     if quotation_date != quotation.quotation_date:
-        fy = get_fy_for_date(db, quotation_date, company_id=company.id)
-        if fy is not None:
-            quotation.financial_year_id = fy.id
+        if quotation.financial_year_id is None:
+            fy = get_fy_for_date(db, quotation_date, company_id=company.id)
+            if fy is not None:
+                quotation.financial_year_id = fy.id
+        else:
+            require_same_financial_year(
+                db,
+                quotation.financial_year_id,
+                quotation_date,
+                company_id=company.id,
+                document=document_label(quotation.document_type).lower(),
+            )
     quotation.quotation_date = quotation_date
     quotation.valid_until = valid_until
 

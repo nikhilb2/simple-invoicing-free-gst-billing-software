@@ -1,4 +1,3 @@
-from datetime import datetime
 from html import escape
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -8,6 +7,7 @@ from sqlalchemy.orm import Session, joinedload
 from src.api.deps import get_active_company, get_current_user, require_company_role
 from src.core.analytics import distinct_id_for, track
 from src.db.session import get_db
+from src.services.gst_tax_service import india_now
 from src.models.buyer import Buyer as Ledger
 from src.models.company_account import CompanyAccount
 from src.models.company import CompanyProfile
@@ -130,7 +130,7 @@ def create_payment(
     if payload.account_id is not None:
       selected_account = _get_active_account(db, payload.account_id, company_id)
 
-    payment_date = payload.date or datetime.utcnow()
+    payment_date = payload.date or india_now()
     payment_day = payment_date.date() if hasattr(payment_date, "date") else payment_date
 
     active_fy = get_active_fy(db, company_id=company_id)
@@ -313,9 +313,8 @@ def update_payment(
                 detail="Allocated total cannot exceed the receipt/payment amount",
             )
 
-    selected_account = None
-    if payload.account_id is not None:
-        selected_account = _get_active_account(db, payload.account_id, company_id)
+    if payload.account_id is not None and payload.account_id != payment.account_id:
+        _get_active_account(db, payload.account_id, company_id)
 
     # The payment's financial year and number series are fixed at creation
     # and are not regenerated on edit, so a date change that would move the
@@ -345,7 +344,7 @@ def update_payment(
 
     payment.voucher_type = payload.voucher_type
     payment.amount = payload.amount
-    payment.account_id = selected_account.id if selected_account else None
+    payment.account_id = payload.account_id
     if payload.date is not None:
         payment.date = payload.date
     payment.mode = payload.mode.strip() if payload.mode else None

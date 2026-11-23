@@ -9,6 +9,7 @@ Serial tracking follows each individual unit, from the purchase that brought it 
 Once a product is serial-tracked:
 
 - its stock is always the number of serials you hold
+- its inventory cannot be disabled by marking it inactive while serial tracking is on
 - fractions are not allowed
 - it can appear on only one line per invoice
 - it cannot be produced through Produce Items yet

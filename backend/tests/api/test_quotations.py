@@ -277,7 +277,7 @@ def test_edit_replaces_lines_and_keeps_the_number(setup):
     assert cleared["valid_until"] is None
 
 
-def test_financial_year_follows_the_date_on_edit(setup):
+def test_a_date_in_another_financial_year_is_refused_on_edit(setup):
     client, ledger, product = setup
     today = date.today()
     later = ok(client.post("/api/financial-years/", json={
@@ -287,10 +287,14 @@ def test_financial_year_follows_the_date_on_edit(setup):
     }), 201)
     quote = create_quotation(client, ledger["id"], product["id"], valid_until=None)
     assert quote["financial_year_id"] != later["id"]
-    updated = ok(client.put(f"/api/quotations/{quote['id']}", json=_update_body(
+    response = client.put(f"/api/quotations/{quote['id']}", json=_update_body(
         ledger["id"], product["id"], quotation_date=date(today.year + 2, 6, 1).isoformat(),
-    )))
-    assert updated["financial_year_id"] == later["id"]
+    ))
+    assert response.status_code == 400
+    assert "LATER-FY" in response.json()["detail"]
+    kept = ok(client.get(f"/api/quotations/{quote['id']}"))
+    assert kept["financial_year_id"] == quote["financial_year_id"]
+    assert kept["quotation_date"] == quote["quotation_date"]
 
 
 def test_document_type_is_fixed_once_created(setup):

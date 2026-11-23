@@ -13,23 +13,52 @@ test.describe('Company Profile', () => {
     await expect(page.locator('h1')).toContainText('Billing identity');
   });
 
-  test('shows a bad GSTIN against the field, in view on a phone', async ({ authedPage: page }) => {
+  test('shows a bad GSTIN before saving and focuses it on a phone', async ({ authedPage: page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('/settings/company');
     await expect(page.locator('#company-name')).toBeVisible({ timeout: 5_000 });
 
     await page.fill('#company-name', 'Bad GSTIN Co');
     await page.fill('#company-address', '1 Check Digit Road');
-    // A correct format with the wrong check digit, so only the server can refuse it.
+    const error = page.locator('#company-gst-error');
     await page.fill('#company-gst', '29ABCDE1234F1Z0');
+    await expect(error).toContainText('15th character');
+
+    const updates: string[] = [];
+    page.on('request', (req) => {
+      if (req.method() === 'PUT' && new URL(req.url()).pathname === '/api/company/') updates.push(req.url());
+    });
     await page.click('button:has-text("Save company details")');
 
-    const error = page.locator('#company-gst-error');
-    await expect(error).toContainText('15th character');
     await expect(page.locator('#company-gst')).toBeFocused();
     await expect(page.locator('#company-gst')).toBeInViewport();
+    expect(updates).toHaveLength(0);
 
     await page.fill('#company-gst', uniqueGstin('29'));
+    await expect(error).toHaveCount(0);
+  });
+
+  test('validates the optional GSTIN in the New Company dialog', async ({ authedPage: page }) => {
+    await page.route('**/api/company/companies/capability', (route) =>
+      route.fulfill({ json: { can_create_company: true } }),
+    );
+    await page.goto('/settings/company');
+    await page.getByTestId('company-switcher').click();
+    await page.getByRole('button', { name: '+ New Company' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Create new company' });
+    await dialog.getByLabel('Company name').fill('Second company');
+    const gst = dialog.getByLabel('GSTIN (optional)');
+    const error = dialog.getByRole('alert');
+
+    await gst.fill('27');
+    await expect(error).toHaveCount(0);
+    await gst.press('Tab');
+    await expect(error).toContainText('format');
+    await gst.fill('27ABCDE1234F1Z9');
+    await expect(error).toContainText('15th character');
+    await dialog.getByRole('button', { name: 'Create Company' }).click();
+    await expect(gst).toBeFocused();
+    await gst.fill('');
     await expect(error).toHaveCount(0);
   });
 

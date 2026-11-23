@@ -69,7 +69,7 @@ This section sets how documents are numbered in the active [financial year](./fi
 | **Prefix**, **Suffix** | Text before and after the number, in capitals. |
 | **Separator** | Up to 3 characters between the parts. Defaults to `-`. |
 | **Pad digits** | 001 has 3 digits. |
-| **Include year**, **Year format** | YYYY (2026), MM-YYYY (04-2026) or FY (2025-26). |
+| **Include year**, **Year format** | YYYY (2026), MM-YYYY (04-2026) or FY (2025-26). YYYY is the year your financial year starts in, so January to March 2027 in FY 2026-27 prints 2026. MM-YYYY uses the calendar year of the document date (01-2027). |
 | **Next number** | The next number to use. |
 
 The **Preview** line shows the result. The default for sales is `INV-2026-001`. Click **Save** on the card.

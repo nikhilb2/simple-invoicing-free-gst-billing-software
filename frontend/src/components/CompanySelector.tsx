@@ -4,6 +4,8 @@ import { AnimatePresence, motion } from 'framer-motion';
 import api, { getApiErrorMessage } from '../api/client';
 import ModalCloseButton from './ModalCloseButton';
 import { useEscapeClose } from '../hooks/useEscapeClose';
+import { GSTIN_LENGTH, gstinError } from '../utils/gstin';
+import GstinInput from './GstinInput';
 import type {
   CompanyCreationCapOut,
   CompanyListItem,
@@ -21,6 +23,10 @@ export default function CompanySelector() {
   useEscapeClose(useCallback(() => setNewCompanyModalOpen(false), []));
   const [newCompanyName, setNewCompanyName] = useState('');
   const [newCompanyGst, setNewCompanyGst] = useState('');
+  const [gstTouched, setGstTouched] = useState(false);
+  const gstInputRef = useRef<HTMLInputElement>(null);
+  const invalidGst = gstinError(newCompanyGst);
+  const gstError = gstTouched || newCompanyGst.length >= GSTIN_LENGTH ? invalidGst : null;
   const [newCompanySubmitting, setNewCompanySubmitting] = useState(false);
   const [newCompanyError, setNewCompanyError] = useState('');
   const companyDropdownRef = useRef<HTMLDivElement>(null);
@@ -81,13 +87,18 @@ export default function CompanySelector() {
       setNewCompanyError('Company name is required.');
       return;
     }
-    const trimmedGst = newCompanyGst.trim().toUpperCase();
+    if (invalidGst) {
+      setNewCompanyError('');
+      setGstTouched(true);
+      gstInputRef.current?.focus();
+      return;
+    }
     setNewCompanySubmitting(true);
     setNewCompanyError('');
     const payload: CompanyProfileUpdate = {
       name: trimmedName,
       address: '',
-      gst: trimmedGst,
+      gst: newCompanyGst,
       phone_number: '',
       currency_code: 'INR',
       email: '',
@@ -198,6 +209,7 @@ export default function CompanySelector() {
                     setCompanyDropdownOpen(false);
                     setNewCompanyName('');
                     setNewCompanyGst('');
+                    setGstTouched(false);
                     setNewCompanyError('');
                     setNewCompanyModalOpen(true);
                   }}
@@ -252,14 +264,18 @@ export default function CompanySelector() {
                 </label>
                 <label style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', fontSize: '0.875rem', fontWeight: 500 }}>
                   GSTIN (optional)
-                  <input
+                  <GstinInput
                     className="input"
+                    ref={gstInputRef}
                     value={newCompanyGst}
-                    onChange={(e) => setNewCompanyGst(e.target.value)}
+                    onValueChange={setNewCompanyGst}
+                    onBlur={() => setGstTouched(true)}
                     placeholder="27ABCDE1234F1Z0"
-                    maxLength={15}
+                    aria-invalid={gstError ? true : undefined}
+                    aria-describedby={gstError ? 'new-company-gst-error' : undefined}
                   />
                 </label>
+                {gstError && <p className="field-error" id="new-company-gst-error" role="alert">{gstError}</p>}
                 <p style={{ margin: 0, fontSize: '0.8rem', opacity: 0.7 }}>
                   You can complete the GSTIN, address and bank details on the Company page.
                 </p>

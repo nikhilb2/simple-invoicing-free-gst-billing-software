@@ -22,7 +22,7 @@ from decimal import Decimal
 from src.core.validation import GST_STATE_NAMES
 from src.models.delivery_challan import STATUS_CANCELLED as CHALLAN_CANCELLED
 from src.models.quotation import DOCUMENT_PROFORMA, STATUS_CANCELLED
-from src.services.gst_tax_service import india_today, invoice_is_interstate
+from src.services.gst_tax_service import india_today, invoice_is_interstate, to_india_date
 from src.services.invoice_discounts import invoice_discount_amount, item_discount_amount
 from src.services.pdf_paper import page_css, thermal_width_mm
 
@@ -34,6 +34,7 @@ from .builders import (
     _pdf_display_quantity,
     _pdf_display_unit,
     _pdf_unit_price,
+    invoice_cancellation_note,
     tcs_label,
 )
 from .purchase_template import _extract_pan_from_gstin, _is_interstate_supply
@@ -230,7 +231,7 @@ def _build_thermal_html(doc: ThermalDoc, width_mm: int) -> str:
   * {{ margin: 0; padding: 0; box-sizing: border-box; }}
   html, body {{ color: #000; background: #fff; }}
   body {{
-    font-family: 'DejaVu Sans', Arial, sans-serif;
+    font-family: 'DejaVu Sans', Arial, 'Noto Sans', 'Noto Sans Devanagari', sans-serif;
     font-size: {base_pt}pt;
     line-height: 1.3;
     padding: 3mm {side_mm}mm 5mm;
@@ -441,6 +442,7 @@ def thermal_invoice_doc(
 ) -> ThermalDoc:
     """A sales invoice, or a purchase bill with the supplier as the party."""
     purchase = invoice.voucher_type == "purchase"
+    cancelled = getattr(invoice, "status", None) == "cancelled"
     currency = invoice.company_currency_code or "USD"
     place_of_supply = getattr(invoice, "place_of_supply", None)
     if purchase:
@@ -489,6 +491,7 @@ def thermal_invoice_doc(
     return ThermalDoc(
         title=title,
         copy_label=copy_label,
+        mark=invoice_cancellation_note(invoice),
         company_name=company_name,
         company_lines=_company_lines(
             invoice.company_address,
@@ -512,13 +515,13 @@ def thermal_invoice_doc(
         interstate=interstate,
         tax_rows=_tax_rows(invoice.items or [], interstate),
         totals=_gst_totals(invoice, interstate) + _adjustment_totals(invoice, currency),
-        grand_label="Total",
+        grand_label="Cancelled invoice total" if cancelled else "Total",
         grand_total=float(invoice.total_amount or 0),
         currency=currency,
         blocks=blocks,
         # A purchase bill is ours to pay, not the supplier's: never a pay QR, as on A4.
-        qr_uri="" if purchase else qr_uri,
-        qr_caption="Scan to view and pay online" if qr_uri and not purchase else "",
+        qr_uri="" if purchase or cancelled else qr_uri,
+        qr_caption="Scan to view and pay online" if qr_uri and not purchase and not cancelled else "",
         footer=f"{'Received' if purchase else 'Authorised'} by {company_name}",
     )
 
@@ -598,7 +601,7 @@ def thermal_credit_note_doc(credit_note, invoices, products, company, ledger) ->
     cancelled = credit_note.status == "cancelled"
     return ThermalDoc(
         title=label,
-        mark=f"Cancelled on {_fmt_date(credit_note.cancelled_at)}" if cancelled else "",
+        mark=f"Cancelled on {_fmt_date(to_india_date(credit_note.cancelled_at))}" if cancelled else "",
         company_name=seller_name,
         company_lines=_company_lines(
             pick("company_address", company.address if company else None),
@@ -655,7 +658,7 @@ def thermal_challan_doc(challan, products, *, copy_label: str = "", show_sku: bo
     return ThermalDoc(
         title="Delivery Challan",
         copy_label=copy_label,
-        mark=f"Cancelled on {_fmt_date(challan.cancelled_at)}" if challan.status == CHALLAN_CANCELLED else "",
+        mark=f"Cancelled on {_fmt_date(to_india_date(challan.cancelled_at))}" if challan.status == CHALLAN_CANCELLED else "",
         company_name=company_name,
         company_lines=_company_lines(
             challan.company_address,
@@ -702,7 +705,7 @@ def thermal_quotation_doc(quotation, products, bank_accounts=(), *, today=None) 
 
     mark = ""
     if quotation.status == STATUS_CANCELLED:
-        mark = f"Cancelled on {_fmt_date(quotation.cancelled_at)}"
+        mark = f"Cancelled on {_fmt_date(to_india_date(quotation.cancelled_at))}"
     elif quotation.is_expired_on(today):
         mark = f"Expired on {_fmt_date(quotation.valid_until)}"
 

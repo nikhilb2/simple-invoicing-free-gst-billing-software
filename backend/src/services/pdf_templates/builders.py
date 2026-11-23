@@ -5,6 +5,7 @@ from decimal import Decimal, ROUND_HALF_UP
 
 from src.models.company_account import CompanyAccount
 from src.models.invoice import Invoice, InvoiceItem
+from src.services.gst_tax_service import to_india_date
 from src.services.invoice_discounts import invoice_discount_amount, item_discount_amount
 from src.services.pdf_paper import page_css
 
@@ -16,6 +17,25 @@ def _money(value: Decimal) -> Decimal:
 def _e(text: str | None) -> str:
     """Escape HTML special characters."""
     return escape(text or "")
+
+
+def invoice_cancellation_note(invoice: Invoice) -> str:
+    """Show the recorded cancellation date; old records may have no timestamp."""
+    if getattr(invoice, "status", None) != "cancelled":
+        return ""
+    day = to_india_date(getattr(invoice, "cancelled_at", None))
+    return f"Cancelled on {day.strftime('%d %b %Y')} (IST)" if day else "Cancelled"
+
+
+def invoice_cancellation_html(invoice: Invoice) -> str:
+    note = invoice_cancellation_note(invoice)
+    if not note:
+        return ""
+    return (
+        '<div style="border: 2px solid; padding: 8px; margin: 8px 0; '
+        'text-align: center; font-weight: 700; text-transform: uppercase;">'
+        f'{_e(note)}</div>'
+    )
 
 
 def _fmt_inr(value: float, currency: str = "INR") -> str:

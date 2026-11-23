@@ -13,6 +13,7 @@ from src.models.invoice import Invoice, InvoiceItem
 from src.models.product import Product
 from src.schemas.credit_note import CreditNoteCreate, CreditNoteOut
 from src.services.financial_year import get_active_fy, get_fy_for_date
+from src.services.credit_note_deadline import section34_warning
 from src.services.serial_service import SerialManager
 from src.services.series import generate_next_number
 from src.services.gst_tax_service import (
@@ -27,13 +28,18 @@ from src.services.inventory_service import InventoryManager
 from src.services.company_access import company_scope
 
 
+def _plain(quantity) -> str:
+    """A quantity without trailing zeros: 3, not 3.000."""
+    return f"{Decimal(str(quantity)).normalize():f}"
+
+
 def _return_note(credit_note_number: str) -> str:
     """The mark a return stamps on each unit it takes back.
 
-    ``cancel_credit_note`` deletes the credit note row, so the serials it moved
-    have to carry their own link back to it — this is what lets one of several
-    returns against the same invoice be cancelled without disturbing the units
-    the others brought in.
+    Serials have no column pointing at the credit note, so the ones it moved
+    carry their own link back to it — this is what lets one of several returns
+    against the same invoice be cancelled without disturbing the units the
+    others brought in.
     """
     return f"Returned on credit note {credit_note_number}"
 
@@ -47,7 +53,7 @@ def _supplier_return_note(credit_note_number: str) -> str:
     return f"Returned to supplier on credit note {credit_note_number}"
 
 
-def _pro_rata(amount: Decimal, before: Decimal, quantity: int, whole: Decimal) -> Decimal:
+def _pro_rata(amount: Decimal, before: Decimal, quantity: Decimal, whole: Decimal) -> Decimal:
     """A return's share of a line amount, given how many units earlier returns took.
 
     The difference of two running totals, so a line returned in parts adds back
@@ -67,7 +73,7 @@ def _change_inventory_quantity(
     inventory_query = db.query(Inventory).filter(Inventory.product_id == product_id)
     if company_id is not None:
         inventory_query = inventory_query.filter(company_scope(Inventory.company_id, company_id))
-    inventory = inventory_query.first()
+    inventory = inventory_query.with_for_update().first()
     if not inventory:
         inventory = Inventory(product_id=product_id, quantity=0, company_id=company_id)
         db.add(inventory)
@@ -192,6 +198,8 @@ def create_credit_note(
     db: Session,
     current_user_id: int,
     company_id: int | None = None,
+    *,
+    gst_warnings: list[str] | None = None,
 ) -> CreditNote:
     # ── 1. Validate ledger ───────────────────────────────────────────────────
     ledger_query = db.query(Ledger).filter(Ledger.id == payload.ledger_id)
@@ -342,10 +350,25 @@ def create_credit_note(
                 status_code=400,
                 detail=f"Invoice item {cn_item.invoice_item_id} does not belong to invoice {cn_item.invoice_id}",
             )
+        quantity = cn_item.quantity
+        if quantity is not None and quantity != quantity.to_integral_value():
+            product_query = db.query(Product).filter(Product.id == ii.product_id)
+            if company_id is not None:
+                product_query = product_query.filter(company_scope(Product.company_id, company_id))
+            product = product_query.first()
+            if not product:
+                raise HTTPException(status_code=404, detail=f"Product {ii.product_id} not found")
+            if not product.allow_decimal or product.track_serials:
+                raise HTTPException(
+                    status_code=400, detail=f"Quantity for {product.name} must be a whole number"
+                )
         if payload.credit_note_type != "discount" and cn_item.quantity > ii.quantity:
             raise HTTPException(
                 status_code=400,
-                detail=f"Credit quantity {cn_item.quantity} exceeds original quantity {ii.quantity} for item {cn_item.invoice_item_id}",
+                detail=(
+                    f"Credit quantity {_plain(cn_item.quantity)} exceeds original quantity "
+                    f"{_plain(ii.quantity)} for item {cn_item.invoice_item_id}"
+                ),
             )
 
     # Check cumulative credited quantities per invoice_item_id
@@ -355,7 +378,7 @@ def create_credit_note(
     # a placeholder, not units. A line can be listed twice in one request.
     returned_before: dict[int, Decimal] = {}
     if payload.credit_note_type != "discount":
-        requested_qty: dict[int, int] = {}
+        requested_qty: dict[int, Decimal] = {}
         for cn_item in payload.items:
             item_id = cn_item.invoice_item_id
             if item_id not in returned_before:
@@ -379,8 +402,8 @@ def create_credit_note(
                 raise HTTPException(
                     status_code=400,
                     detail=(
-                        f"Total credited quantity ({credited_after}) "
-                        f"exceeds original quantity ({original_qty}) for item {item_id}"
+                        f"Total credited quantity ({_plain(credited_after)}) "
+                        f"exceeds original quantity ({_plain(original_qty)}) for item {item_id}"
                     ),
                 )
 
@@ -388,6 +411,14 @@ def create_credit_note(
     active_fy = get_active_fy(db, company_id=company_id)
     fy = active_fy
     cn_date = payload.credit_note_date or india_today()
+    if direction == "outward" and gst_warnings is not None:
+        credited_invoice_ids = {item.invoice_id for item in payload.items}
+        for inv in invoices:
+            if inv.id not in credited_invoice_ids:
+                continue
+            warning = section34_warning(cn_date, inv.invoice_date, inv.invoice_number or f"#{inv.id}")
+            if warning:
+                gst_warnings.append(warning)
     dated_fy = get_fy_for_date(db, cn_date, company_id=company_id)
     if dated_fy:
         fy = dated_fy
@@ -437,7 +468,7 @@ def create_credit_note(
         else:
             # What the line charged, not its stored unit_price: on a tax-inclusive
             # invoice that price holds the tax, and it is always before discount.
-            quantity = int(cn_item.quantity or 0)
+            quantity = cn_item.quantity or Decimal("0")
             line_taxable = Decimal(str(ii.taxable_amount or 0))
             line_tax = Decimal(str(ii.tax_amount or 0))
             if not line_taxable and not line_tax:
@@ -638,13 +669,13 @@ def cancel_credit_note(cn_id: int, db: Session, company_id: int | None = None) -
     query = db.query(CreditNote).filter(CreditNote.id == cn_id)
     if company_id is not None:
         query = query.filter(company_scope(CreditNote.company_id, company_id))
-    cn = query.first()
+    # Locked, so two cancels of one note cannot both reverse its stock.
+    cn = query.with_for_update().first()
     if not cn:
         raise HTTPException(status_code=404, detail="Credit note not found")
+    if cn.status != "active":
+        raise HTTPException(status_code=400, detail="Credit note is already cancelled")
 
-    was_active = cn.status == "active"
-
-    # Collect invoice IDs before deletion so we can recompute status after
     affected_invoice_ids = list({item.invoice_id for item in cn.items if item.invoice_id})
 
     cn.status = "cancelled"
@@ -656,7 +687,7 @@ def cancel_credit_note(cn_id: int, db: Session, company_id: int | None = None) -
     direction = cn.direction or "outward"
     source_voucher_type = "purchase" if direction == "inward" else "sales"
 
-    if was_active and cn.credit_note_type == "return":
+    if cn.credit_note_type == "return":
         serials = SerialManager(db)
         for item in cn.items:
             if item.product_id and item.quantity:
@@ -699,7 +730,9 @@ def cancel_credit_note(cn_id: int, db: Session, company_id: int | None = None) -
                     **kwargs,
                 )
 
-    db.delete(cn)
+    # The row stays, marked cancelled: its number was issued, and GSTR-1 Table 13
+    # counts it as issued and cancelled (#800). Everything that adds up notes
+    # reads active ones only.
     db.flush()
 
     for inv_id in affected_invoice_ids:

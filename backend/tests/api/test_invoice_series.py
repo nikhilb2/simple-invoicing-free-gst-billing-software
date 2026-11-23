@@ -366,3 +366,135 @@ def test_active_format_is_refused_when_a_past_years_label_breaks_it(client, db_s
 
     assert response.status_code == 400
     assert "OLD YEAR 2024-25" in response.json()["detail"]
+
+
+def _two_years_with_invoices(client, dates, year_format=None, db=None):
+    """Two FYs through the API, then one sales invoice per (date) -> numbers."""
+    for label, start, end in (
+        ("2026-27", "2026-04-01", "2027-03-31"),
+        ("2027-28", "2027-04-01", "2028-03-31"),
+    ):
+        created = client.post("/api/financial-years/", json={
+            "label": label, "start_date": start, "end_date": end,
+        })
+        assert created.status_code == 201, created.text
+        if label == "2026-27":
+            assert client.put(f"/api/financial-years/{created.json()['id']}/activate").status_code == 200
+    if year_format:
+        for row in db.query(InvoiceSeries).all():
+            row.year_format = year_format
+        db.commit()
+    product = client.post("/api/products/", json={
+        "sku": "FYSERIES", "name": "Service", "price": 1, "gst_rate": 0,
+        "maintain_inventory": False,
+    })
+    assert product.status_code == 200, product.text
+    ledger = client.post("/api/ledgers/", json={
+        "name": "Customer", "address": "1 Market St", "phone_number": "1234567890",
+    })
+    assert ledger.status_code == 200, ledger.text
+    numbers = []
+    for invoice_date in dates:
+        invoice = client.post("/api/invoices/", json={
+            "voucher_type": "sales", "ledger_id": ledger.json()["id"],
+            "invoice_date": invoice_date,
+            "items": [{"product_id": product.json()["id"], "quantity": 1, "unit_price": 1, "gst_rate": 0}],
+        })
+        assert invoice.status_code == 200, invoice.text
+        numbers.append(invoice.json()["invoice_number"])
+    return numbers
+
+
+def test_year_part_is_the_financial_years_start_year_and_next_year_has_no_gap(client):
+    numbers = _two_years_with_invoices(client, [
+        "2026-04-10", "2026-12-15", "2027-01-05", "2027-03-31",
+        "2027-04-01", "2027-04-02", "2027-12-01",
+    ])
+    assert numbers == [
+        "INV-2026-001", "INV-2026-002", "INV-2026-003", "INV-2026-004",
+        "INV-2027-001", "INV-2027-002", "INV-2027-003",
+    ]
+
+
+def test_month_year_format_keeps_the_calendar_year(client, db_session):
+    numbers = _two_years_with_invoices(
+        client,
+        ["2027-01-05", "2027-02-10", "2027-03-31", "2027-04-02"],
+        year_format="MM-YYYY", db=db_session,
+    )
+    assert numbers == [
+        "INV-01-2027-001", "INV-02-2027-002", "INV-03-2027-003", "INV-04-2027-001",
+    ]
+
+
+def _fy_series(db_session, voucher_type, prefix="X", year_format="YYYY"):
+    """Company 1 with FY 2026-27 (active) and FY 2027-28, one series each."""
+    _seed_company(db_session, 1, "Company A")
+    for year_id, (label, start, end) in {
+        1: ("2026-27", date(2026, 4, 1), date(2027, 3, 31)),
+        2: ("2027-28", date(2027, 4, 1), date(2028, 3, 31)),
+    }.items():
+        db_session.add(FinancialYear(
+            id=year_id, company_id=1, label=label, start_date=start, end_date=end,
+            is_active=year_id == 1,
+        ))
+        db_session.commit()
+        series = _seed_series(
+            db_session, year_id, 1, voucher_type=voucher_type,
+            financial_year_id=year_id, prefix=prefix,
+        )
+        series.year_format = year_format
+        db_session.commit()
+
+
+def test_back_dated_document_is_labelled_from_its_own_year_while_the_next_is_active(db_session):
+    from src.services.series import generate_next_number
+
+    # 2027-28 is the active year; the document is back-dated into 2026-27.
+    _fy_series(db_session, "sales", prefix="INV")
+    for row in db_session.query(FinancialYear).all():
+        row.is_active = row.id == 2
+    db_session.commit()
+
+    number = generate_next_number(
+        db_session, "sales", financial_year_id=1, invoice_date=date(2027, 2, 14),
+        active_financial_year_id=2, company_id=1,
+    )
+    assert number == "INV-2026-001"
+    # The active year's own counter is untouched and labels from its own year.
+    assert generate_next_number(
+        db_session, "sales", financial_year_id=2, invoice_date=date(2027, 4, 1),
+        active_financial_year_id=2, company_id=1,
+    ) == "INV-2027-001"
+
+
+@pytest.mark.parametrize("voucher_type, prefix", [("credit_note", "CN"), ("quotation", "QTN")])
+def test_31_march_to_1_april_rolls_to_the_next_years_label(db_session, voucher_type, prefix):
+    from src.services.series import generate_next_number
+
+    _fy_series(db_session, voucher_type, prefix=prefix)
+
+    def issue(year_id, day):
+        return generate_next_number(
+            db_session, voucher_type, financial_year_id=year_id, invoice_date=day,
+            active_financial_year_id=1, company_id=1,
+        )
+
+    assert issue(1, date(2027, 3, 30)) == f"{prefix}-2026-001"
+    assert issue(1, date(2027, 3, 31)) == f"{prefix}-2026-002"
+    assert issue(2, date(2027, 4, 1)) == f"{prefix}-2027-001"
+    assert issue(2, date(2027, 4, 2)) == f"{prefix}-2027-002"
+
+
+def test_month_year_calendar_year_holds_for_non_sales_across_the_rollover(db_session):
+    from src.services.series import generate_next_number
+
+    _fy_series(db_session, "quotation", prefix="QTN", year_format="MM-YYYY")
+    assert generate_next_number(
+        db_session, "quotation", financial_year_id=1, invoice_date=date(2027, 3, 31),
+        active_financial_year_id=1, company_id=1,
+    ) == "QTN-03-2027-001"
+    assert generate_next_number(
+        db_session, "quotation", financial_year_id=2, invoice_date=date(2027, 4, 1),
+        active_financial_year_id=1, company_id=1,
+    ) == "QTN-04-2027-001"

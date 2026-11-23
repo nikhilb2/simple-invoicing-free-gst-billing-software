@@ -13,6 +13,9 @@ The report routes (A4 and A5 only) are covered in test_report_pdf_paper.py.
 from __future__ import annotations
 
 import base64
+from io import BytesIO
+import shutil
+import subprocess
 from datetime import date, datetime
 from decimal import Decimal
 
@@ -162,6 +165,33 @@ def make_invoice(count: int = 40, *, interstate: bool = False, voucher_type: str
         total_amount=t["taxable"] + t["tax"] - discount + tcs + round_off,
         **_company_snapshot(),
     )
+
+
+@pytest.mark.parametrize("paper", ["a4", "a5", "thermal80", "thermal58"])
+def test_invoice_pdf_preserves_hindi_customer_and_product_names(paper):
+    pypdf = pytest.importorskip("pypdf")
+    if not shutil.which("fc-match"):
+        pytest.skip("fontconfig is needed to check for the Hindi PDF font")
+    family = subprocess.run(
+        ["fc-match", "--format=%{family}", "Noto Sans Devanagari"],
+        check=True, capture_output=True, text=True,
+    ).stdout
+    if "Noto Sans Devanagari" not in family:
+        pytest.skip("install fonts-noto-core to exercise Hindi PDF rendering")
+
+    invoice = make_invoice(1)
+    invoice.ledger_name = 'चावल वाले "राम" & Co'
+    products = _products()
+    products[0].name = "Basmati Chawal चावल"
+    if pdf_paper.is_thermal(paper):
+        html = build_thermal_copies([thermal_invoice_doc(invoice, products)], paper)
+    else:
+        html = _build_multi_copy_invoice_html(invoice, products, [], copies=1, paper=paper)
+    pdf = render_pdf(html, paper)
+    text = "\n".join(page.extract_text() for page in pypdf.PdfReader(BytesIO(pdf)).pages)
+    assert text.count("चावल") >= 2, text
+    assert "राम" in text, text
+    assert "Basmati Chawal" in text, text
 
 
 def _accounts() -> list[CompanyAccount]:
@@ -437,6 +467,20 @@ def test_a4_keeps_its_page_rule_and_columns():
     assert "@page { size: A4; margin: 15mm 18mm; }" in html
     assert "Total Tax" in html
     assert "A5" not in html
+
+
+@pytest.mark.parametrize("paper", ["a4", "a5"])
+@pytest.mark.parametrize("due_date", [datetime(2026, 12, 5), None])
+def test_sheet_invoice_prints_due_date_only_when_set(paper, due_date):
+    invoice = make_invoice(1)
+    invoice.due_date = due_date
+    html = _build_multi_copy_invoice_html(invoice, _products(), [], copies=2, paper=paper)
+
+    assert html.count("Date: 02 Sep 2026") == 2
+    if due_date:
+        assert html.count("Due date: 05 Dec 2026") == 2
+    else:
+        assert "Due date:" not in html
 
 
 def test_a5_drops_the_total_tax_column():

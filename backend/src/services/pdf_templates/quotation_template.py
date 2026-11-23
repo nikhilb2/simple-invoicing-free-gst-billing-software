@@ -17,7 +17,7 @@ from datetime import date
 from src.models.company_account import CompanyAccount
 from src.models.product import Product
 from src.models.quotation import DOCUMENT_PROFORMA, STATUS_CANCELLED, Quotation
-from src.services.gst_tax_service import india_today
+from src.services.gst_tax_service import india_today, to_india_date
 
 from .builders import (
     _amount_in_words_indian,
@@ -199,7 +199,7 @@ def _build_quotation_html(
 
     mark_html = ""
     if cancelled:
-        mark_html = f'<div class="sheet__mark">Cancelled on {_fmt_date(quotation.cancelled_at)}</div>'
+        mark_html = f'<div class="sheet__mark">Cancelled on {_fmt_date(to_india_date(quotation.cancelled_at))}</div>'
     elif expired:
         mark_html = f'<div class="sheet__mark">Expired on {_fmt_date(quotation.valid_until)}</div>'
 
@@ -224,7 +224,7 @@ def _build_quotation_html(
   {page_rule}
   * {{ margin: 0; padding: 0; box-sizing: border-box; }}
   body {{
-    font-family: -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    font-family: -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, 'Noto Sans', 'Noto Sans Devanagari', sans-serif;
     font-size: 10px;
     color: #1f2937;
     line-height: 1.5;

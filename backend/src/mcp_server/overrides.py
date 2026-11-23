@@ -31,6 +31,8 @@ EXCLUDED_PATH_PREFIXES: tuple[str, ...] = (
     "/api/eway-bill",
     # Delivery challans (#840): not exposed to AI assistants in v1; the tool list is at its byte budget.
     "/api/delivery-challans",
+    # Bulk updates require a person to review the changes and confirm stock replacement.
+    "/api/products/bulk-update/",
 )
 
 EXCLUDED_OPERATIONS: frozenset[tuple[str, str]] = frozenset(

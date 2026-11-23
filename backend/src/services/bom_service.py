@@ -334,7 +334,7 @@ def execute_production(
             inventory = db.query(Inventory).filter(
                 Inventory.product_id == component_id,
                 Inventory.company_id == company_id,
-            ).first()
+            ).with_for_update().first()
 
             component = db.query(Product).filter(Product.id == component_id).first()
 
@@ -354,7 +354,7 @@ def execute_production(
         product_inventory = db.query(Inventory).filter(
             Inventory.product_id == product_id,
             Inventory.company_id == company_id,
-        ).first()
+        ).with_for_update().first()
 
         if not product_inventory:
             product_inventory = Inventory(

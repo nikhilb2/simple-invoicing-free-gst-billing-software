@@ -1104,3 +1104,29 @@ def test_update_existing_mismatched_payment_keeps_same_day_and_edits_amount(clie
     assert payment.amount == 250
     assert payment.financial_year_id == 1
     assert payment.date.date() == date(2026, 4, 5)
+
+
+def test_payment_without_date_uses_indian_new_financial_year(client, db_session, monkeypatch, payment_in_old_fy):
+    from datetime import timezone
+    from src.services import gst_tax_service
+
+    class FrozenClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            instant = datetime(2026, 3, 31, 20, tzinfo=timezone.utc)
+            return instant.astimezone(tz) if tz else instant.replace(tzinfo=None)
+
+    monkeypatch.setattr(gst_tax_service, "datetime", FrozenClock)
+    ledger_id = payment_in_old_fy.ledger_id
+    db_session.get(FinancialYear, 1).is_active = False
+    db_session.get(FinancialYear, 2).is_active = True
+    db_session.commit()
+    response = client.post("/api/payments/", json={
+        "ledger_id": ledger_id, "voucher_type": "receipt", "amount": 500,
+    })
+    assert response.status_code == 200, response.text
+    payment = response.json()
+    assert payment["date"] == "2026-04-01T01:30:00"
+    assert payment["financial_year_id"] == 2
+    assert payment["warnings"] == []
+    assert db_session.get(Payment, payment["id"]).date == datetime(2026, 4, 1, 1, 30)
