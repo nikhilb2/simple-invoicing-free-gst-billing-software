@@ -391,7 +391,14 @@ async def send_payment_reminder_email(
     # number the statement page and the ledger list show. Unlike sales − credit
     # notes − receipts, it also counts the opening balance and payment vouchers,
     # so the reminder and the statement link it points at always agree (#920).
-    outstanding_balance = _ledger_balances(db, [ledger_id], company_id=company_id).get(ledger_id, 0.0)
+    # _ledger_balances sums plain floats from several queries, so a settled
+    # account can end up a tiny bit above/below zero (e.g. -2.84e-14). Round
+    # the way _build_ledger_statement_data does (round(x, 2) + 0.0) so the
+    # reminder shows a clean 0.00 and never offers "View & pay online" for a
+    # settled ledger.
+    outstanding_balance = (
+        round(_ledger_balances(db, [ledger_id], company_id=company_id).get(ledger_id, 0.0), 2) + 0.0
+    )
 
     last_payment_date = _last_receipt_date(db, ledger_id, company_id)
 

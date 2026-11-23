@@ -261,3 +261,42 @@ def test_single_reminder_outstanding_matches_ledger_balance_with_payment_voucher
     balance = _ledger_list_balance(client, ledger_id)
     assert balance == 56000.0  # opening 50,000 + invoice 1,000 + payment voucher 5,000
     assert f"₹{balance:,.2f}" in html_body
+
+
+def test_single_reminder_settled_ledger_shows_clean_zero_and_no_pay_button(client):
+    """Review follow-up: _ledger_balances sums plain floats, so a settled
+    account (opening 200.20 + invoice 100.10 − receipt 300.30) can leave a
+    residue like -2.84e-14. The reminder must round like the statement does
+    (round(x, 2) + 0.0): show ₹0.00, never ₹-0.00, and not render the
+    'View & pay online' button (which requires outstanding_balance > 0)."""
+    invoice_numbers = iter(["INV-000204"])
+    with patch(
+        "src.services.invoice_processor.generate_next_number",
+        side_effect=lambda *args, **kwargs: next(invoice_numbers),
+    ), patch(
+        "src.api.routes.payments.generate_next_number",
+        return_value="PAY-000204",
+    ):
+        ledger_id = _create_ledger_with_opening(client, 200.20, name="Settled Ledger")
+        product_id = _create_product(client)
+        _add_inventory(client, product_id)
+        invoice = _create_invoice(client, ledger_id, product_id, 100.10)
+        # Allocate only up to the invoice's remaining amount; the rest of the
+        # receipt stays unallocated but still nets against the ledger balance.
+        _create_voucher(
+            client,
+            ledger_id,
+            "receipt",
+            300.30,
+            RECEIPT_DATE,
+            [{"invoice_id": invoice["id"], "allocated_amount": 100.10}],
+        )
+
+    html_body = _send_single_reminder(client, ledger_id)
+
+    assert "₹0.00" in html_body
+    assert "₹-0.00" not in html_body
+    assert "View & pay online" not in html_body
+    # The ledger-list API intentionally returns the raw float; the reminder
+    # rounds it. Both represent the same settled account.
+    assert abs(_ledger_list_balance(client, ledger_id)) < 1e-9
