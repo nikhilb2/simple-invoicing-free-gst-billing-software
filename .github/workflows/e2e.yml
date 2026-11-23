@@ -15,7 +15,7 @@ concurrency:
 jobs:
   e2e:
     name: Full Playwright suite
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     services:
       postgres:
