@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'framer-motion';
 import api, { getApiErrorMessage } from '../api/client';
@@ -14,7 +15,10 @@ import type {
   CompanySelectOut,
 } from '../types/api';
 
-export default function CompanySelector() {
+export default function CompanySelector({ onDialogOpen, onDialogClose }: {
+  onDialogOpen?: () => void;
+  onDialogClose?: () => void;
+}) {
   const [companyDropdownOpen, setCompanyDropdownOpen] = useState(false);
   const [companySwitchingId, setCompanySwitchingId] = useState<number | null>(null);
   const [companyError, setCompanyError] = useState('');
@@ -22,6 +26,9 @@ export default function CompanySelector() {
 
   useEscapeClose(useCallback(() => setNewCompanyModalOpen(false), []));
   const [newCompanyName, setNewCompanyName] = useState('');
+  const [nameError, setNameError] = useState('');
+  const nameInputRef = useRef<HTMLInputElement>(null);
+  const switcherRef = useRef<HTMLButtonElement>(null);
   const [newCompanyGst, setNewCompanyGst] = useState('');
   const [gstTouched, setGstTouched] = useState(false);
   const gstInputRef = useRef<HTMLInputElement>(null);
@@ -82,9 +89,11 @@ export default function CompanySelector() {
   };
 
   const handleCreateCompany = async () => {
+    if (newCompanySubmitting) return;
     const trimmedName = newCompanyName.trim();
     if (!trimmedName) {
-      setNewCompanyError('Company name is required.');
+      setNameError('Enter your business name');
+      nameInputRef.current?.focus();
       return;
     }
     if (invalidGst) {
@@ -127,6 +136,7 @@ export default function CompanySelector() {
         <button
           className="button button--ghost"
           data-testid="company-switcher"
+          ref={switcherRef}
           style={{ width: '100%', textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
           onClick={() => setCompanyDropdownOpen((v) => !v)}
           aria-haspopup="listbox"
@@ -208,10 +218,12 @@ export default function CompanySelector() {
                   onClick={() => {
                     setCompanyDropdownOpen(false);
                     setNewCompanyName('');
+                    setNameError('');
                     setNewCompanyGst('');
                     setGstTouched(false);
                     setNewCompanyError('');
                     setNewCompanyModalOpen(true);
+                    onDialogOpen?.();
                   }}
                 >
                   + New Company
@@ -227,7 +239,11 @@ export default function CompanySelector() {
         </p>
       )}
 
-      <AnimatePresence>
+      {/* The mobile sidebar is transformed, so fixed dialogs must live outside it. */}
+      {createPortal(<AnimatePresence onExitComplete={() => {
+        onDialogClose?.();
+        requestAnimationFrame(() => switcherRef.current?.focus({ preventScroll: true }));
+      }}>
         {newCompanyModalOpen && (
           <motion.div
             className="modal-overlay"
@@ -238,10 +254,10 @@ export default function CompanySelector() {
             onClick={(e) => { if (e.target === e.currentTarget) setNewCompanyModalOpen(false); }}
           >
             <motion.div
-              className="modal-panel"
+              className="modal-panel new-company-dialog"
               role="dialog"
               aria-modal="true"
-              aria-label="Create new company"
+              aria-labelledby="new-company-title"
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
@@ -249,19 +265,26 @@ export default function CompanySelector() {
               style={{ maxWidth: '28rem' }}
             >
               <div className="panel__header">
-                <h2 className="nav-panel__title">New Company</h2>
+                <h2 className="nav-panel__title" id="new-company-title">New company</h2>
                 <ModalCloseButton onClick={() => setNewCompanyModalOpen(false)} label="Close new company" />
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                <label style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', fontSize: '0.875rem', fontWeight: 500 }}>
-                  Company name
+              <form noValidate onSubmit={(event) => { event.preventDefault(); void handleCreateCompany(); }} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                <div className="field">
+                  <label htmlFor="new-company-name">Business name <span aria-hidden="true">*</span></label>
                   <input
+                    id="new-company-name"
+                    ref={nameInputRef}
                     className="input"
                     value={newCompanyName}
-                    onChange={(e) => setNewCompanyName(e.target.value)}
+                    onChange={(e) => { setNewCompanyName(e.target.value); setNameError(''); }}
+                    placeholder="e.g. Sharma General Store"
+                    required
+                    aria-invalid={nameError ? true : undefined}
+                    aria-describedby={nameError ? 'new-company-name-error' : undefined}
                     autoFocus
                   />
-                </label>
+                  {nameError && <p className="field-error" id="new-company-name-error" role="alert">{nameError}</p>}
+                </div>
                 <label style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', fontSize: '0.875rem', fontWeight: 500 }}>
                   GSTIN (optional)
                   <GstinInput
@@ -280,24 +303,23 @@ export default function CompanySelector() {
                   You can complete the GSTIN, address and bank details on the Company page.
                 </p>
                 {newCompanyError && <p style={{ margin: 0, color: 'var(--error)', fontSize: '0.85rem' }}>{newCompanyError}</p>}
-                <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
+                <div className="new-company-actions">
+                  <button
+                    type="submit"
+                    className="button button--primary"
+                    disabled={newCompanySubmitting}
+                  >
+                    {newCompanySubmitting ? 'Creating…' : 'Create company'}
+                  </button>
                   <button type="button" className="button button--ghost" onClick={() => setNewCompanyModalOpen(false)}>
                     Cancel
                   </button>
-                  <button
-                    type="button"
-                    className="button"
-                    disabled={newCompanySubmitting}
-                    onClick={() => { void handleCreateCompany(); }}
-                  >
-                    {newCompanySubmitting ? 'Creating…' : 'Create Company'}
-                  </button>
                 </div>
-              </div>
+              </form>
             </motion.div>
           </motion.div>
         )}
-      </AnimatePresence>
+      </AnimatePresence>, document.body)}
     </>
   );
 }

@@ -26,6 +26,7 @@ from src.services.gst_tax_service import (
 )
 from src.services.inventory_service import InventoryManager
 from src.services.company_access import company_scope
+from src.services.invoice_discounts import DiscountedLine, discounted_line_amounts
 
 
 def _plain(quantity) -> str:
@@ -115,17 +116,43 @@ def _credited_on_invoice(db: Session, invoice_id: int, company_id: int | None) -
     return Decimal(str(lines or 0)), Decimal(str(tcs or 0))
 
 
+def _billed_lines(invoices: list[Invoice]) -> dict[int, DiscountedLine]:
+    """What each line of these invoices billed, keyed by invoice item id.
+
+    Stored line figures are before any invoice-level discount and round-off, so
+    a note built on them would credit more (or less) than the buyer was charged
+    (#797). ``discounted_line_amounts`` shares both out over the lines, so the
+    lines of an invoice add up to exactly its total less TCS.
+    """
+    billed: dict[int, DiscountedLine] = {}
+    for invoice in invoices:
+        billed.update(discounted_line_amounts(invoice, include_round_off=True))
+    return billed
+
+
+def _billed_line(item: InvoiceItem, billed: dict[int, DiscountedLine]) -> DiscountedLine:
+    """What one line billed. Its ``line_total`` is the most all notes together may credit.
+
+    A row from before the tax columns carries only its total, which is used as is.
+    """
+    if (not item.taxable_amount and not item.tax_amount) or item.id not in billed:
+        return DiscountedLine(_money(Decimal(str(item.line_total or 0))), Decimal("0"))
+    return billed[item.id]
+
+
 def _assign_tcs_shares(
     db: Session,
     built_items: list[dict],
     invoice_map: dict[int, Invoice],
+    billed: dict[int, DiscountedLine],
     company_id: int | None,
 ) -> Decimal:
     """Give each note line its share of its invoice's TCS, and return the note's total.
 
-    TCS is reversed in proportion to what the notes credit out of the invoice's line
-    totals. Each share brings the TCS reversed by the active notes up to the invoice's
-    TCS x credited / line totals, rounded, rather than adding a separately rounded
+    TCS is reversed in proportion to what the notes credit out of what the invoice's
+    lines billed, after any invoice-level discount and round-off (#797). Each share
+    brings the TCS reversed by the active notes up to the invoice's TCS x credited /
+    billed line totals, rounded, rather than adding a separately rounded
     slice. So the active notes always add up to the rounded proportion of what they
     credit, a note cancelled in the middle leaves no paisa behind, and once the lines
     are fully credited exactly the invoice's TCS has been reversed. That is what lets a
@@ -140,7 +167,7 @@ def _assign_tcs_shares(
         invoice_tcs = Decimal(str(getattr(invoice, "tcs_amount", 0) or 0)) if invoice is not None else Decimal("0")
         if invoice_tcs <= 0:
             continue
-        whole = sum((Decimal(str(line.line_total or 0)) for line in invoice.items), Decimal("0"))
+        whole = sum((_billed_line(line, billed).line_total for line in invoice.items), Decimal("0"))
         if whole <= 0:
             continue
         if invoice.id not in credited:
@@ -448,6 +475,9 @@ def create_credit_note(
     igst_total = Decimal("0")
     built_items = []
     new_credit: dict[int, Decimal] = {}
+    # What each line billed after the invoice-level discount and round-off: a
+    # return credits its share of this, and no note may take a line past it (#797).
+    billed = _billed_lines(invoices)
 
     for cn_item in payload.items:
         ii = invoice_item_map[cn_item.invoice_item_id]
@@ -469,11 +499,9 @@ def create_credit_note(
             # What the line charged, not its stored unit_price: on a tax-inclusive
             # invoice that price holds the tax, and it is always before discount.
             quantity = cn_item.quantity or Decimal("0")
-            line_taxable = Decimal(str(ii.taxable_amount or 0))
-            line_tax = Decimal(str(ii.tax_amount or 0))
-            if not line_taxable and not line_tax:
-                # Rows from before the tax columns carry only their total.
-                line_taxable = Decimal(str(ii.line_total or 0))
+            # Net of the line's share of any invoice-level discount and round-off.
+            line = _billed_line(ii, billed)
+            line_taxable, line_tax, line_limit = line.taxable_amount, line.tax_amount, line.line_total
             whole = Decimal(str(ii.quantity))
             before = returned_before[ii.id]
             taxable = _pro_rata(line_taxable, before, quantity, whole)
@@ -484,7 +512,7 @@ def create_credit_note(
             # the line's value, as a discount note does. They bring back only what
             # is left of it, and the note carries nothing once none is.
             remaining = max(
-                _money(Decimal(str(ii.line_total or 0)))
+                line_limit
                 - _credited_on_line(db, ii.id, company_id)
                 - new_credit.get(ii.id, Decimal("0")),
                 Decimal("0"),
@@ -535,18 +563,19 @@ def create_credit_note(
         })
 
     # Worked out before the line limit check below, which reads line_total only.
-    tcs_total = _assign_tcs_shares(db, built_items, invoice_map, company_id)
+    tcs_total = _assign_tcs_shares(db, built_items, invoice_map, billed, company_id)
     # Like an invoice's, a note's total carries the TCS it reverses, so the buyer's
     # account is credited with all of it. The GST columns never include it.
     total = _money(taxable_total + cgst_total + sgst_total + igst_total + tcs_total)
 
-    # A line can't be credited for more than it charged, across all its notes of
-    # every type. A return can land a paisa over on an old line whose tax doesn't
-    # halve evenly, which is rounding rather than an over-credit.
+    # A line can't be credited for more than it billed, after any invoice-level
+    # discount and round-off, across all its notes of every type (#797). A return can land a
+    # paisa over on an old line whose tax doesn't halve evenly, which is rounding
+    # rather than an over-credit.
     tolerance = Decimal("0") if payload.credit_note_type == "discount" else Decimal("0.01")
     for item_id, credit in new_credit.items():
         credited = _credited_on_line(db, item_id, company_id)
-        limit = _money(Decimal(str(invoice_item_map[item_id].line_total or 0)))
+        limit = _billed_line(invoice_item_map[item_id], billed).line_total
         if credited + credit > limit + tolerance:
             raise HTTPException(
                 status_code=400,

@@ -58,7 +58,7 @@ describe('ShortcutCheatSheet', () => {
   test("shows the user's own keys where they changed them, and defaults elsewhere", () => {
     const html = render();
 
-    expect(keyFor(html, 'Go to Invoices')).toBe('Ctrl+Shift+I');
+    expect(keyFor(html, 'Go to Invoice composer')).toBe('Ctrl+Shift+I');
     expect(keyFor(html, 'Save Invoice')).toBe('Alt+Enter');
     expect(keyFor(html, 'New Invoice')).toBe(DEFAULT_SHORTCUTS.create_invoice);
     expect(html).not.toContain(`<kbd>${DEFAULT_SHORTCUTS.go_invoices}</kbd>`);
@@ -70,7 +70,7 @@ describe('ShortcutCheatSheet', () => {
 
     expect(keyFor(html, 'Go to Ledgers')).toBe('⌥L');
     expect(keyFor(html, 'New Customer')).toBe('⇧⌘C');
-    expect(keyFor(html, 'Go to Invoices')).toBe('⇧⌘I');
+    expect(keyFor(html, 'Go to Invoice composer')).toBe('⇧⌘I');
   });
 
   test('links to the Keyboard Shortcuts page for changing them', () => {

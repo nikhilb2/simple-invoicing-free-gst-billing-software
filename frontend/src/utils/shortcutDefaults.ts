@@ -33,7 +33,7 @@ export const ACTION_LABELS: Record<ActionKey, string> = {
   open_search:    'Search',
   open_reports:   'Open Reports',
   new_customer:   'New Customer',
-  go_invoices:    'Go to Invoices',
+  go_invoices:    'Go to Invoice composer',
   go_ledgers:     'Go to Ledgers',
   go_products:    'Go to Products & Stock',
   go_day_book:    'Go to Day Book',

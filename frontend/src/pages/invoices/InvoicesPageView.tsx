@@ -48,10 +48,12 @@ import { useFirstInvoiceTourStore } from '../../store/useFirstInvoiceTourStore';
 import { useInvoiceComposerStore } from '../../store/useInvoiceComposerStore';
 import LedgerQuickCreateModal from './components/LedgerQuickCreateModal';
 import ProductQuickCreateModal from './components/ProductQuickCreateModal';
+import { countsStockByDefault } from '../catalogue/productFormRules';
 import SerialChips from './components/SerialChips';
 import SerialPickerModal from './components/SerialPickerModal';
 import StockUpdateModal from './components/StockUpdateModal';
 import ReceiptModal from '../../components/ReceiptModal';
+import { counterpartyFor } from './counterparty';
 import { FieldError, LineFieldErrors, useFormFieldErrors } from '../../hooks/useFormFieldErrors';
 import { createItem, type InvoiceFormItem } from './types';
 import { defaultPaymentAccountId } from '../../utils/cashBank';
@@ -154,6 +156,7 @@ export default function InvoicesPage() {
   const [submitting, setSubmitting] = useState(false);
   /* The save buttons stay enabled; a click on one marks what is missing. */
   const fieldErrors = useFormFieldErrors();
+  const counterparty = counterpartyFor(voucherType);
   const [error, setError] = useState('');
   /* Adding stock from the "not enough stock" notice is the answer to that error,
      so it should not sit beside the confirmation. */
@@ -1547,7 +1550,7 @@ export default function InvoicesPage() {
 
               <div className="field">
                 <div className="field__label-row">
-                  <label htmlFor="invoice-ledger">Ledger</label>
+                  <label htmlFor="invoice-ledger">{counterparty.label}</label>
                   <button type="button" className="link-button" onClick={openLedgerCreateModal}>
                     <Plus size={13} />
                     New ledger
@@ -1559,8 +1562,16 @@ export default function InvoicesPage() {
                   value={selectedLedgerId}
                   onChange={setSelectedLedgerId}
                   required
+                  requiredMessage={counterparty.missingMessage}
+                  emptyPlaceholder={counterparty.emptyPlaceholder}
+                  keepEnabledWhenEmpty
                 />
                 <FieldError id="invoice-ledger" errors={fieldErrors.errors} />
+                {fieldErrors.errors['invoice-ledger'] ? (
+                  <button type="button" className="button button--secondary" style={{ width: '100%', minHeight: 44 }} onClick={openLedgerCreateModal}>
+                    {counterparty.addLabel}
+                  </button>
+                ) : null}
               </div>
 
               {voucherType === 'sales' && company?.gst?.trim() ? (
@@ -2202,6 +2213,7 @@ export default function InvoicesPage() {
                 <p style={{ margin: 0 }}>
                   Only {stockShortage.available} of {stockShortage.productName} in stock, and this invoice needs {stockShortage.required}.
                   Add the missing stock and your invoice stays as you filled it in.
+                  If you don&apos;t keep count of stock for this item, edit it in Products and turn off stock counting instead.
                 </p>
                 <button
                   type="button"
@@ -2287,7 +2299,7 @@ export default function InvoicesPage() {
         />
       ) : null}
 
-      <ProductQuickCreateModal />
+      <ProductQuickCreateModal countsStockByDefault={countsStockByDefault(products)} />
 
       <StockUpdateModal />
 

@@ -34,7 +34,10 @@ function fyFromStartYear(year: number) {
   };
 }
 
-export default function SidebarFYSwitcher() {
+export default function SidebarFYSwitcher({ onCompanyDialogOpen, onCompanyDialogClose }: {
+  onCompanyDialogOpen?: () => void;
+  onCompanyDialogClose?: () => void;
+}) {
   const { isAuthenticated, isAdmin } = useAuth();
   const showCompanySwitcher = isAuthenticated;
   const { activeFY, fyList, switchFY, createFY } = useFY();
@@ -63,7 +66,7 @@ export default function SidebarFYSwitcher() {
   return (
     <>
       <div className="sidebar__fy">
-        {showCompanySwitcher && <CompanySelector />}
+        {showCompanySwitcher && <CompanySelector onDialogOpen={onCompanyDialogOpen} onDialogClose={onCompanyDialogClose} />}
 
         <p className="sidebar__group-label" style={{ marginBottom: '6px' }}>Financial Year</p>
         {!isAdmin ? (

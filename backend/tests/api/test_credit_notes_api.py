@@ -520,6 +520,227 @@ def test_return_of_a_discounted_line_credits_its_line_total(client, gst_seller, 
     assert float(_stored(db_session, note).total_amount) == line["line_total"]
 
 
+def test_full_return_of_an_invoice_level_discount_credits_what_was_billed(client, gst_seller):
+    """#797: a 10% invoice-level discount on 1,000 @ 18% GST bills 1,062.00, not 1,180.00.
+
+    The invoice keeps its stored taxable (1,000) and tax (180) — the discount
+    never touches them. A full return must still credit only 1,062.00, split
+    as 900.00 taxable / 162.00 tax: the same 90% of the GST-inclusive total
+    the customer actually paid, at the line's own 18% rate.
+    """
+    invoice = _sale(
+        client,
+        {"quantity": 1, "unit_price": 1000, "gst_rate": 18},
+        discount_type="percentage", discount_value=10,
+    )
+    assert invoice["total_amount"] == 1062.00
+
+    note = _note(client, invoice, quantity=1).json()
+
+    assert note["total_amount"] == 1062.00
+    assert note["taxable_amount"] == 900.00
+    assert (note["cgst_amount"], note["sgst_amount"]) == (81.00, 81.00)
+    assert note["items"][0]["taxable_amount"] == 900.00
+    assert note["items"][0]["tax_amount"] == 162.00
+
+    statement = client.get(
+        f"/api/ledgers/{invoice['ledger_id']}/statement",
+        params={"from_date": "1990-01-01", "to_date": "2999-12-31"},
+    )
+    assert statement.status_code == 200, statement.text
+    assert statement.json()["closing_balance"] == 0
+
+
+def test_two_half_returns_of_a_discounted_invoice_add_up_to_its_total(client, gst_seller):
+    """#797: partial returns must split the same discounted amount, not the undiscounted one."""
+    invoice = _sale(
+        client,
+        {"quantity": 2, "unit_price": 1000, "gst_rate": 18},
+        discount_type="percentage", discount_value=10,
+    )
+
+    first = _note(client, invoice, quantity=1).json()
+    second = _note(client, invoice, quantity=1).json()
+
+    assert first["total_amount"] + second["total_amount"] == pytest.approx(invoice["total_amount"])
+
+    statement = client.get(
+        f"/api/ledgers/{invoice['ledger_id']}/statement",
+        params={"from_date": "1990-01-01", "to_date": "2999-12-31"},
+    )
+    assert statement.json()["closing_balance"] == 0
+
+
+def test_fixed_invoice_discount_return_does_not_over_credit(client, gst_seller):
+    """A flat (non-percentage) invoice-level discount must be honoured too."""
+    invoice = _sale(
+        client,
+        {"quantity": 1, "unit_price": 1000, "gst_rate": 18},
+        discount_type="net", discount_value=118,
+    )
+    assert invoice["total_amount"] == 1062.00
+
+    note = _note(client, invoice, quantity=1).json()
+
+    assert note["total_amount"] == 1062.00
+
+
+def _closing_balance(client, invoice):
+    statement = client.get(
+        f"/api/ledgers/{invoice['ledger_id']}/statement",
+        params={"from_date": "1990-01-01", "to_date": "2999-12-31"},
+    )
+    assert statement.status_code == 200, statement.text
+    return statement.json()["closing_balance"]
+
+
+def _credit_status(client, invoice):
+    response = client.get(f"/api/invoices/{invoice['id']}")
+    assert response.status_code == 200, response.text
+    return response.json()["credit_status"]
+
+
+def _multi_line_sale(client, lines, *, place_of_supply=None, **extra):
+    """One sale of several lines, each its own product, to an unregistered buyer."""
+    payload = {
+        "voucher_type": "sales",
+        "ledger_id": _create_ledger(client, f"Walk-in {uuid4().hex[:8]}"),
+        "invoice_date": (india_today() - timedelta(days=3)).isoformat(),
+        "items": [
+            {"product_id": _create_product(client, f"SKU-{uuid4().hex[:8]}", "Widget", hsn_sac="8471"), **line}
+            for line in lines
+        ],
+        **extra,
+    }
+    if place_of_supply:
+        payload["place_of_supply"] = place_of_supply
+    response = client.post("/api/invoices/", json=payload)
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+_ROUNDED_LINES = [
+    {"quantity": 3, "unit_price": 333.33, "gst_rate": 18},
+    {"quantity": 7, "unit_price": 49.99, "gst_rate": 12},
+    {"quantity": 1, "unit_price": 19.99, "gst_rate": 5},
+]
+
+
+@pytest.mark.parametrize("place_of_supply", [None, "27"], ids=["intrastate", "interstate"])
+@pytest.mark.parametrize("discount_value", ["7.5", "3.2"], ids=["rounds-down", "rounds-up"])
+def test_full_return_of_a_discounted_rounded_multi_line_invoice_closes_the_account(
+    client, gst_seller, place_of_supply, discount_value,
+):
+    """#797 review: the invoice discount and the round-off are both shared over the lines.
+
+    The note credits exactly the invoice's total, so the buyer's account closes at
+    zero and the invoice reads fully credited, whichever way the total rounded.
+    """
+    invoice = _multi_line_sale(
+        client, _ROUNDED_LINES, place_of_supply=place_of_supply,
+        discount_type="percentage", discount_value=discount_value, apply_round_off=True,
+    )
+    assert invoice["round_off_amount"] != 0
+    assert (invoice["round_off_amount"] > 0) == (discount_value == "3.2")
+
+    response = _note(client, invoice, items=[
+        {"invoice_id": invoice["id"], "invoice_item_id": item["id"], "quantity": item["quantity"]}
+        for item in invoice["items"]
+    ])
+
+    assert response.status_code == 201, response.text
+    note = response.json()
+    assert note["total_amount"] == pytest.approx(invoice["total_amount"])
+    assert note["cgst_amount"] == note["sgst_amount"]
+    assert _closing_balance(client, invoice) == 0
+    assert _credit_status(client, invoice) == "fully_credited"
+
+
+@pytest.mark.parametrize("place_of_supply", [None, "27"], ids=["intrastate", "interstate"])
+@pytest.mark.parametrize("unit_price", ["100.40", "999.66"], ids=["rounds-down", "rounds-up"])
+def test_full_return_of_an_undiscounted_rounded_invoice_reverses_exactly_its_gst(
+    client, gst_seller, place_of_supply, unit_price,
+):
+    """#891 review: round-off is not tax, so it never reaches the note's GST.
+
+    With no invoice discount, a full return reverses exactly the GST the invoice
+    charged; the round-off goes on the taxable value alone, so the note still
+    credits the invoice's total and the buyer's account closes at zero.
+    """
+    invoice = _sale(
+        client, {"quantity": 1, "unit_price": unit_price, "gst_rate": 18},
+        place_of_supply=place_of_supply, apply_round_off=True,
+    )
+    assert invoice["round_off_amount"] != 0
+    assert (invoice["round_off_amount"] > 0) == (unit_price == "999.66")
+
+    response = _note(client, invoice, quantity=1)
+
+    assert response.status_code == 201, response.text
+    note = response.json()
+    assert note["cgst_amount"] + note["sgst_amount"] + note["igst_amount"] == pytest.approx(invoice["total_tax_amount"])
+    if place_of_supply:
+        assert note["igst_amount"] == pytest.approx(invoice["total_tax_amount"])
+    else:
+        assert note["cgst_amount"] + note["sgst_amount"] == pytest.approx(invoice["total_tax_amount"])
+    assert note["taxable_amount"] == pytest.approx(invoice["taxable_amount"] + invoice["round_off_amount"])
+    assert note["total_amount"] == pytest.approx(invoice["total_amount"])
+    assert _closing_balance(client, invoice) == 0
+    assert _credit_status(client, invoice) == "fully_credited"
+
+
+def test_returns_in_parts_of_a_discounted_rounded_invoice_close_the_account(client, gst_seller):
+    """The same invoice returned a few units at a time adds back to exactly its total."""
+    invoice = _multi_line_sale(
+        client, _ROUNDED_LINES, discount_type="percentage", discount_value="7.5", apply_round_off=True,
+    )
+    first, second, third = invoice["items"]
+
+    parts = [(first, 1), (second, 3), (first, 2), (third, 1), (second, 4)]
+    totals = []
+    for item, quantity in parts:
+        response = _note(client, invoice, items=[
+            {"invoice_id": invoice["id"], "invoice_item_id": item["id"], "quantity": quantity},
+        ])
+        assert response.status_code == 201, response.text
+        totals.append(response.json()["total_amount"])
+        if len(totals) < len(parts):
+            assert _credit_status(client, invoice) == "partially_credited"
+
+    assert sum(totals) == pytest.approx(invoice["total_amount"])
+    assert _closing_balance(client, invoice) == 0
+    assert _credit_status(client, invoice) == "fully_credited"
+
+
+def test_discount_note_on_a_discounted_invoice_is_capped_at_what_was_billed(client, gst_seller):
+    """#797 review: a discount note's limit is the line after the invoice discount, not its 1,180."""
+    invoice = _sale(
+        client,
+        {"quantity": 1, "unit_price": 1000, "gst_rate": 18},
+        discount_type="percentage", discount_value=10,
+    )
+    assert invoice["total_amount"] == 1062.00
+
+    refused = _note(client, invoice, note_type="discount", discount_amount_inclusive="1062.01")
+    assert refused.status_code == 400
+    assert "1062.00" in refused.json()["detail"]
+
+    assert _note(client, invoice, note_type="discount", discount_amount_inclusive="1062").status_code == 201
+    assert _closing_balance(client, invoice) == 0
+    assert _credit_status(client, invoice) == "fully_credited"
+
+
+def test_discount_note_after_a_full_return_of_a_discounted_invoice_is_refused(client, gst_seller):
+    invoice = _sale(
+        client,
+        {"quantity": 1, "unit_price": 1000, "gst_rate": 18},
+        discount_type="percentage", discount_value=10,
+    )
+    assert _note(client, invoice, quantity=1).status_code == 201
+
+    assert _note(client, invoice, note_type="discount", discount_amount_inclusive="0.01").status_code == 400
+
+
 def test_partial_return_credits_its_share_of_the_line(client, gst_seller):
     invoice = _sale(client, {"quantity": 10, "unit_price": 99.99, "gst_rate": 18})
     line = invoice["items"][0]

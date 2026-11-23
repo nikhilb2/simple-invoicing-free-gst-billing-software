@@ -19,6 +19,7 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 from decimal import Decimal
 
+from src.core.currency import resolve_currency_code
 from src.core.validation import GST_STATE_NAMES
 from src.models.delivery_challan import STATUS_CANCELLED as CHALLAN_CANCELLED
 from src.models.quotation import DOCUMENT_PROFORMA, STATUS_CANCELLED
@@ -443,7 +444,7 @@ def thermal_invoice_doc(
     """A sales invoice, or a purchase bill with the supplier as the party."""
     purchase = invoice.voucher_type == "purchase"
     cancelled = getattr(invoice, "status", None) == "cancelled"
-    currency = invoice.company_currency_code or "USD"
+    currency = resolve_currency_code(invoice.company_currency_code)
     place_of_supply = getattr(invoice, "place_of_supply", None)
     if purchase:
         interstate = _is_interstate_supply(invoice.company_gst, invoice.ledger_gst)
@@ -700,7 +701,7 @@ def thermal_quotation_doc(quotation, products, bank_accounts=(), *, today=None) 
     today = today or india_today()
     is_proforma = quotation.document_type == DOCUMENT_PROFORMA
     title = "Proforma Invoice" if is_proforma else "Quotation"
-    currency = quotation.company_currency_code or "USD"
+    currency = resolve_currency_code(quotation.company_currency_code)
     interstate = _is_interstate_supply(quotation.company_gst, quotation.ledger_gst)
 
     mark = ""

@@ -3,13 +3,14 @@ import posthog from 'posthog-js';
 /**
  * PostHog session replay.
  *
- * This module records sessions and nothing else. Product events are captured
+ * This module records sessions and browser-only interactions. Committed product events are captured
  * server-side, in the FastAPI route handlers (see backend/src/core/analytics.py),
  * so an event fires when the write actually committed rather than when a request
  * merely appeared to succeed, and the same action performed through the MCP
  * connector or an API key is counted identically.
  *
- * What is left here is the replay and the identity it hangs off: `initAnalytics`
+ * Browser-only interactions use `captureEvent`; they have no backend write.
+ * The replay and the identity it hangs off use `initAnalytics`
  * to start recording, `identifyUser` so a recording is attributable to the
  * operator the backend is already keying events by, and `resetAnalyticsUser` so a
  * shared machine does not inherit the previous sign-in.
@@ -75,6 +76,12 @@ export function isAnalyticsReady() {
   return ready;
 }
 
+/** Browser-only interactions. Do not include customer data in event properties. */
+export function captureEvent(name: string, properties?: Record<string, unknown>) {
+  if (!ready) return;
+  posthog.capture(name, properties);
+}
+
 /**
  * The id of the recording in progress, for the API client to pass to the
  * backend on every request.
@@ -106,7 +113,8 @@ export function getDistinctId(): string | null {
 }
 
 /**
- * Binds the recording to a known operator. Called on login, where the email is
+ * Binds the recording to a known operator. Called by the shared setSession path
+ * after login, email verification or an OAuth exchange, where the email is
  * the stable identifier the backend already keys accounts by -- the two sides
  * must agree, or the replay and the events it produced land on two different
  * people.

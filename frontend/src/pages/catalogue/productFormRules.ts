@@ -40,6 +40,17 @@ export function plainProductError(message: string): string {
   return /^hsn[ _]sac\b/i.test(message) && /4, 6 or 8 digits/.test(message) ? HSN_ERROR : message;
 }
 
+/**
+ * Whether a new product counts stock until the owner says otherwise. A shop that
+ * already counts stock for any product keeps that habit. A new company, or one
+ * that only sells items it does not count, starts with counting off: a counted
+ * product with nothing in stock refuses its first sale, and that is where new
+ * users stopped before their first invoice (#983).
+ */
+export function countsStockByDefault(products: ReadonlyArray<{ maintain_inventory: boolean }>): boolean {
+  return products.some((product) => product.maintain_inventory);
+}
+
 /** True when a new product will track stock yet start with none, which makes its first sale fail. */
 export function startsWithNoStock(tracksStock: boolean, openingQuantity: number): boolean {
   return tracksStock && openingQuantity === 0;
@@ -50,3 +61,6 @@ export const NO_STOCK_WARNING =
 
 export const NO_STOCK_SAVED_NOTE =
   'It has 0 in stock, so add stock before you sell it (Update stock on the invoice screen, or the catalogue).';
+
+export const STOCK_NOT_COUNTED_NOTE =
+  'Stock is not counted for this item, so you can bill it in any quantity. Count stock if you want the app to keep track of how many you have.';

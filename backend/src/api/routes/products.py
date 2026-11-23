@@ -1093,6 +1093,19 @@ def _import_csv_from_content(
             zip(normalised, [v.strip() if isinstance(v, str) else "" for v in row.values()])
         )
 
+        # Postgres cannot store a NUL character (\0); pasted-from-PDF or
+        # other-software exports can carry one. Fail this row only, not the
+        # whole import -- the request-wide check in src/core/request_text_safety.py
+        # does not run here, since this endpoint reads a file, not JSON.
+        if any("\x00" in value for value in values.values()):
+            errors.append(
+                {
+                    "row": row_num,
+                    "message": "This row contains a character that is not allowed (NUL).",
+                }
+            )
+            continue
+
         item_code = values.get("item_code") or values.get("sku") or values.get("item_code")
         item_name = values.get("item_name") or values.get("name")
 

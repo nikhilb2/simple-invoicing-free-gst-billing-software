@@ -14,6 +14,7 @@ the note below before release.
 
 from datetime import date
 
+from src.core.currency import resolve_currency_code
 from src.models.company_account import CompanyAccount
 from src.models.product import Product
 from src.models.quotation import DOCUMENT_PROFORMA, STATUS_CANCELLED, Quotation
@@ -120,7 +121,7 @@ def _build_quotation_html(
     title = "Proforma Invoice" if is_proforma else "Quotation"
     party_eyebrow = "Proforma for" if is_proforma else "Quotation for"
 
-    currency = quotation.company_currency_code or "USD"
+    currency = resolve_currency_code(quotation.company_currency_code)
     number = _e(quotation.quotation_number)
     interstate_supply = _is_interstate_supply(quotation.company_gst, quotation.ledger_gst)
     tax_inclusive = bool(quotation.tax_inclusive)

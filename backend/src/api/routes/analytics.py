@@ -9,6 +9,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from src.api.deps import get_active_company, get_current_user
+from src.core.currency import resolve_currency_code
 from src.db.session import get_db
 from src.models.company import CompanyProfile
 from src.models.financial_year import FinancialYear
@@ -168,7 +169,7 @@ def _monthly_report(
     )
 
     return MonthlySalesReport(
-        currency_code=active_company.currency_code or "USD",
+        currency_code=resolve_currency_code(active_company.currency_code),
         voucher_type=voucher_type,
         period=period,
         rows=rows,
@@ -227,7 +228,7 @@ def _product_report(
     )
 
     return ProductSalesReport(
-        currency_code=active_company.currency_code or "USD",
+        currency_code=resolve_currency_code(active_company.currency_code),
         voucher_type=voucher_type,
         period=period,
         sort_by=sort_by,
@@ -308,7 +309,7 @@ def _profit_loss_report(
     )
 
     return ProfitLossReport(
-        currency_code=active_company.currency_code or "USD",
+        currency_code=resolve_currency_code(active_company.currency_code),
         voucher_type="sales",
         period=period,
         product_rows=product_rows,
@@ -591,7 +592,7 @@ def get_product_performance(
     )
 
     return ProductPerformanceReport(
-        currency_code=active_company.currency_code or "USD",
+        currency_code=resolve_currency_code(active_company.currency_code),
         period=period,
         sort_by=sort_by,
         sort_dir=sort_dir,
@@ -632,7 +633,7 @@ def get_product_performance_detail(
         raise HTTPException(status_code=404, detail="Product not found")
 
     return ProductPerformanceDetail(
-        currency_code=active_company.currency_code or "USD",
+        currency_code=resolve_currency_code(active_company.currency_code),
         period=period,
         product=ProductPerformanceProduct(**_decimals_to_floats(data.product)),
         summary=ProductPerformanceRow(**_decimals_to_floats(data.summary)) if data.summary else None,

@@ -6,7 +6,7 @@ from pathlib import Path
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -30,6 +30,7 @@ from src.core.analytics import (
     track_exception,
 )
 from src.core.config import settings
+from src.core.request_text_safety import reject_nul_characters
 from src.services.backup_scheduler import start_scheduler, stop_scheduler
 from src.db.base import Base
 from src.db.rls import check_app_role_or_raise, ensure_row_level_security
@@ -185,6 +186,12 @@ app = FastAPI(
         {"name": "health", "description": "Service health check."},
     ],
     lifespan=lifespan,
+    # A NUL character (\0) crashes Postgres with a 500 wherever it reaches a
+    # query -- in a saved field or in a search/filter. One dependency applied to
+    # every route turns that into a 422 instead of checking for it in every
+    # schema. The guard skips multipart bodies, so the product CSV import
+    # (a file upload) checks each row itself.
+    dependencies=[Depends(reject_nul_characters)],
 )
 
 

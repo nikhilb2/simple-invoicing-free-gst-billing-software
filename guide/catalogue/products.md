@@ -30,11 +30,11 @@ Everyone can view the catalogue. Only admins and managers can add, change or del
    **Purchase price**, **Reorder level**, **Description** and the tracking options below sit under **More options**. Tick it to show them. The form remembers whether you left it open, and the options you used on your last new product stay on show even when it is closed. A product you edit always shows the options it uses.
 
 3. Under **How this product is tracked**, tick what applies:
-   - **Maintain stock for this product**: turn this off for services and anything you do not count. There is no separate "service" type.
+   - **Keep count of stock for this product**: a counted product can only be sold while it is in stock. Turn this off for services and anything you do not count. There is no separate "service" type. A new product starts with this on if your company already counts stock for any product. A new company's products start with it off, so you can bill them straight away; tick it, or click **Count stock for this item**, when you want the app to keep count.
    - **Allow fractional quantities**: for weights and lengths, such as 2.5 Kg.
    - **Track individual serial numbers / IMEIs**: see [Serial numbers](./serials).
    - **This product is manufactured in-house**: see [Manufacturing](./manufacturing).
-4. Under **What is on the shelf today**, enter how many you have now. If you leave it at 0 while maintaining stock, the app warns you that you cannot sell the product until you add stock, but you can still save it.
+4. Under **What is on the shelf today**, enter how many you have now. If you leave it at 0 while counting stock, the app warns you that you cannot sell the product until you add stock, but you can still save it. If the product does not count stock, this section says so instead of asking for a quantity.
 5. Click **Create product**.
 
 ::: warning HSN codes the GST portal will reject

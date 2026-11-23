@@ -79,7 +79,8 @@ export function useFormFieldErrors() {
     if (first) {
       first.scrollIntoView({ block: 'center', behavior: 'smooth' });
       // A combobox opens its list on focus, and the list would cover the message.
-      if (first.getAttribute('role') !== 'combobox') first.focus({ preventScroll: true });
+      // One with nothing to list (data-focus-on-error) has no list to cover it.
+      if (first.getAttribute('role') !== 'combobox' || first.dataset.focusOnError) first.focus({ preventScroll: true });
     }
   }, []);
 

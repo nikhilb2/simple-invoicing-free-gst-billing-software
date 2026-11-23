@@ -17,7 +17,7 @@ import type { CompanyProfile, CompanyProfileUpdate, InvoiceSeries, InvoiceSeries
 import { clearSetupDraft, companyFormCurrency, isCompanyConfigured, isCompanyFormDirty, missingCompanyFields, readSetupDraft, writeSetupDraft, type MissingCompanyFields } from '../utils/companySetup';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { isCurrencyChange } from '../utils/currencyChange';
-import { buildSeriesPreview, gstr1SeriesFormatError, parseNextSequenceInput } from '../utils/seriesPreview';
+import { buildSeriesPreview, clampNextSequenceInput, gstr1SeriesFormatError, MAX_NEXT_SEQUENCE, parseNextSequenceInput } from '../utils/seriesPreview';
 import { purchaseTdsSetting } from '../utils/tds';
 import { companyIdentityErrors, firstIdentityErrorField, type CompanyIdentityErrors } from '../utils/companyFieldErrors';
 import { GSTIN_LENGTH, gstinError, normalizeGstinInput } from '../utils/gstin';
@@ -467,8 +467,9 @@ function InvoiceSeriesCard({ sectionRef, savedGstin }: { sectionRef?: React.RefO
   }
 
   function changeNextSequence(id: number, raw: string) {
-    setNextSequenceText((prev) => ({ ...prev, [id]: raw }));
-    const value = parseNextSequenceInput(raw);
+    const bounded = clampNextSequenceInput(raw);
+    setNextSequenceText((prev) => ({ ...prev, [id]: bounded }));
+    const value = parseNextSequenceInput(bounded);
     if (value !== null) patchDraft(id, { next_sequence: value });
   }
 
@@ -604,6 +605,7 @@ function InvoiceSeriesCard({ sectionRef, savedGstin }: { sectionRef?: React.RefO
                     className="input"
                     type="number"
                     min={1}
+                    max={MAX_NEXT_SEQUENCE}
                     step={1}
                     value={nextSequenceTextOf(s.id)}
                     onChange={(e) => changeNextSequence(s.id, e.target.value)}
@@ -617,7 +619,7 @@ function InvoiceSeriesCard({ sectionRef, savedGstin }: { sectionRef?: React.RefO
                   />
                   {nextSequenceInvalid && (
                     <p className="field-error" id={`series-next-seq-error-${s.id}`} role="alert">
-                      Enter a whole number of 1 or more.
+                      Enter a number from 1 to 999,999,999.
                     </p>
                   )}
                 </div>

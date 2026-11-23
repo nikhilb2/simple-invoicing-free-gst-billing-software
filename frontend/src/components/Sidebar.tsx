@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { ChevronsLeft, ChevronRight, LogOut } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
@@ -15,17 +15,19 @@ import { useSidebarStore } from '../store/useSidebarStore';
 interface SidebarProps {
   isOpen?: boolean;
   onClose?: () => void;
+  onOpen?: () => void;
 }
 
 function linkClass(isActive: boolean, extra = '') {
   return `sidebar__link${extra}${isActive ? ' sidebar__link--active' : ''}`;
 }
 
-export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
+export default function Sidebar({ isOpen = false, onClose, onOpen }: SidebarProps) {
   const { isAdmin, canManagePlatform, userEmail, logout } = useAuth();
   const { collapsed, toggleCollapsed, openSection, toggleSection, openSectionFor } = useSidebarStore();
   const location = useLocation();
   const currentSection = sectionIdForPath(location.pathname);
+  const restoreDrawerAfterCompanyDialog = useRef(false);
 
   // Same key as the route guard, so saving the company (which invalidates it)
   // flips this back without a reload.
@@ -198,7 +200,16 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
         })}
       </nav>
 
-      <SidebarFYSwitcher />
+      <SidebarFYSwitcher
+        onCompanyDialogOpen={() => {
+          restoreDrawerAfterCompanyDialog.current = isOpen;
+          onClose?.();
+        }}
+        onCompanyDialogClose={() => {
+          if (restoreDrawerAfterCompanyDialog.current) onOpen?.();
+          restoreDrawerAfterCompanyDialog.current = false;
+        }}
+      />
 
       <div className="sidebar__footer">
         {renderLeaf(SETTINGS_ENTRY, ' sidebar__link--settings')}

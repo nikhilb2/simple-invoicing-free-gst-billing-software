@@ -183,6 +183,13 @@ export default function InvoicePreview({ invoice, onClose, onError, onPaymentRec
   // both books — only the wording the customer reads has to change.
   const showRecordPayment = Boolean(onPaymentRecorded) && canRecordPayment(invoice);
   const documentNoun = invoice.voucher_type === 'purchase' ? 'Purchase invoice' : 'Invoice';
+  const canSend = invoice.status !== 'cancelled';
+  const downloadAction = {
+    label: 'Download',
+    icon: <Download size={16} aria-hidden="true" />,
+    onClick: handleDownloadPdf,
+    title: 'Download invoice PDF',
+  };
 
   return (
     <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="invoice-preview-title">
@@ -240,14 +247,14 @@ export default function InvoicePreview({ invoice, onClose, onError, onPaymentRec
               ) : null}
             </>
           }
-          primary={{
+          primary={canSend ? {
             label: 'Share',
             icon: <Share2 size={16} aria-hidden="true" />,
             onClick: () => setShowShareModal(true),
             title: 'Share a link to this invoice',
-          }}
+          } : downloadAction}
           secondary={[
-            {
+            ...(canSend ? [{
               // Emailing the invoice is one of the two ways it reaches the
               // customer at all, so it belongs in the row beside Share. Folded
               // into the overflow menu it stopped being used entirely — nobody
@@ -256,7 +263,7 @@ export default function InvoicePreview({ invoice, onClose, onError, onPaymentRec
               icon: <Mail size={16} aria-hidden="true" />,
               onClick: () => setShowEmailModal(true),
               title: 'Email invoice',
-            },
+            }] : []),
             {
               label: 'Print',
               icon: <Printer size={16} aria-hidden="true" />,
@@ -264,12 +271,7 @@ export default function InvoicePreview({ invoice, onClose, onError, onPaymentRec
               disabled: !pdfUrl || loadingPdf || previewFailed,
               title: 'Print invoice',
             },
-            {
-              label: 'Download',
-              icon: <Download size={16} aria-hidden="true" />,
-              onClick: handleDownloadPdf,
-              title: 'Download invoice PDF',
-            },
+            ...(canSend ? [downloadAction] : []),
             ...(showRecordPayment ? [{
               label: 'Record payment',
               icon: <IndianRupee size={16} aria-hidden="true" />,
@@ -333,7 +335,7 @@ export default function InvoicePreview({ invoice, onClose, onError, onPaymentRec
         />
       )}
 
-      {showEmailModal && (
+      {canSend && showEmailModal && (
         <SendEmailModal
           type="invoice"
           entityId={invoice.id}
@@ -364,7 +366,7 @@ export default function InvoicePreview({ invoice, onClose, onError, onPaymentRec
         />
       ) : null}
 
-      {showShareModal && (
+      {canSend && showShareModal && (
         <ShareModal
           resourceType="invoice"
           resourceId={invoice.id}

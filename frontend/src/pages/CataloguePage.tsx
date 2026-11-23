@@ -180,6 +180,17 @@ export default function CataloguePage() {
       .catch(() => setCompany(null));
   }, []);
 
+  /* Whether the company counts stock for any product, which sets the default
+     for a new one (#983). Asked again whenever the product count changes, so
+     the first counted product turns the default on for the next. */
+  const [countsStock, setCountsStock] = useState<boolean | undefined>(undefined);
+  useEffect(() => {
+    api
+      .get<PaginatedCatalogue>('/products/with-inventory', { params: { status: 'active', page_size: 1 } })
+      .then((response) => setCountsStock(response.data.total > 0))
+      .catch(() => setCountsStock(undefined));
+  }, [total]);
+
   const currencyCode = company?.currency_code || 'INR';
 
   function setParams(next: Record<string, string | null>) {
@@ -575,6 +586,7 @@ export default function CataloguePage() {
         <ProductFormModal
           row={formRow}
           template={formTemplate}
+          countsStock={countsStock}
           onCancel={() => setFormOpen(false)}
           onSaved={(message) => {
             setFormOpen(false);

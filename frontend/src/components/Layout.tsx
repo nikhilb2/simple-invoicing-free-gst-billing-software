@@ -68,7 +68,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   return (
     <div className={`app-shell${collapsed ? ' app-shell--rail' : ''}`}>
       <div className="app-shell__sidebar">
-        <Sidebar isOpen={sidebarOpen} onClose={closeSidebar} />
+        <Sidebar isOpen={sidebarOpen} onClose={closeSidebar} onOpen={() => setSidebarOpen(true)} />
       </div>
       {sidebarOpen && (
         <div

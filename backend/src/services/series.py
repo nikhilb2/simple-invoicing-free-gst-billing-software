@@ -191,7 +191,7 @@ def generate_next_number(
         # skipping any numbers this company already used so repeats (e.g.
         # duplicating an invoice) don't collide on the unique number constraint.
         prefix = FALLBACK_PREFIXES.get(voucher_type, "INV")
-        for seq in range(1_000_000):
+        for seq in range(1, 1_000_000):
             number = f"{prefix}-{seq:06d}"
             if not _number_taken(db, voucher_type, number, company_id):
                 return number

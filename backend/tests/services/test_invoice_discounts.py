@@ -22,6 +22,7 @@ from src.schemas.invoice import InvoiceCreate, InvoiceItemCreate
 from src.services.invoice_discounts import (
     apportion_invoice_discount,
     build_invoice_discount_totals,
+    discounted_line_amounts,
     invoice_discount_amount,
 )
 from src.services.invoice_processor import InvoiceProcessor
@@ -442,3 +443,106 @@ class TestApportionInvoiceDiscount:
         tax = Decimal(str(invoice.total_tax_amount))
         expected = (Decimal("77.77") * taxable / (taxable + tax)).quantize(Decimal("0.01"))
         assert sum(shares) == expected
+
+
+class TestDiscountedLineAmounts:
+    """The per-line figures credit notes (and reports netting them off) share (#797)."""
+
+    def _invoice(self, db_session, processor, **payload):
+        _, ledger = _seed(db_session)
+        a = _product(db_session, sku="DL1", gst_rate=18.0)
+        b = _product(db_session, sku="DL2", gst_rate=12.0)
+        c = _product(db_session, sku="DL3", gst_rate=5.0)
+        return _apply(
+            db_session, processor, ledger,
+            items=[
+                InvoiceItemCreate(product_id=a.id, quantity=3, unit_price=333.33),
+                InvoiceItemCreate(product_id=b.id, quantity=7, unit_price=49.99),
+                InvoiceItemCreate(product_id=c.id, quantity=1, unit_price=19.99),
+            ],
+            **payload,
+        )
+
+    def test_no_discount_returns_the_stored_figures(self, db_session, processor):
+        invoice = self._invoice(db_session, processor)
+        lines = discounted_line_amounts(invoice, include_round_off=True)
+        for item in invoice.items:
+            assert lines[item.id].taxable_amount == Decimal(str(item.taxable_amount))
+            assert lines[item.id].tax_amount == Decimal(str(item.tax_amount))
+
+    @pytest.mark.parametrize("discount_value", [7.5, 3.3])
+    def test_lines_add_up_to_the_invoice_total(self, db_session, processor, discount_value):
+        invoice = self._invoice(
+            db_session, processor, discount_type="percentage", discount_value=discount_value, apply_round_off=True,
+        )
+        total = Decimal(str(invoice.total_amount))
+        round_off = Decimal(str(invoice.round_off_amount))
+        assert round_off != 0
+
+        with_round_off = discounted_line_amounts(invoice, include_round_off=True).values()
+        without = discounted_line_amounts(invoice).values()
+
+        assert sum(line.line_total for line in with_round_off) == total
+        assert sum(line.line_total for line in without) == total - round_off
+
+    def test_taxable_values_agree_with_apportion_invoice_discount(self, db_session, processor):
+        # Interstate (the seed's buyer and seller are both Delhi; a Maharashtra
+        # place of supply makes it interstate), so no paisa moves for CGST/SGST halves.
+        invoice = self._invoice(
+            db_session, processor, discount_type="net", discount_value=77.77, place_of_supply="27",
+        )
+        items = list(invoice.items)
+        shares = apportion_invoice_discount(
+            [Decimal(str(item.taxable_amount)) for item in items],
+            invoice_discount=invoice_discount_amount(invoice),
+            invoice_tax=Decimal(str(invoice.total_tax_amount)),
+        )
+        lines = discounted_line_amounts(invoice)
+        for item, share in zip(items, shares):
+            assert lines[item.id].taxable_amount == Decimal(str(item.taxable_amount)) - share
+
+    @pytest.mark.parametrize("place_of_supply", [None, "27"], ids=["intrastate", "interstate"])
+    def test_round_off_on_an_undiscounted_invoice_goes_on_taxable_values_only(
+        self, db_session, processor, place_of_supply,
+    ):
+        """#891 review: round-off is not tax; each line keeps exactly its stored GST."""
+        extra = {"place_of_supply": place_of_supply} if place_of_supply else {}
+        invoice = self._invoice(db_session, processor, apply_round_off=True, **extra)
+        round_off = Decimal(str(invoice.round_off_amount))
+        assert round_off != 0
+        assert invoice_discount_amount(invoice) == 0
+
+        lines = discounted_line_amounts(invoice, include_round_off=True)
+
+        for item in invoice.items:
+            assert lines[item.id].tax_amount == Decimal(str(item.tax_amount))
+        taxable_added = sum(
+            (lines[item.id].taxable_amount - Decimal(str(item.taxable_amount)) for item in invoice.items),
+            Decimal("0"),
+        )
+        assert taxable_added == round_off
+        assert sum(line.line_total for line in lines.values()) == Decimal(str(invoice.total_amount))
+
+    @pytest.mark.parametrize("discount_value", [7.5, 3.2])
+    def test_round_off_on_a_discounted_invoice_leaves_the_discounted_gst_alone(
+        self, db_session, processor, discount_value,
+    ):
+        """Sharing the round-off changes only taxable values, never the GST after discount."""
+        invoice = self._invoice(
+            db_session, processor, discount_type="percentage", discount_value=discount_value, apply_round_off=True,
+        )
+        assert Decimal(str(invoice.round_off_amount)) != 0
+
+        with_round_off = discounted_line_amounts(invoice, include_round_off=True)
+        without = discounted_line_amounts(invoice)
+
+        for item in invoice.items:
+            assert with_round_off[item.id].tax_amount == without[item.id].tax_amount
+        assert sum(line.line_total for line in with_round_off.values()) == Decimal(str(invoice.total_amount))
+
+    def test_intrastate_lines_keep_gst_that_halves_evenly(self, db_session, processor):
+        invoice = self._invoice(
+            db_session, processor, discount_type="percentage", discount_value=7.5, apply_round_off=True,
+        )
+        for line in discounted_line_amounts(invoice, include_round_off=True).values():
+            assert int(line.tax_amount * 100) % 2 == 0

@@ -1,5 +1,6 @@
 """Purchase invoice HTML template generation."""
 
+from src.core.currency import resolve_currency_code
 from src.models.company_account import CompanyAccount
 from src.models.invoice import Invoice
 from src.models.product import Product
@@ -58,7 +59,7 @@ def _build_purchase_invoice_html(
 ) -> str:
     """Generate HTML for a purchase invoice (supplier at top-left, your company top-right,
     no bank details in footer, optional supplier ref row)."""
-    currency = invoice.company_currency_code or "USD"
+    currency = resolve_currency_code(invoice.company_currency_code)
     inv_number = invoice.invoice_number or f"#{invoice.id}"
     inv_date = invoice.invoice_date.strftime("%d %b %Y") if invoice.invoice_date else (invoice.created_at.strftime("%d %b %Y") if invoice.created_at else "N/A")
     interstate_supply = _is_interstate_supply(invoice.company_gst, invoice.ledger_gst)

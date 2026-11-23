@@ -27,6 +27,7 @@ import formatCurrency, { formatDate, plural } from '../utils/formatting';
 import { roundMoney } from '../utils/invoiceTotals';
 import { backdatedNoteWarning, creditNoteDateChoice as nextCreditNoteDateChoice, shownCreditNoteDate } from '../utils/creditNoteDate';
 import { creditNoteInvoiceLabels } from '../utils/creditNoteInvoices';
+import { billedLineAmounts, returnPreviewTotal } from '../utils/creditNoteAmounts';
 import { toIsoDate } from '../utils/dateRanges';
 import { exportCreditNotesCsv } from './credit-notes/exports';
 import { deepLinkClass, numericParam, useDeepLinkScroll } from '../utils/deepLink';
@@ -371,15 +372,26 @@ export default function CreditNotesPage() {
       }, 0);
     }
 
-    return selectedLineItems.reduce((sum, line) => {
-      const quantity = Number(quantities[line.quantityKey] || 0);
-      if (!Number.isFinite(quantity) || quantity <= 0) {
-        return sum;
-      }
-      const ratio = line.item.quantity > 0 ? quantity / line.item.quantity : 0;
-      return sum + (line.item.line_total * ratio);
-    }, 0);
+    // What the server will credit: each line's share after the invoice-level
+    // discount and round-off, plus the TCS it reverses (#797).
+    return returnPreviewTotal(selectedLineItems.map((line) => ({
+      invoice: line.invoice,
+      item: line.item,
+      quantity: Number(quantities[line.quantityKey] || 0),
+    })));
   }, [creditNoteType, discountAmounts, quantities, selectedLineItems]);
+
+  // What each selected line billed, which is the most notes can credit against it.
+  const billedLineTotals = useMemo(() => {
+    const totals = new Map<string, number>();
+    const invoices = new Map(selectedLineItems.map((line) => [line.invoice.id, line.invoice]));
+    for (const invoice of invoices.values()) {
+      for (const [itemId, line] of billedLineAmounts(invoice)) {
+        totals.set(createQuantityKey(invoice.id, itemId), line.lineTotal);
+      }
+    }
+    return totals;
+  }, [selectedLineItems]);
 
   const discountPreviewSplit = useMemo(() => {
     if (creditNoteType !== 'discount') {
@@ -797,6 +809,7 @@ export default function CreditNotesPage() {
                       const gstRate = Number(line.item.gst_rate || 0);
                       const taxableSplit = gstRate > 0 ? roundMoney(discountAmount / (1 + (gstRate / 100))) : roundMoney(discountAmount);
                       const taxSplit = roundMoney(discountAmount - taxableSplit);
+                      const billedLineTotal = billedLineTotals.get(line.quantityKey) ?? line.item.line_total;
 
                       return (
                       <div
@@ -819,7 +832,7 @@ export default function CreditNotesPage() {
                         </div>
                         <div>
                           <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.85rem' }}>Line total</p>
-                          <strong>{formatCurrency(line.item.line_total, line.invoice.company_currency_code || currencyCode)}</strong>
+                          <strong>{formatCurrency(billedLineTotal, line.invoice.company_currency_code || currencyCode)}</strong>
                           {creditNoteType === 'discount' && discountAmount > 0 ? (
                             <p style={{ margin: '6px 0 0', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
                               Split {formatCurrency(taxableSplit, line.invoice.company_currency_code || currencyCode)} + {formatCurrency(taxSplit, line.invoice.company_currency_code || currencyCode)}
@@ -834,7 +847,7 @@ export default function CreditNotesPage() {
                             className="input"
                             type="number"
                             min={0}
-                            max={creditNoteType === 'discount' ? line.item.line_total : line.item.quantity}
+                            max={creditNoteType === 'discount' ? billedLineTotal : line.item.quantity}
                             step={creditNoteType === 'discount' ? '0.01' : line.wholeQuantity ? '1' : '0.001'}
                             value={creditNoteType === 'discount' ? (discountAmounts[line.quantityKey] || '') : (quantities[line.quantityKey] || '')}
                             onChange={(event) => {

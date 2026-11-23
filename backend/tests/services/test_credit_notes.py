@@ -427,7 +427,10 @@ class TestCreateCreditNoteValidation:
         from fastapi import HTTPException
 
         db = self._discount_setup(line_total="118", already_credited="0")
-        with pytest.raises(HTTPException) as exc:
+        with patch("src.services.credit_note.get_active_fy", return_value=SimpleNamespace(id=1)), \
+             patch("src.services.credit_note.get_fy_for_date", return_value=None), \
+             patch("src.services.credit_note.generate_next_number", return_value="CN-001"), \
+             pytest.raises(HTTPException) as exc:
             create_credit_note(self._discount_payload("5000"), db, current_user_id=1)
         assert exc.value.status_code == 400
         assert "would exceed its line total of 118.00" in exc.value.detail
@@ -437,18 +440,26 @@ class TestCreateCreditNoteValidation:
 
         # ₹100 already credited against the same line; ₹19 more passes ₹118.
         db = self._discount_setup(line_total="118", already_credited="100")
-        with pytest.raises(HTTPException) as exc:
+        with patch("src.services.credit_note.get_active_fy", return_value=SimpleNamespace(id=1)), \
+             patch("src.services.credit_note.get_fy_for_date", return_value=None), \
+             patch("src.services.credit_note.generate_next_number", return_value="CN-001"), \
+             pytest.raises(HTTPException) as exc:
             create_credit_note(self._discount_payload("19"), db, current_user_id=1)
         assert exc.value.status_code == 400
+        assert "would exceed its line total of 118.00" in exc.value.detail
 
     def test_discount_after_partial_return_is_capped_at_what_is_left(self):
         from fastapi import HTTPException
 
         # A return already credited ₹59 of the ₹118 line; ₹60 more is too much.
         db = self._discount_setup(line_total="118", already_credited="59")
-        with pytest.raises(HTTPException) as exc:
+        with patch("src.services.credit_note.get_active_fy", return_value=SimpleNamespace(id=1)), \
+             patch("src.services.credit_note.get_fy_for_date", return_value=None), \
+             patch("src.services.credit_note.generate_next_number", return_value="CN-001"), \
+             pytest.raises(HTTPException) as exc:
             create_credit_note(self._discount_payload("60"), db, current_user_id=1)
         assert exc.value.status_code == 400
+        assert "would exceed its line total of 118.00" in exc.value.detail
 
     def test_discount_equal_to_remaining_amount_is_accepted(self):
         # ₹59 already credited; the remaining ₹59 of the ₹118 line is allowed.

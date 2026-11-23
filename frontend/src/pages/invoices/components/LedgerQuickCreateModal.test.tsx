@@ -34,6 +34,12 @@ function tagFor(html: string, id: string): string {
 }
 
 describe('LedgerQuickCreateModal (issue 955)', () => {
+  it('lets a spaced GSTIN reach normalization without browser truncation', () => {
+    const input = tagFor(renderOpenModal(), 'modal-ledger-gst');
+    expect(input.toLowerCase()).not.toContain('maxlength');
+    expect(input).toContain('pattern=');
+  });
+
   it('requires only the customer name', () => {
     const html = renderOpenModal();
     expect(tagFor(html, 'modal-ledger-name')).toContain('required');

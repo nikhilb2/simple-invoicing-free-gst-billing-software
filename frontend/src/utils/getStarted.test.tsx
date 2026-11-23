@@ -117,7 +117,8 @@ describe('GetStartedCard', () => {
   it('lists the steps, marks bank optional and links the Quick start', () => {
     const html = render({ customer: false, product: false, invoice: false, bank: false });
     expect(html).toContain('Add a customer');
-    expect(html).toContain('Add a product with opening stock');
+    expect(html).toContain('Add a product');
+    expect(html).toContain('Counting its stock is optional.');
     expect(html).toContain('Create your first invoice');
     expect(html).toContain('(optional)');
     expect(html).toContain('href="/cash-bank/accounts"');

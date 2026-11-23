@@ -28,8 +28,17 @@ export function buildSeriesPreview(
   return `${prefix}${sep}${yearPart}${sep}${seq}${suffix}`;
 }
 
+export const MAX_NEXT_SEQUENCE = 999_999_999;
+
+/** Keep editable empty text, but stop whole-number input at the API's limit. */
+export function clampNextSequenceInput(raw: string): string {
+  return /^\d+$/.test(raw.trim()) && Number(raw) > MAX_NEXT_SEQUENCE
+    ? String(MAX_NEXT_SEQUENCE)
+    : raw;
+}
+
 /**
- * The "Next number" box as typed: a whole number of 1 or more, or `null` while
+ * The "Next number" box as typed: a whole number within the API range, or `null` while
  * it is blank or holds anything else. The box keeps the raw text, so clearing
  * it leaves it empty instead of snapping back to 1 (#922).
  */
@@ -37,7 +46,7 @@ export function parseNextSequenceInput(raw: string): number | null {
   const text = raw.trim();
   if (!/^\d+$/.test(text)) return null;
   const value = Number(text);
-  return value >= 1 ? value : null;
+  return value >= 1 && value <= MAX_NEXT_SEQUENCE ? value : null;
 }
 
 /** Mirror the API's format-change check; counter-only edits remain allowed. */

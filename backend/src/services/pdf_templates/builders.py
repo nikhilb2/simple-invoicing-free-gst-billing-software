@@ -1,6 +1,7 @@
 """Helper functions for PDF template building."""
 
 from html import escape
+from src.core.currency import resolve_currency_code
 from decimal import Decimal, ROUND_HALF_UP
 
 from src.models.company_account import CompanyAccount
@@ -81,7 +82,7 @@ def _fmt_currency(value: float, currency_code: str | None = None) -> str:
     amount's minus sign is printed in front of the symbol (``-$500.00``),
     not between the symbol and the digits (``$-500.00``).
     """
-    code = currency_code or "USD"
+    code = resolve_currency_code(currency_code)
     try:
         if code == "INR":
             return _fmt_inr(value, "INR")

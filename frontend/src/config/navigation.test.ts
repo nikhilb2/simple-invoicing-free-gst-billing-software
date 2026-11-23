@@ -24,7 +24,7 @@ const pathsOf = (isAdmin: boolean) =>
 
 describe('resolveDocumentTitle', () => {
   it('titles a static route from its nav item', () => {
-    expect(resolveDocumentTitle('/invoices')).toBe('Invoices');
+    expect(resolveDocumentTitle('/invoices')).toBe('Invoice composer');
   });
 
   it('prefers an explicit title over the sidebar label', () => {

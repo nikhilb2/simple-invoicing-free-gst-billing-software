@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from src.api.deps import get_active_company, get_current_user
 from src.api.pagination import MAX_PAGE
+from src.api.search import contains_pattern
 from src.api.routes.invoices import build_invoice_out, track_invoice_created
 from src.core.analytics import distinct_id_for, track
 from src.core.http_headers import content_disposition
@@ -198,7 +199,7 @@ def list_challans(
     if date_to is not None:
         query = query.filter(DeliveryChallan.challan_date <= date_to)
     if search.strip():
-        term = f"%{search.strip()}%"
+        term = contains_pattern(search)
         query = query.filter(
             or_(DeliveryChallan.challan_number.ilike(term), DeliveryChallan.ledger_name.ilike(term))
         )

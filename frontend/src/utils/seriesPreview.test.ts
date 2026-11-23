@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import type { InvoiceSeries, InvoiceSeriesUpdate } from '../types/api';
-import { buildSeriesPreview, gstr1SeriesFormatError, parseNextSequenceInput } from './seriesPreview';
+import { buildSeriesPreview, clampNextSequenceInput, gstr1SeriesFormatError, parseNextSequenceInput } from './seriesPreview';
 
 const format: Required<InvoiceSeriesUpdate> = {
   prefix: 'INV', suffix: '', include_year: true, year_format: 'YYYY',
@@ -115,6 +115,21 @@ describe('GSTR-1 format validation', () => {
 });
 
 describe('parseNextSequenceInput', () => {
+  test('accepts the API ceiling and refuses larger or non-finite values', () => {
+    expect(parseNextSequenceInput('999999999')).toBe(999999999);
+    for (const raw of ['1000000000', '9007199254740992', '9'.repeat(400)]) {
+      expect(parseNextSequenceInput(raw)).toBeNull();
+      expect(clampNextSequenceInput(raw)).toBe('999999999');
+    }
+  });
+
+  test('clamping preserves clearing, normal editing and invalid-text feedback', () => {
+    for (const raw of ['', ' ', '1', '300', '000125', '0', '-5', '2.5', '1e3', 'abc']) {
+      expect(clampNextSequenceInput(raw)).toBe(raw);
+    }
+    expect(clampNextSequenceInput(' 1000000000 ')).toBe('999999999');
+  });
+
   test('a blank box is empty, not 1, so a new number can be typed after backspacing (#922)', () => {
     expect(parseNextSequenceInput('')).toBeNull();
     expect(parseNextSequenceInput('  ')).toBeNull();

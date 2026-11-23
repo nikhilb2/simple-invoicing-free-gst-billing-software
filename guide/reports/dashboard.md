@@ -12,7 +12,7 @@ The dashboard has no date or financial-year filter. Figures cover **all dates** 
 
 ## Get started
 
-A new company sees a **Get started** checklist here: add a customer, add a product with opening stock, create your first invoice and, optionally, add your bank details. Steps tick off as you finish them. It goes away once you have created an invoice, or click its close button to hide it.
+A new company sees a **Get started** checklist here: add a customer, add a product, create your first invoice and, optionally, add your bank details. Steps tick off as you finish them. It goes away once you have created an invoice, or click its close button to hide it.
 
 ## The cards
 

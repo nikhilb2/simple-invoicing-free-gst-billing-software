@@ -115,6 +115,28 @@ def _draft(client, challan_id: int) -> dict:
     return iso._ok(client.get(f"/api/delivery-challans/{challan_id}/conversion-draft"))["invoice"]
 
 
+@pytest.mark.parametrize("column", ["challan_number", "ledger_name"])
+@pytest.mark.parametrize("literal,lookalike", [("_", "x"), ("%", "anything"), ("\\", "")])
+def test_search_treats_pattern_characters_literally(app_db, signed_in, column, literal, lookalike):
+    client = TestClient(app)
+    tenant = _seed_company(client, signed_in, app_db, "search@example.com", "Search Co", "SEARCH-1")
+    matching = _create_challan(client, tenant, 1)
+    other = _create_challan(client, tenant, 1)
+    # Names may contain these characters. Updating snapshots also covers legacy
+    # numbers, even though new challan numbers follow the stricter Rule 55 format.
+    with app_db.OwnerSession() as db:
+        for challan, value in ((matching, f"DC{literal}1"), (other, f"DC{lookalike}1")):
+            row = db.get(DeliveryChallan, challan["id"])
+            setattr(row, column, value)
+        db.commit()
+
+    for term in (literal, f"  dc{literal}1  "):
+        result = iso._ok(client.get("/api/delivery-challans/", params={"search": term}))
+        assert [row["id"] for row in result["items"]] == [matching["id"]]
+        assert result["total"] == 1
+        assert result["status_counts"] == {"open": 1}
+
+
 def _stock(db, product_id: int) -> Decimal:
     with db.owner_engine.connect() as conn:
         return Decimal(str(conn.execute(
