@@ -6,7 +6,7 @@ import { afterAll, describe, expect, it, vi } from 'vitest';
 
 const auth = vi.hoisted(() => {
   vi.stubGlobal('localStorage', { getItem: () => null });
-  return { isAuthenticated: true, isAdmin: false, canManagePlatform: true };
+  return { isAuthenticated: true, isAdmin: false, canManagePlatform: true, profileLoaded: true };
 });
 
 vi.mock('./context/AuthContext', () => ({
@@ -57,6 +57,15 @@ describe.each([
   it('denies a company admin without the platform capability', () => {
     Object.assign(auth, { isAuthenticated: true, isAdmin: true, canManagePlatform: false });
     expect(render(path, true)).not.toContain(heading);
+  });
+
+  it('waits for the profile instead of redirecting before roles are known', () => {
+    Object.assign(auth, { isAuthenticated: true, isAdmin: false, canManagePlatform: false, profileLoaded: false });
+    const html = render(path, true);
+    // <Navigate> renders nothing, so the placeholder proves no redirect was issued.
+    expect(html).toContain('Loading…');
+    expect(html).not.toContain(heading);
+    Object.assign(auth, { profileLoaded: true });
   });
 
   it('still requires a signed-in session', () => {
