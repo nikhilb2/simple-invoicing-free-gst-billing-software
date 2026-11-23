@@ -2223,6 +2223,13 @@ textarea {
     top: auto;
     bottom: 8px;
   }
+
+  /* A dialog pins its Save and close buttons in its header at the top, so while
+     one is open the page's toasts move to the bottom edge instead (#956). */
+  body:has(.modal-overlay) .toast-stack:not(.toast-stack--app) {
+    top: auto;
+    bottom: 8px;
+  }
 }
 
 .change-password-card {
