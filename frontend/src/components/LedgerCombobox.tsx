@@ -16,9 +16,19 @@ type LedgerComboboxProps = {
   onClear?: () => void;
   required?: boolean;
   disabled?: boolean;
+  /** Message for the field when nothing is chosen. Default suits a generic ledger picker. */
+  requiredMessage?: string;
+  /** Placeholder while there are no ledgers at all. */
+  emptyPlaceholder?: string;
+  /**
+   * Keep the box enabled with no ledgers, so a required check can still fail
+   * on it. A disabled control is skipped by form validation, and the form
+   * would be sent with no ledger. Focus then lands on it with nothing to pick.
+   */
+  keepEnabledWhenEmpty?: boolean;
 };
 
-export default function LedgerCombobox({ id, ledgers, value, onChange, onClear, required, disabled }: LedgerComboboxProps) {
+export default function LedgerCombobox({ id, ledgers, value, onChange, onClear, required, disabled, requiredMessage = 'Pick a ledger from the list.', emptyPlaceholder = 'No ledgers available', keepEnabledWhenEmpty }: LedgerComboboxProps) {
   const formatLedgerLabel = (ledger: Ledger) => ledger.gst ? `${ledger.name} (${ledger.gst})` : ledger.name;
   const formatSearchText = (ledger: Ledger) => `${ledger.name} ${ledger.gst || ''}`.toLowerCase();
   const selectedLedger = ledgers.find((l) => String(l.id) === value);
@@ -54,8 +64,8 @@ export default function LedgerCombobox({ id, ledgers, value, onChange, onClear, 
   // Typed text is not a selection, so `required` alone would pass with a
   // half-typed name and no ledger. Mirrors ProductCombobox.
   useEffect(() => {
-    inputRef.current?.setCustomValidity(required && !value ? 'Pick a ledger from the list.' : '');
-  }, [required, value]);
+    inputRef.current?.setCustomValidity(required && !value ? requiredMessage : '');
+  }, [required, value, requiredMessage]);
 
   // Server results win when present. Callers hand us only the first page of
   // ledgers, so on a large book the one being searched for is very likely not
@@ -185,9 +195,10 @@ export default function LedgerCombobox({ id, ledgers, value, onChange, onClear, 
         onChange={handleInputChange}
         onFocus={() => { setOpen(true); setSearching(false); inputRef.current?.select(); }}
         onKeyDown={handleKeyDown}
-        placeholder={ledgers.length === 0 ? 'No ledgers available' : 'Search by name or GSTIN…'}
+        placeholder={ledgers.length === 0 ? emptyPlaceholder : 'Search by name or GSTIN…'}
         required={required}
-        disabled={disabled || ledgers.length === 0}
+        disabled={disabled || (ledgers.length === 0 && !keepEnabledWhenEmpty)}
+        data-focus-on-error={ledgers.length === 0 ? 'true' : undefined}
       />
       {showClear && (
         <button
