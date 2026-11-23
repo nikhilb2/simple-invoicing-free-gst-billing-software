@@ -5,6 +5,7 @@ import axios from 'axios';
 import api, { getApiErrorCode, getApiErrorDetails, getApiErrorMessage } from '../api/client';
 import { createTerm, deleteTerm, removeLogo, updateTerm, uploadLogo } from '../api/company';
 import CurrencyChangeDialog from '../components/CurrencyChangeDialog';
+import GstinInput from '../components/GstinInput';
 import StatusToasts from '../components/StatusToasts';
 import { useAuthStore } from '../store/useAuthStore';
 import { useFYStore } from '../store/useFYStore';
@@ -891,6 +892,13 @@ export default function CompanyPage() {
     void loadCompanyProfile();
   }, []);
 
+  useEffect(() => {
+    if (!loading && !noCompany && searchParams.get('focus') === 'address') {
+      addressInputRef.current?.focus();
+      addressInputRef.current?.scrollIntoView({ block: 'center' });
+    }
+  }, [loading, noCompany, searchParams]);
+
   // Until the first company is saved, keep what has been typed for this tab.
   const setupDraftOwner = useAuthStore((state) => state.userEmail);
   useEffect(() => {
@@ -924,7 +932,7 @@ export default function CompanyPage() {
     event.preventDefault();
 
     // Every blank required field at once, under the field, with the first in view.
-    const missing = missingCompanyFields(form);
+    const missing = missingCompanyFields(form, !noCompany);
     setMissingFields(missing);
     const firstMissing = missing.name ? nameInputRef.current : missing.address ? addressInputRef.current : null;
     if (firstMissing) {
@@ -994,7 +1002,9 @@ export default function CompanyPage() {
         await useFYStore.getState().refreshFYList();
         await queryClient.invalidateQueries({ queryKey: ['company-setup-required'] });
         await queryClient.invalidateQueries({ queryKey: ['sidebar-companies'] });
-        setSuccess('Company created. New invoices will now show this as billing company.');
+        await queryClient.invalidateQueries({ queryKey: ['company', 'profile'] });
+        navigate(INVOICE_PATH);
+        return;
       } else {
         await api.put<CompanyProfileUpdate>('/company/', payload);
         // The sidebar reads enable_tcs from this query to show the TCS page.
@@ -1095,7 +1105,7 @@ export default function CompanyPage() {
           <div>
             <p className="eyebrow">Getting started</p>
             <h1 className="page-title">Add your business</h1>
-            <p className="section-copy">Two details and you can make your first invoice. GSTIN, PAN, bank and invoice settings can wait until later.</p>
+            <p className="section-copy">Two details and you can make your first invoice. Address, PAN, bank and logo can wait.</p>
           </div>
         ) : (
           <div>
@@ -1201,10 +1211,7 @@ export default function CompanyPage() {
           </div>
           {loading ? <div className="empty-state">Loading company profile...</div> : null}
 
-          {/* No example values as placeholders: grey "Simple Invoicing Pvt Ltd" and
-              "12 MG Road" read as already filled in, and new users pressed Save on an
-              empty form. Examples go in the hint under the field instead.
-              noValidate: the required fields are checked in handleSubmit, all at once. */}
+          {/* noValidate: required fields are checked together in handleSubmit. */}
           {!loading ? (
             <form ref={formRef} className="stack" onSubmit={handleSubmit} noValidate>
               <small className="field-hint">Fields marked <span style={{ color: 'var(--color-danger)' }}>*</span> are required.</small>
@@ -1221,6 +1228,7 @@ export default function CompanyPage() {
                       setForm((current) => ({ ...current, name: event.target.value }));
                     }}
                     autoComplete="organization"
+                    placeholder={noCompany ? 'e.g. Sharma General Store' : undefined}
                     required
                     aria-invalid={missingFields.name ? true : undefined}
                     aria-describedby={missingFields.name ? 'company-name-error' : 'company-name-hint'}
@@ -1234,22 +1242,14 @@ export default function CompanyPage() {
                     : <small className="field-hint" id="company-name-hint">As it should appear on your invoices, e.g. Sharma Traders.</small>}
                 </div>
 
-                {noCompany ? (
-                  <div className="field field--full">
-                    <label htmlFor="company-address">Address <span style={{ color: 'var(--color-danger)' }} aria-hidden="true">*</span></label>
-                    {addressInput}
-                  </div>
-                ) : null}
-
                 <div className={noCompany ? 'field field--full' : 'field'}>
                   <label htmlFor="company-gst">GSTIN{noCompany ? ' (optional)' : ''}</label>
-                  <input
+                  <GstinInput
                     id="company-gst"
                     ref={gstInputRef}
                     className="input"
                     value={form.gst}
-                    onChange={(event) => {
-                      const gst = normalizeGstinInput(event.target.value);
+                    onValueChange={(gst) => {
                       setIdentityErrors((current) => ({ ...current, gst: undefined }));
                       setForm((current) => ({ ...current, gst }));
                     }}
@@ -1260,7 +1260,7 @@ export default function CompanyPage() {
                   />
                   <small className="field-hint">
                     {noCompany
-                      ? 'Leave blank if you are not GST-registered. 15 characters, e.g. 27ABCDE1234F1Z0.'
+                      ? 'Have a GSTIN? Add it now so your bills show it. You can add it later too.'
                       : 'Format: 27ABCDE1234F1Z0'}
                   </small>
                   {gstError ? <p className="field-error" id="company-gst-error" role="alert">{gstError}</p> : null}
@@ -1524,10 +1524,10 @@ export default function CompanyPage() {
                 <button
                   className="button button--primary"
                   disabled={submitting || (!noCompany && !formDirty)}
-                  title="Save company details"
-                  aria-label="Save company details"
+                  title={noCompany ? 'Create business and continue' : 'Save company details'}
+                  aria-label={noCompany ? 'Create business and continue' : 'Save company details'}
                 >
-                  {submitting ? 'Saving company...' : 'Save company details'}
+                  {submitting ? 'Saving company...' : noCompany ? 'Create business and continue' : 'Save company details'}
                 </button>
                 {!noCompany && (
                   <span className="form-save-bar__status" role="status">

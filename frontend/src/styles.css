@@ -9289,6 +9289,11 @@ a.ledger-chip:focus-visible {
   }
 }
 
+.company-setup-first .form-save-bar > .button {
+  width: 100%;
+  min-height: 48px;
+}
+
 /* Floating WhatsApp support link, bottom right on every screen. Below the
    sidebar, modals and the walkthrough card, so it never covers a dialog's
    own buttons. */

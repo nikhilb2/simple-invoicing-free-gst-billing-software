@@ -1,6 +1,6 @@
 import { describe, expect, it, test } from 'vitest';
 import type { CompanyProfile } from '../types/api';
-import { clearSetupDraft, companyFormCurrency, isCompanyConfigured, missingCompanyFields, isCompanyFormDirty, isCompanySetupRequired, readSetupDraft, writeSetupDraft } from './companySetup';
+import { clearSetupDraft, companyFormCurrency, hasCompanyAddress, isCompanyConfigured, missingCompanyFields, isCompanyFormDirty, isCompanySetupRequired, readSetupDraft, writeSetupDraft } from './companySetup';
 
 describe('company form currency', () => {
   test.each([null, undefined, ''])('defaults a missing currency (%s) to INR', (currency) => {
@@ -126,6 +126,10 @@ describe('isCompanyFormDirty', () => {
 });
 
 describe('missingCompanyFields', () => {
+  test('first setup needs a name but can defer the address', () => {
+    expect(missingCompanyFields({ name: 'Rao Traders', address: '' }, false)).toEqual({});
+    expect(missingCompanyFields({ name: ' ', address: '' }, false)).toEqual({ name: 'Enter your business name.' });
+  });
   test('names every blank required field at once', () => {
     expect(missingCompanyFields({ name: '', address: '  ' })).toEqual({
       name: 'Enter your business name.',
@@ -138,4 +142,11 @@ describe('missingCompanyFields', () => {
   test('nothing missing once both are filled', () => {
     expect(missingCompanyFields({ name: 'Rao Traders', address: '1 MG Road, Pune' })).toEqual({});
   });
+});
+
+test('address reminders only complete for a nonblank saved address', () => {
+  for (const company of [null, undefined, { address: '' }, { address: '   ' }]) {
+    expect(hasCompanyAddress(company)).toBe(false);
+  }
+  expect(hasCompanyAddress({ address: '  1 MG Road, Pune  ' })).toBe(true);
 });

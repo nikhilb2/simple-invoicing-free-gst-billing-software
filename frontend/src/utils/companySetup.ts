@@ -2,6 +2,11 @@ import axios from 'axios';
 import type { CompanyProfile } from '../types/api';
 
 export const COMPANY_SETUP_PATH = '/settings/company?setup=required';
+export const COMPANY_ADDRESS_PATH = '/settings/company?focus=address';
+
+export function hasCompanyAddress(company: Pick<CompanyProfile, 'address'> | null | undefined): boolean {
+  return Boolean(company?.address?.trim());
+}
 
 /** Use the GST app's default only when the profile has no saved currency. */
 export function companyFormCurrency(currency: string | null | undefined): string {
@@ -99,9 +104,9 @@ export type MissingCompanyFields = { name?: string; address?: string };
  * browser names one field per Save press, in a bubble that a phone has often
  * scrolled out of view, so to a new user the Save button seemed to do nothing.
  */
-export function missingCompanyFields(form: { name: string; address: string }): MissingCompanyFields {
+export function missingCompanyFields(form: { name: string; address: string }, requireAddress = true): MissingCompanyFields {
   const missing: MissingCompanyFields = {};
   if (!form.name.trim()) missing.name = 'Enter your business name.';
-  if (!form.address.trim()) missing.address = 'Enter your business address. It is printed on every invoice.';
+  if (requireAddress && !form.address.trim()) missing.address = 'Enter your business address. It is printed on every invoice.';
   return missing;
 }

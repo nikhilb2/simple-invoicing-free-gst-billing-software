@@ -40,7 +40,7 @@ class CompanyTermUpdate(BaseModel):
 
 class CompanyProfileBase(BaseModel):
     name: str
-    address: str
+    address: str = ""
     gst: str = ""
     pan: str | None = None
     tan: str | None = None

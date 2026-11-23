@@ -8,12 +8,18 @@ description: "Set your GSTIN, logo, bank details, invoice terms, e-way bill sett
 
 ![The Billing identity page](/screens/company.webp)
 
+## Create your first business
+
+On **Add your business**, enter your business name and, if you have one, your GSTIN. Click **Create business and continue** to open the invoice composer. Address, PAN, bank details and logo can be added later.
+
+The dashboard's **Add your business address** reminder links directly to the address field in Settings → Company. Add it before generating an e-way bill; that screen also links to the field when the address is missing. New invoices use the address saved when they are created.
+
 ## Invoice header details
 
 | Field | Notes |
 |---|---|
 | **Company name** | Required. |
-| **Address** | Required. |
+| **Address** | Can be left for later when creating your first business. Complete it on this page for future invoices and e-way bills. |
 | **GSTIN** | Optional. You need it to export GSTR-1 and join the marketplace. If you enter one, its format, state code and check digit are checked. |
 | **Currency** | Starts on **INR - Indian Rupee**. USD, EUR, GBP and AED are also available. If you change it after creating invoices, the app asks you to confirm. Those invoices stay in the old currency and their amounts are not converted. Only new invoices use the new one. |
 | **Phone number**, **Email**, **Website** | Optional, shown on your documents. |

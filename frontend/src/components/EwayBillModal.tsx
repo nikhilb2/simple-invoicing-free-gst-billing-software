@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import api, { getApiErrorDetails, getApiErrorMessage } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import ModalCloseButton from './ModalCloseButton';
-import type { Invoice } from '../types/api';
+import type { CompanyProfile, Invoice } from '../types/api';
+import { COMPANY_ADDRESS_PATH, hasCompanyAddress } from '../utils/companySetup';
 
 // ── Types matching the backend schemas ──
 
@@ -163,6 +165,7 @@ export default function EwayBillModal({ invoice, challan, onClose }: Props) {
   const [fieldNotes, setFieldNotes] = useState<FieldNotes>({});
   const [formErrors, setFormErrors] = useState<EwayBillValidationError[]>([]);
   const [generating, setGenerating] = useState(false);
+  const [missingCompanyAddress, setMissingCompanyAddress] = useState(false);
   const [transporters, setTransporters] = useState<TransporterProfile[]>([]);
   const [selectedTransporterId, setSelectedTransporterId] = useState<number | null>(null);
   const [jsonPreview, setJsonPreview] = useState('');
@@ -181,14 +184,16 @@ export default function EwayBillModal({ invoice, challan, onClose }: Props) {
     let cancelled = false;
     (async () => {
       try {
-        const [preRes, transRes] = await Promise.all([
+        const [preRes, transRes, companyRes] = await Promise.all([
           api.get<EwayBillPreCheckResult>(`${apiBase}/eway-bill/precheck`),
           api.get<TransporterProfile[]>('/eway-bill/transporters').catch(() => null),
+          api.get<CompanyProfile>('/company/'),
         ]);
         if (cancelled) return;
         const transporterList: TransporterProfile[] = transRes?.data ?? [];
         setTransporters(transporterList);
         const result = preRes.data;
+        setMissingCompanyAddress(!hasCompanyAddress(companyRes.data));
         setForm(result.form_data);
         setSubSupplyLabel(result.sub_supply_label ?? null);
         setInvoiceErrors(result.item_validation || []);
@@ -242,7 +247,7 @@ export default function EwayBillModal({ invoice, challan, onClose }: Props) {
   };
 
   const handleGenerate = async () => {
-    if (!form) return;
+    if (!form || missingCompanyAddress) return;
     setGenerating(true);
     setFormErrors([]);
 
@@ -369,7 +374,7 @@ export default function EwayBillModal({ invoice, challan, onClose }: Props) {
 
   // ── Form state ──
   const errors = [...formErrors, ...invoiceErrors];
-  const canGenerate = !generating && invoiceErrors.length === 0;
+  const canGenerate = !generating && invoiceErrors.length === 0 && !missingCompanyAddress;
   const isRoad = form.transport_mode === ROAD_MODE;
 
   const textField = (name: keyof EwayBillFormData, label: string, options: { maxLength?: number; placeholder?: string; upper?: boolean; type?: string } = {}) => (
@@ -569,6 +574,12 @@ export default function EwayBillModal({ invoice, challan, onClose }: Props) {
         </div>
 
         {/* ── Action buttons ── */}
+        {missingCompanyAddress && (
+          <p className="field-warning" role="status">
+            Add your business address first.{' '}
+            <Link to={COMPANY_ADDRESS_PATH} onClick={onClose}>Add address</Link>
+          </p>
+        )}
         <div className="button-row" style={{ marginTop: '20px', justifyContent: 'flex-end' }}>
           <button type="button" className="button button--ghost" onClick={onClose}>Cancel</button>
           <button
