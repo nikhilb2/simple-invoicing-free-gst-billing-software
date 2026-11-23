@@ -5,7 +5,15 @@ import unicodedata
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File as FastAPIFile, HTTPException, Query, UploadFile
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File as FastAPIFile,
+    HTTPException,
+    Query,
+    UploadFile,
+)
 from fastapi.responses import StreamingResponse
 from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
@@ -38,6 +46,10 @@ from src.api.search import contains_pattern
 from src.core.analytics import distinct_id_for, track
 from src.core.document_limits import MONEY_STORAGE_CUTOFF, QUANTITY_STORAGE_CUTOFF
 from src.core.validation import hsn_sac_warning, normalize_hsn_sac
+from src.services.marketplace.listings import (
+    push_resync_to_marketplace,
+    resync_listings_for_product,
+)
 from src.services.serial_service import SerialManager
 
 router = APIRouter()
@@ -235,6 +247,7 @@ def list_products(
 def update_product(
     product_id: int,
     payload: ProductCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     _: User = Depends(require_company_role(UserRole.admin, UserRole.manager)),
     active_company: CompanyProfile = Depends(get_active_company),
@@ -341,8 +354,16 @@ def update_product(
     if payload.track_serials and not was_tracking_serials:
         _backfill_serials(db, product, serial_codes, company_id=active_company.id)
 
+    # Listings copy the tax fields once at creation, so a correction has to
+    # reach them too, or they keep quoting the old rate (#888).
+    pending = resync_listings_for_product(db, active_company.id, product)
+
     db.commit()
     db.refresh(product)
+    if pending:
+        background_tasks.add_task(
+            push_resync_to_marketplace, db.get_bind(), active_company.id, pending
+        )
     return product
 
 
@@ -750,6 +771,7 @@ def list_products_with_inventory(
 def update_product_with_inventory(
     product_id: int,
     payload: ProductWithInventoryUpdate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     _: User = Depends(require_company_role(UserRole.admin, UserRole.manager)),
     active_company: CompanyProfile = Depends(get_active_company),
@@ -840,8 +862,16 @@ def update_product_with_inventory(
                 )
             )
 
+    # Listings copy the tax fields once at creation, so a correction has to
+    # reach them too, or they keep quoting the old rate (#888).
+    pending = resync_listings_for_product(db, active_company.id, product)
+
     db.commit()
     db.refresh(product)
+    if pending:
+        background_tasks.add_task(
+            push_resync_to_marketplace, db.get_bind(), active_company.id, pending
+        )
 
     # Return joined data
     inv = (
@@ -949,6 +979,7 @@ def export_products_csv(
 
 @router.post("/import-csv", response_model=ImportCSVResult)
 async def import_products_csv(
+    background_tasks: BackgroundTasks,
     file: UploadFile = FastAPIFile(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_company_role(UserRole.admin, UserRole.manager)),
@@ -960,7 +991,27 @@ async def import_products_csv(
     Returns a summary of created, updated, and error counts.
     """
     content = await file.read()
-    result = _import_csv_from_content(content, db, active_company)
+    result, changed_ids = _import_csv_from_content(content, db, active_company)
+
+    # A CSV row is the most likely way a seller corrects a rate on many
+    # products at once, so tax edits from an import resync listings too (#888).
+    pending = []
+    for product_id in changed_ids:
+        product = (
+            db.query(Product)
+            .filter(
+                Product.id == product_id,
+                Product.company_id == active_company.id,
+            )
+            .first()
+        )
+        if product is not None:
+            pending.extend(resync_listings_for_product(db, active_company.id, product))
+    if pending:
+        db.commit()
+        background_tasks.add_task(
+            push_resync_to_marketplace, db.get_bind(), active_company.id, pending
+        )
 
     # A wholly failed import is still an import attempt worth counting: rows that
     # error are the reason someone gives up on the feature.
@@ -986,19 +1037,30 @@ def _csv_number(raw) -> float:
     return value
 
 
-def _import_csv_from_content(content: bytes, db: Session, active_company: CompanyProfile) -> dict:
+def _import_csv_from_content(
+    content: bytes, db: Session, active_company: CompanyProfile
+) -> tuple[dict, list[int]]:
     created = 0
     updated = 0
     errors: list[dict] = []
+    changed_ids: list[int] = []
 
     try:
         text = content.decode("utf-8-sig")
     except UnicodeDecodeError as e:
-        return {"created": 0, "updated": 0, "errors": [{"row": 0, "message": f"Invalid file encoding: {e}"}]}
+        return {
+            "created": 0,
+            "updated": 0,
+            "errors": [{"row": 0, "message": f"Invalid file encoding: {e}"}],
+        }, []
 
     reader = csv.DictReader(io.StringIO(text))
     if not reader.fieldnames:
-        return {"created": 0, "updated": 0, "errors": [{"row": 0, "message": "CSV file appears to be empty"}]}
+        return {
+            "created": 0,
+            "updated": 0,
+            "errors": [{"row": 0, "message": "CSV file appears to be empty"}],
+        }, []
 
     # Normalise column names
     normalised = [h.strip().lower().replace(" ", "_") for h in reader.fieldnames]
@@ -1111,6 +1173,10 @@ def _import_csv_from_content(content: bytes, db: Session, active_company: Compan
                 )
                 continue
 
+            old_rate = existing.gst_rate
+            old_hsn = existing.hsn_sac
+            old_unit = existing.unit
+
             existing.name = item_name
             if "selling_price" in headers:
                 existing.price = selling_price
@@ -1126,6 +1192,20 @@ def _import_csv_from_content(content: bytes, db: Session, active_company: Compan
                 existing.hsn_sac = hsn_sac
             if values.get("unit"):
                 existing.unit = values["unit"]
+
+            # Only the tax fields reach the marketplace: a row that changed
+            # one of them leaves this product's listings stale (#888).
+            tax_changed = (
+                (
+                    has_tax_column
+                    and Decimal(str(existing.gst_rate or 0))
+                    != Decimal(str(old_rate or 0))
+                )
+                or (bool(hsn_sac) and existing.hsn_sac != old_hsn)
+                or (bool(values.get("unit")) and existing.unit != old_unit)
+            )
+            if tax_changed:
+                changed_ids.append(existing.id)
 
             # Same reason as the with-inventory update: a CSV cannot carry the
             # serials that a tracked product's stock has to be backed by.
@@ -1180,7 +1260,7 @@ def _import_csv_from_content(content: bytes, db: Session, active_company: Compan
             created += 1
 
     db.commit()
-    return {"created": created, "updated": updated, "errors": errors}
+    return {"created": created, "updated": updated, "errors": errors}, changed_ids
 
 
 # Declared last on purpose: a path parameter this greedy would otherwise shadow
