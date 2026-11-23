@@ -166,7 +166,7 @@ def test_second_single_tenant_company_starts_with_a_year_and_numbered_invoice(
             "items": [{"product_id": product.json()["id"], "quantity": 1, "unit_price": 10, "gst_rate": 0}],
         })
         assert invoice.status_code == 200, invoice.text
-        assert invoice.json()["invoice_number"] == f"INV-{today.year}-001"
+        assert invoice.json()["invoice_number"] == f"INV-{start_year}-001"
         assert db_session.get(Invoice, invoice.json()["id"]).financial_year_id == year["id"]
         feed = client.get("/api/invoices/", headers=headers)
         assert feed.status_code == 200, feed.text
