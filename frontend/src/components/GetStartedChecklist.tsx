@@ -30,8 +30,8 @@ const STEPS: Array<{
   { id: 'customer', title: 'Add a customer', copy: 'Who you sell to.', to: '/ledgers/new', action: 'Add customer' },
   {
     id: 'product',
-    title: 'Add a product with opening stock',
-    copy: 'What you sell, and how many you have now.',
+    title: 'Add a product',
+    copy: 'What you sell. Counting its stock is optional.',
     to: '/catalogue',
     action: 'Open catalogue',
   },

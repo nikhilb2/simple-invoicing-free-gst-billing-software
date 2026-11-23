@@ -55,11 +55,12 @@ function storePrefs(prefs: object) {
 
 /* Vitest runs in node with no DOM here, so the form is read back from the
    server-rendered markup. */
-function render(props: { row?: CatalogueRow | null; template?: CatalogueRow | null }) {
+function render(props: { row?: CatalogueRow | null; template?: CatalogueRow | null; countsStock?: boolean }) {
   const html = renderToStaticMarkup(
     <ProductFormModal
       row={props.row ?? null}
       template={props.template}
+      countsStock={props.countsStock}
       onCancel={noop}
       onSaved={noop}
       onNeedsSerialBackfill={noop}
@@ -230,5 +231,35 @@ describe('ProductFormModal more options', () => {
     expect(html).toContain('Track individual serial numbers');
     expect(html).not.toContain('id="product-reorder"');
     expect(html).not.toContain('id="product-description"');
+  });
+});
+
+describe('ProductFormModal stock counting (issue 983)', () => {
+  beforeEach(() => localStorage.clear());
+
+  test('a company that counts no stock yet gets a product it can bill straight away', () => {
+    const { html, value } = render({ countsStock: false });
+
+    // No opening quantity to answer and no "you cannot sell it" warning.
+    expect(value('product-initial-qty')).toBeUndefined();
+    expect(html).not.toContain('product-no-stock-warning');
+    expect(html).toContain('data-testid="product-stock-not-counted"');
+    expect(html).toContain('Count stock for this item');
+    // The stock box is on screen, unticked, even with More options closed.
+    expect(html).toMatch(/<input type="checkbox"(?![^>]*checked)[^>]*><span>Keep count of stock for this product/);
+  });
+
+  test('a company that counts stock keeps the old default: counted, with opening stock asked', () => {
+    for (const countsStock of [true, undefined]) {
+      const { html, value } = render({ countsStock });
+      expect(value('product-initial-qty')).toBe('0');
+      expect(html).toContain('data-testid="product-no-stock-warning"');
+      expect(html).not.toContain('product-stock-not-counted');
+    }
+  });
+
+  test('a duplicate follows its source product, not the company default', () => {
+    const { value } = render({ template: row({ maintain_inventory: true }), countsStock: false });
+    expect(value('product-initial-qty')).toBe('0');
   });
 });

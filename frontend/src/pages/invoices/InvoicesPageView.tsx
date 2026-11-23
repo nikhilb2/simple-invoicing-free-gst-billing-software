@@ -48,6 +48,7 @@ import { useFirstInvoiceTourStore } from '../../store/useFirstInvoiceTourStore';
 import { useInvoiceComposerStore } from '../../store/useInvoiceComposerStore';
 import LedgerQuickCreateModal from './components/LedgerQuickCreateModal';
 import ProductQuickCreateModal from './components/ProductQuickCreateModal';
+import { countsStockByDefault } from '../catalogue/productFormRules';
 import SerialChips from './components/SerialChips';
 import SerialPickerModal from './components/SerialPickerModal';
 import StockUpdateModal from './components/StockUpdateModal';
@@ -2202,6 +2203,7 @@ export default function InvoicesPage() {
                 <p style={{ margin: 0 }}>
                   Only {stockShortage.available} of {stockShortage.productName} in stock, and this invoice needs {stockShortage.required}.
                   Add the missing stock and your invoice stays as you filled it in.
+                  If you don&apos;t keep count of stock for this item, edit it in Products and turn off stock counting instead.
                 </p>
                 <button
                   type="button"
@@ -2287,7 +2289,7 @@ export default function InvoicesPage() {
         />
       ) : null}
 
-      <ProductQuickCreateModal />
+      <ProductQuickCreateModal countsStockByDefault={countsStockByDefault(products)} />
 
       <StockUpdateModal />
 

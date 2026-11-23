@@ -1,5 +1,13 @@
 import { describe, expect, test } from 'vitest';
-import { GST_SLABS, HSN_ERROR, hsnProblem, isGstSlab, plainProductError, startsWithNoStock } from './productFormRules';
+import {
+  GST_SLABS,
+  HSN_ERROR,
+  countsStockByDefault,
+  hsnProblem,
+  isGstSlab,
+  plainProductError,
+  startsWithNoStock,
+} from './productFormRules';
 
 describe('GST slabs', () => {
   test('offers the standard rates and recognises them however they are written', () => {
@@ -37,5 +45,16 @@ describe('opening stock', () => {
     expect(startsWithNoStock(true, 0)).toBe(true);
     expect(startsWithNoStock(true, 4)).toBe(false);
     expect(startsWithNoStock(false, 0)).toBe(false);
+  });
+});
+
+describe('stock counting for a new product (issue 983)', () => {
+  test('is off for a company with no products, or none that count stock', () => {
+    expect(countsStockByDefault([])).toBe(false);
+    expect(countsStockByDefault([{ maintain_inventory: false }, { maintain_inventory: false }])).toBe(false);
+  });
+
+  test('stays on once the company counts stock for any product', () => {
+    expect(countsStockByDefault([{ maintain_inventory: false }, { maintain_inventory: true }])).toBe(true);
   });
 });

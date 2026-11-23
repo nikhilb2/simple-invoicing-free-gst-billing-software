@@ -30,7 +30,7 @@ Everyone, including staff, can create, edit and cancel invoices.
 
 The invoice number is assigned when you save, and the preview opens so you can [send it](./sending).
 
-If you do not have enough stock, the sale is refused with a message such as "Only 0 of Assam Tea in stock, and this invoice needs 3". Click **Add stock for** *your product* to add it without losing the invoice, then click **Create invoice** again. If the goods came from a supplier, [record the purchase](#record-a-purchase) instead.
+If you do not have enough stock, the sale is refused with a message such as "Only 0 of Assam Tea in stock, and this invoice needs 3". Click **Add stock for** *your product* to add it without losing the invoice, then click **Create invoice** again. If the goods came from a supplier, [record the purchase](#record-a-purchase) instead. If you don't keep count of stock for that item, edit it in [Products and stock](../catalogue/products) and untick **Keep count of stock for this product**.
 
 ### Line options
 
