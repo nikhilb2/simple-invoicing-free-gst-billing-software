@@ -17,6 +17,14 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 from src.db.base import Base
 from src.db.session import get_db
+from src.core.security import pwd_context
+
+# Production hashes passwords at bcrypt's default cost (12 rounds, ~0.2 s per hash
+# or check). The tests check what logins, sign-ups and resets do, not the cost
+# factor, and a few hundred of them hash or check a password, some dozens of
+# times. Hash at bcrypt's minimum (4 rounds, ~1 ms) instead. A stored hash still
+# verifies at whatever cost it was made with.
+pwd_context.update(bcrypt__rounds=4)
 
 engine = create_engine(
     "sqlite://",

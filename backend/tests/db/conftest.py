@@ -94,10 +94,34 @@ def rls_db():
         admin.dispose()
 
 
+def empty_every_table(rls_db) -> None:
+    """Empty every table (as the owner) and restart every sequence in the schema.
+
+    DELETE, children before parents, then a restart of every sequence: the same
+    end state as ``TRUNCATE ... RESTART IDENTITY CASCADE``, but about 10 ms
+    instead of about 140 ms on these near-empty tables, and it runs before every
+    Postgres test. The owner sees every row: the schema never uses FORCE ROW
+    LEVEL SECURITY, so the policies don't apply to it.
+    """
+    with rls_db.owner_engine.begin() as conn:
+        for table in reversed(Base.metadata.sorted_tables):
+            conn.execute(table.delete())
+        sequences = conn.execute(text(
+            "SELECT sequence_name FROM information_schema.sequences "
+            "WHERE sequence_schema = :schema"
+        ), {"schema": rls_db.schema}).scalars().all()
+        for sequence in sequences:
+            conn.execute(text(f'ALTER SEQUENCE "{rls_db.schema}"."{sequence}" RESTART'))
+
+
 @pytest.fixture
 def clean_rls_db(rls_db):
     """Empty every table (as the owner) before the test, ids reset."""
-    with rls_db.owner_engine.begin() as conn:
-        tables = ", ".join(f'"{t.name}"' for t in Base.metadata.sorted_tables)
-        conn.execute(text(f"TRUNCATE {tables} RESTART IDENTITY CASCADE"))
+    empty_every_table(rls_db)
     return rls_db
+
+
+@pytest.fixture
+def empty_tables(rls_db):
+    """Call to empty the schema again in the middle of a test."""
+    return lambda: empty_every_table(rls_db)
