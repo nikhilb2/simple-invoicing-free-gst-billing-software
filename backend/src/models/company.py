@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, Integer, Numeric, String, Text, text
+from sqlalchemy import Boolean, CheckConstraint, Column, Integer, Numeric, String, Text, text
 from sqlalchemy.orm import relationship
 
 from src.db.base import Base
@@ -6,6 +6,12 @@ from src.db.base import Base
 
 class CompanyProfile(Base):
     __tablename__ = "company_profiles"
+    __table_args__ = (
+        CheckConstraint(
+            "default_pdf_paper IN ('a4', 'a5', 'thermal80', 'thermal58')",
+            name="ck_company_profiles_default_pdf_paper",
+        ),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)
@@ -30,6 +36,10 @@ class CompanyProfile(Base):
     # server_default so create_all() emits a DB-level default — raw-SQL data
     # migrations (e.g. the company-scope backfill) INSERT without this column.
     show_sku_on_pdf = Column(Boolean, nullable=False, default=False, server_default=text("false"))
+    # The paper a PDF is laid out for when a print does not pick one: a4, a5,
+    # thermal80 or thermal58 (src/services/pdf_paper.py). Emailed and share-link
+    # PDFs always use it. server_default for the same reason as show_sku_on_pdf.
+    default_pdf_paper = Column(String(16), nullable=False, default="a4", server_default=text("'a4'"))
     # server_default for the same reason as show_sku_on_pdf above.
     eway_enabled = Column(Boolean, nullable=False, default=True, server_default=text("true"))
     # Guidance only, never a block. Rule 138(1) CGST Rules sets Rs 50,000; a State

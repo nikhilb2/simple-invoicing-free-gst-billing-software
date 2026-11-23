@@ -16,6 +16,7 @@ from src.models.invoice import Invoice
 from src.models.smtp_config import SMTPConfig
 from src.models.user import User, UserRole
 from src.services import mail
+from src.services import pdf_paper
 
 
 @pytest.fixture
@@ -57,7 +58,7 @@ def recipients(db_session, monkeypatch, request):
     monkeypatch.setattr(email_routes, "_build_invoice_pdf", lambda *args, **kwargs: io.BytesIO(b"pdf"))
     pdf = MagicMock()
     pdf.write_pdf.return_value = b"pdf"
-    monkeypatch.setattr(email_routes.weasyprint, "HTML", MagicMock(return_value=pdf))
+    monkeypatch.setattr(pdf_paper.weasyprint, "HTML", MagicMock(return_value=pdf))
     return rows
 
 

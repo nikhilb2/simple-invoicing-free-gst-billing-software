@@ -205,6 +205,8 @@ export type CompanyTermOut = {
   content: string;
 };
 
+export type PdfPaper = 'a4' | 'a5' | 'thermal80' | 'thermal58';
+
 export type CompanyProfile = {
   id: number;
   name: string;
@@ -226,6 +228,7 @@ export type CompanyProfile = {
   additional_company_info: string | null;
   terms: CompanyTermOut[];
   show_sku_on_pdf: boolean;
+  default_pdf_paper: PdfPaper;
   eway_enabled: boolean;
   eway_local_threshold: number;
   eway_interstate_threshold: number;
@@ -280,6 +283,7 @@ export type CompanyProfileUpdate = {
   ifsc_code?: string;
   additional_company_info?: string | null;
   show_sku_on_pdf?: boolean;
+  default_pdf_paper?: PdfPaper;
   eway_enabled?: boolean;
   eway_local_threshold?: number;
   eway_interstate_threshold?: number;
@@ -736,6 +740,8 @@ export type CreditNote = {
   cancelled_at: string | null;
   invoice_ids: number[];
   items: CreditNoteItem[];
+  /** Creation-time GST eligibility warnings. */
+  gst_warnings?: string[];
 };
 
 export type CreditNoteItemCreate = {

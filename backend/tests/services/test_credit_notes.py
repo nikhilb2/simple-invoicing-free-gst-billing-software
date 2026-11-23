@@ -225,6 +225,13 @@ def _mock_locked_invoices(db, invoices):
     query.order_by.return_value.with_for_update.return_value.populate_existing.return_value.all.return_value = invoices
 
 
+def _mock_locked_note(db, cn):
+    """cancel_credit_note reads the note FOR UPDATE; later lookups answer the same."""
+    query = db.query.return_value.filter.return_value
+    query.with_for_update.return_value.first.return_value = cn
+    query.first.return_value = cn
+
+
 class TestCreateCreditNoteValidation:
     """Test that service raises HTTPException for invalid inputs."""
 
@@ -519,19 +526,22 @@ class TestCreateCreditNoteValidation:
 class TestCancelCreditNote:
     def test_cancel_not_found_raises_404(self):
         db = MagicMock()
-        db.query.return_value.filter.return_value.first.return_value = None
+        _mock_locked_note(db, None)
         with pytest.raises(Exception) as exc:
             cancel_credit_note(999, db)
         assert exc.value.status_code == 404
 
-    def test_cancel_already_cancelled_hard_deletes(self):
+    def test_cancel_already_cancelled_is_refused(self):
         cn = make_cn(status="cancelled")
         db = MagicMock()
-        db.query.return_value.filter.return_value.first.return_value = cn
-        cancel_credit_note(1, db)
-        db.delete.assert_called_once_with(cn)
+        _mock_locked_note(db, cn)
+        with pytest.raises(Exception) as exc:
+            cancel_credit_note(1, db)
+        assert exc.value.status_code == 400
+        assert "already cancelled" in exc.value.detail
+        db.commit.assert_not_called()
 
-    def test_cancel_marks_response_cancelled_and_deletes(self):
+    def test_cancel_keeps_the_note_marked_cancelled(self):
         item = CreditNoteItem()
         item.id = 1
         item.invoice_id = 5
@@ -548,7 +558,7 @@ class TestCancelCreditNote:
         cn.items = [item]
 
         db = MagicMock()
-        db.query.return_value.filter.return_value.first.return_value = cn
+        _mock_locked_note(db, cn)
 
         with patch("src.services.credit_note._recompute_credit_status") as mock_recompute, \
              patch("src.services.credit_note._change_inventory_quantity"):
@@ -556,7 +566,8 @@ class TestCancelCreditNote:
 
         assert out.status == "cancelled"
         assert out.cancelled_at is not None
-        db.delete.assert_called_once_with(cn)
+        assert cn.status == "cancelled"
+        db.delete.assert_not_called()
         mock_recompute.assert_called_once_with(5, db)
 
     def test_cancel_return_credit_note_reverses_inventory(self):
@@ -587,7 +598,7 @@ class TestCancelCreditNote:
         cn.created_at = datetime.utcnow()
 
         db = MagicMock()
-        db.query.return_value.filter.return_value.first.return_value = cn
+        _mock_locked_note(db, cn)
 
         with patch("src.services.credit_note._recompute_credit_status"), \
              patch("src.services.credit_note._change_inventory_quantity") as mock_change_inventory:
@@ -774,7 +785,7 @@ class TestInwardCreditNotes:
         cn.items = [item]
 
         db = MagicMock()
-        db.query.return_value.filter.return_value.first.return_value = cn
+        _mock_locked_note(db, cn)
 
         with patch("src.services.credit_note._recompute_credit_status"), \
              patch("src.services.credit_note._change_inventory_quantity") as mock_change_inventory:

@@ -1,6 +1,16 @@
 import { describe, expect, it, test } from 'vitest';
 import type { CompanyProfile } from '../types/api';
-import { clearSetupDraft, isCompanyConfigured, missingCompanyFields, isCompanyFormDirty, isCompanySetupRequired, readSetupDraft, writeSetupDraft } from './companySetup';
+import { clearSetupDraft, companyFormCurrency, isCompanyConfigured, missingCompanyFields, isCompanyFormDirty, isCompanySetupRequired, readSetupDraft, writeSetupDraft } from './companySetup';
+
+describe('company form currency', () => {
+  test.each([null, undefined, ''])('defaults a missing currency (%s) to INR', (currency) => {
+    expect(companyFormCurrency(currency)).toBe('INR');
+  });
+
+  test.each(['USD', 'EUR', 'INR'])('keeps an explicitly saved %s', (currency) => {
+    expect(companyFormCurrency(currency)).toBe(currency);
+  });
+});
 
 describe('isCompanySetupRequired', () => {
   const conflict = Object.assign(new Error('x'), {

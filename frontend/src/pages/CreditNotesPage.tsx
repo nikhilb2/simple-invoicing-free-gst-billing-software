@@ -36,6 +36,7 @@ type SelectedLineItem = {
   invoice: Invoice;
   item: Invoice['items'][number];
   productName: string;
+  wholeQuantity: boolean;
   quantityKey: string;
 };
 
@@ -90,6 +91,7 @@ export default function CreditNotesPage() {
   const [previewCreditNote, setPreviewCreditNote] = useState<CreditNote | null>(null);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [gstWarnings, setGstWarnings] = useState<string[]>([]);
 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -332,6 +334,7 @@ export default function CreditNotesPage() {
             invoice,
             item,
             productName: matchedProduct?.name || `Product #${item.product_id}`,
+            wholeQuantity: matchedProduct?.allow_decimal === false || matchedProduct?.track_serials === true,
             quantityKey: createQuantityKey(invoice.id, item.id),
           };
         })
@@ -355,7 +358,7 @@ export default function CreditNotesPage() {
         invoice_item_id: line.item.id,
         quantity: Number(quantities[line.quantityKey] || 0),
       }))
-      .filter((line) => Number.isInteger(line.quantity) && line.quantity > 0);
+      .filter((line) => Number.isFinite(line.quantity) && line.quantity > 0);
   }, [creditNoteType, discountAmounts, quantities, selectedLineItems]);
 
   const previewTotal = useMemo(() => {
@@ -481,6 +484,9 @@ export default function CreditNotesPage() {
     try {
       setSubmitting(true);
       const response = await createCreditNote(payload);
+      setGstWarnings((response.data.gst_warnings || []).map(
+        (warning) => `${response.data.credit_note_number}: ${warning}`,
+      ));
       setSuccess(
         direction === 'inward'
           ? `Supplier credit note ${supplierNoteNumber.trim()} recorded as ${response.data.credit_note_number}.`
@@ -582,6 +588,12 @@ export default function CreditNotesPage() {
         onClearError={() => setError('')}
         onClearSuccess={() => setSuccess('')}
       />
+      {gstWarnings.length > 0 ? (
+        <div className="panel stack" role="alert">
+          {gstWarnings.map((warning) => <p className="field-warning" key={warning}>{warning}</p>)}
+          <button type="button" className="button button--secondary button--small" onClick={() => setGstWarnings([])}>Dismiss GST warning</button>
+        </div>
+      ) : null}
 
       <section className="content-grid">
         <article className="panel stack">
@@ -836,7 +848,7 @@ export default function CreditNotesPage() {
                             type="number"
                             min={0}
                             max={creditNoteType === 'discount' ? billedLineTotal : line.item.quantity}
-                            step={creditNoteType === 'discount' ? '0.01' : '1'}
+                            step={creditNoteType === 'discount' ? '0.01' : line.wholeQuantity ? '1' : '0.001'}
                             value={creditNoteType === 'discount' ? (discountAmounts[line.quantityKey] || '') : (quantities[line.quantityKey] || '')}
                             onChange={(event) => {
                               if (creditNoteType === 'discount') {

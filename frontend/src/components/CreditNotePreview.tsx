@@ -4,6 +4,8 @@ import { useEscapeClose } from '../hooks/useEscapeClose';
 import api, { getApiErrorMessage } from '../api/client';
 import ShareModal from './ShareModal';
 import PreviewToolbar from './PreviewToolbar';
+import PaperSizePicker from './PaperSizePicker';
+import { usePaperChoice } from '../hooks/usePaperChoice';
 import { noteDocumentFileName, type NoteDocumentLabel } from '../utils/noteDocument';
 
 type CreditNotePreviewProps = {
@@ -33,6 +35,7 @@ export default function CreditNotePreview({
 }: CreditNotePreviewProps) {
   const [showShareModal, setShowShareModal] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [paper, setPaper, requestPaper] = usePaperChoice();
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [loadingPdf, setLoadingPdf] = useState(true);
   const [pdfError, setPdfError] = useState('');
@@ -61,6 +64,7 @@ export default function CreditNotePreview({
 
       try {
         const response = await api.get(`/credit-notes/${creditNoteId}/pdf`, {
+          params: { paper: requestPaper },
           responseType: 'blob',
         });
         const nextUrl = window.URL.createObjectURL(response.data as Blob);
@@ -92,11 +96,12 @@ export default function CreditNotePreview({
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [creditNoteId]);
+  }, [creditNoteId, requestPaper]);
 
   const handleDownloadPdf = async () => {
     try {
       const response = await api.get(`/credit-notes/${creditNoteId}/pdf`, {
+        params: { paper: requestPaper },
         responseType: 'blob',
       });
       const url = window.URL.createObjectURL(response.data as Blob);
@@ -133,6 +138,7 @@ export default function CreditNotePreview({
     <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="credit-note-preview-title">
       <div className="modal-panel modal-panel--invoice-preview">
         <PreviewToolbar
+          menuExtra={<PaperSizePicker value={paper} onChange={setPaper} />}
           eyebrow={`${nounAtStart} preview`}
           titleId="credit-note-preview-title"
           title={`${documentLabel} ${label}`}

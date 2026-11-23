@@ -3,7 +3,9 @@ import { formatDate } from '../../utils/formatting';
 
 /** "2 hours ago" for the last-opened line. Intl does the pluralising. */
 export function formatRelativeTime(iso: string): string {
-  const then = new Date(iso).getTime();
+  // The API records last_viewed_at in UTC but can omit the timezone suffix.
+  const withoutOffset = /T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?$/i.test(iso);
+  const then = new Date(withoutOffset ? `${iso}Z` : iso).getTime();
   if (Number.isNaN(then)) {
     return 'recently';
   }

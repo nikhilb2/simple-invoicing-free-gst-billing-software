@@ -53,6 +53,7 @@ from src.services.delivery_challan import (
     update_challan,
 )
 from src.services.delivery_challan_pdf import render_delivery_challan_pdf
+from src.services.pdf_paper import Paper, resolve_paper
 from src.services.gst_tax_service import india_today
 
 logger = logging.getLogger(__name__)
@@ -294,12 +295,15 @@ def cancel(
 def download_pdf(
     challan_id: int,
     copies: int = Query(1, ge=1, le=MAX_PDF_COPIES),
+    paper: Paper | None = Query(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     challan = require_challan(db, active_company.id, challan_id)
-    pdf_buffer = render_delivery_challan_pdf(db, active_company.id, challan_id, copies=copies)
+    pdf_buffer = render_delivery_challan_pdf(
+        db, active_company.id, challan_id, copies=copies, paper=resolve_paper(paper, active_company)
+    )
     number = challan.challan_number.replace("/", "_")
     track(
         "delivery_challan_pdf_downloaded",

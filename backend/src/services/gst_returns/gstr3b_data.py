@@ -95,7 +95,7 @@ def load_notes(db: Session, period: ReturnPeriod, company_id: int | None) -> lis
         scope = company_scope(Invoice.company_id, company_id)
         sources = {
             row.id: row
-            for row in db.query(Invoice.id, Invoice.invoice_number, Invoice.voucher_type, Invoice.status)
+            for row in db.query(Invoice.id, Invoice.invoice_number, Invoice.voucher_type, Invoice.status, Invoice.invoice_date)
             .filter(Invoice.id.in_(invoice_ids), scope)
             .all()
         }
@@ -125,6 +125,7 @@ def load_notes(db: Session, period: ReturnPeriod, company_id: int | None) -> lis
                     ),
                     source_voucher_type=source.voucher_type if source is not None else None,
                     source_status=source.status if source is not None else None,
+                    source_invoice_date=source.invoice_date if source is not None else None,
                     source_line_taxable=(
                         to_decimal(source_line.taxable_amount) if source_line is not None else None
                     ),
@@ -145,6 +146,7 @@ def load_notes(db: Session, period: ReturnPeriod, company_id: int | None) -> lis
                 note_type=note.credit_note_type,
                 igst_total=to_decimal(note.igst_amount),
                 supplier_note_date=note.supplier_credit_note_date,
+                note_date=note.credit_note_date,
                 lines=tuple(lines),
             )
         )

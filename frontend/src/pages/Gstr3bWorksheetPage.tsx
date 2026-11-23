@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { getApiErrorMessage, getBlobErrorMessage } from '../api/client';
 import ScopeBar, { Metric } from '../components/ScopeBar';
+import PaperSizePicker from '../components/PaperSizePicker';
+import { usePaperChoice } from '../hooks/usePaperChoice';
 import StatusToasts from '../components/StatusToasts';
 import { downloadWorksheet, fetchWorksheet } from '../features/gstr3b/api';
 import { documentLink } from '../features/gstr3b/links';
@@ -250,6 +252,7 @@ export default function Gstr3bWorksheetPage() {
   const [period, setPeriod] = useState<DateRange>(() => defaultPeriod());
   const [downloading, setDownloading] = useState<Gstr3bExportFormat | null>(null);
   const [downloadError, setDownloadError] = useState('');
+  const [paper, setPaper, requestPaper] = usePaperChoice(true);
 
   const presets = useMemo(() => worksheetPresets(), []);
   const activePreset = matchPreset(presets, period);
@@ -271,7 +274,7 @@ export default function Gstr3bWorksheetPage() {
     try {
       setDownloading(format);
       setDownloadError('');
-      await downloadWorksheet(format, period.fromDate, period.toDate);
+      await downloadWorksheet(format, period.fromDate, period.toDate, requestPaper);
     } catch (err) {
       setDownloadError(await getBlobErrorMessage(err, `Unable to download the worksheet ${format.toUpperCase()}`));
     } finally {
@@ -334,6 +337,7 @@ export default function Gstr3bWorksheetPage() {
         ) : undefined}
         actions={(
           <>
+            <PaperSizePicker value={paper} onChange={setPaper} reportOnly inline />
             {(['csv', 'pdf'] as const).map((format) => (
               <button
                 key={format}

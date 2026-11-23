@@ -20,6 +20,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from src.mcp_server.overrides import HIDDEN_QUERY_PARAMS
+
 # Keys worth keeping on a pruned schema node. Everything else FastAPI emits is
 # either noise (`title`) or unrepresentable to a model.
 _KEEP_KEYS = (
@@ -201,6 +203,8 @@ def build_input_schema(
                 accepts_company = True
             continue
         if location == "cookie":  # pragma: no cover - none exist
+            continue
+        if location == "query" and name in HIDDEN_QUERY_PARAMS:
             continue
         node = _parameter_schema(parameter, components, strict)
         if name in properties:

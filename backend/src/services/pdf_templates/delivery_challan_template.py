@@ -15,6 +15,7 @@ need them) but never printed, and nothing here asks the buyer to pay.
 from src.core.validation import GST_STATE_NAMES
 from src.models.delivery_challan import STATUS_CANCELLED
 from src.models.product import Product
+from src.services.gst_tax_service import to_india_date
 
 from .builders import (
     _amount_in_words_indian,
@@ -22,6 +23,7 @@ from .builders import (
     _fmt_currency,
     _pdf_display_quantity,
     _pdf_display_unit,
+    document_paper_css,
 )
 
 CHALLAN_COPY_LABELS = ("Original for consignee", "Duplicate for transporter", "Triplicate for consignor")
@@ -49,8 +51,10 @@ def _build_delivery_challan_html(
     *,
     copy_label: str = CHALLAN_COPY_LABELS[0],
     show_sku: bool = True,
+    paper: str = "a4",
 ) -> str:
-    """Generate HTML for one copy of a delivery challan."""
+    """Generate HTML for one copy of a delivery challan, for A4 or A5 ``paper``."""
+    page_rule, paper_css = document_paper_css(paper)
     currency = challan.company_currency_code or "INR"
     product_map = {product.id: product for product in products}
     cancelled = challan.status == STATUS_CANCELLED
@@ -132,7 +136,7 @@ def _build_delivery_challan_html(
 
     mark_html = ""
     if cancelled:
-        mark_html = f'<div class="sheet__mark">CANCELLED on {_fmt_date(challan.cancelled_at)}</div>'
+        mark_html = f'<div class="sheet__mark">CANCELLED on {_fmt_date(to_india_date(challan.cancelled_at))}</div>'
 
     total_value = float(challan.taxable_amount or 0)
     words_html = (
@@ -147,13 +151,10 @@ def _build_delivery_challan_html(
 <head>
 <meta charset="utf-8">
 <style>
-  @page {{
-    size: A4;
-    margin: 15mm 18mm;
-  }}
+  {page_rule}
   * {{ margin: 0; padding: 0; box-sizing: border-box; }}
   body {{
-    font-family: -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    font-family: -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, 'Noto Sans', 'Noto Sans Devanagari', sans-serif;
     font-size: 10px;
     color: #1f2937;
     line-height: 1.5;
@@ -353,7 +354,7 @@ def _build_delivery_challan_html(
     padding-top: 3px;
     margin-bottom: 8px;
   }}
-</style>
+{paper_css}</style>
 </head>
 <body>
 <div class="sheet">
@@ -448,16 +449,17 @@ def _build_multi_copy_delivery_challan_html(
     copies: int,
     *,
     show_sku: bool = True,
+    paper: str = "a4",
 ) -> str:
     """One page per copy, joined the way ``_build_multi_copy_invoice_html`` joins them."""
     copies = max(1, min(MAX_CHALLAN_COPIES, copies))
     if copies == 1:
-        return _build_delivery_challan_html(challan, products, copy_label=CHALLAN_COPY_LABELS[0], show_sku=show_sku)
+        return _build_delivery_challan_html(challan, products, copy_label=CHALLAN_COPY_LABELS[0], show_sku=show_sku, paper=paper)
 
     pages = []
     first_html: str | None = None
     for i in range(copies):
-        full_html = _build_delivery_challan_html(challan, products, copy_label=CHALLAN_COPY_LABELS[i], show_sku=show_sku)
+        full_html = _build_delivery_challan_html(challan, products, copy_label=CHALLAN_COPY_LABELS[i], show_sku=show_sku, paper=paper)
         if i == 0:
             first_html = full_html
         body_open_end = full_html.index("<body>") + len("<body>")

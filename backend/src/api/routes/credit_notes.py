@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from src.api.deps import get_active_company, get_current_user
 from src.api.pagination import MAX_PAGE
+from src.api.search import contains_pattern
 from src.core.analytics import distinct_id_for, track
 from src.db.session import get_db
 from src.models.company import CompanyProfile
@@ -16,6 +17,7 @@ from src.models.credit_note import CreditNote, CreditNoteInvoiceRef
 from src.models.user import User
 from src.schemas.credit_note import CreditNoteCreate, CreditNoteOut, PaginatedCreditNoteOut
 from src.services.credit_note import cancel_credit_note, create_credit_note
+from src.services.pdf_paper import Paper, resolve_paper
 from src.services.share_documents import credit_note_document_label, render_credit_note_pdf
 from src.services.company_access import company_scope
 
@@ -37,9 +39,11 @@ def create_credit_note_endpoint(
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     company_id = getattr(active_company, "id", None)
-    cn = create_credit_note(payload, db, current_user.id, company_id=company_id)
+    gst_warnings: list[str] = []
+    cn = create_credit_note(payload, db, current_user.id, company_id=company_id, gst_warnings=gst_warnings)
     db.refresh(cn)
     result = _to_out(cn)
+    result.gst_warnings = gst_warnings
 
     track(
         "credit_note_created",
@@ -103,11 +107,12 @@ def list_credit_notes(
             q = q.filter(CreditNote.direction == direction)
 
     if search:
+        term = contains_pattern(search)
         # A supplier's note is looked up by their number, not the one we gave it.
         q = q.filter(
             or_(
-                CreditNote.credit_note_number.ilike(f"%{search}%"),
-                CreditNote.supplier_credit_note_number.ilike(f"%{search}%"),
+                CreditNote.credit_note_number.ilike(term, escape="\\"),
+                CreditNote.supplier_credit_note_number.ilike(term, escape="\\"),
             )
         )
 
@@ -163,6 +168,7 @@ def get_credit_note(
 @router.get("/{cn_id}/pdf")
 def download_credit_note_pdf(
     cn_id: int,
+    paper: Paper | None = Query(None),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
     active_company: CompanyProfile = Depends(get_active_company),
@@ -180,7 +186,7 @@ def download_credit_note_pdf(
     if not cn:
         raise HTTPException(status_code=404, detail="Credit note not found")
 
-    buf = render_credit_note_pdf(db, company_id, cn_id)
+    buf = render_credit_note_pdf(db, company_id, cn_id, paper=resolve_paper(paper, active_company))
 
     prefix = credit_note_document_label(cn).lower().replace(" ", "_")
     filename = f"{prefix}_{cn.credit_note_number.replace('/', '_')}.pdf"

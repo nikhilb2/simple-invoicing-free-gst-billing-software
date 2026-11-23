@@ -213,6 +213,50 @@ def test_search_by_supplier_invoice_number(client, db_session):
     assert [item["id"] for item in items] == [wanted["id"]]
 
 
+def test_search_by_invoice_number_escapes_percent(client, db_session):
+    ledger_id = _create_ledger(client, "Percent Invoice")
+    product_id = _create_product(client, db_session, sku="PCT-1", name="Widget")
+    wanted = _create_invoice(
+        client,
+        ledger_id,
+        product_id,
+        "purchase",
+        supplier_invoice_number="SUP100%",
+    )
+    _create_invoice(
+        client,
+        ledger_id,
+        product_id,
+        "purchase",
+        supplier_invoice_number="SUP100X",
+    )
+
+    items = _search(client, "100%")
+    assert [item["id"] for item in items] == [wanted["id"]]
+
+
+def test_search_by_invoice_number_escapes_underscore(client, db_session):
+    ledger_id = _create_ledger(client, "Underscore Invoice")
+    product_id = _create_product(client, db_session, sku="UND-1", name="Widget")
+    wanted = _create_invoice(
+        client,
+        ledger_id,
+        product_id,
+        "purchase",
+        supplier_invoice_number="SUP_2026",
+    )
+    _create_invoice(
+        client,
+        ledger_id,
+        product_id,
+        "purchase",
+        supplier_invoice_number="SUPX2026",
+    )
+
+    items = _search(client, "_2026")
+    assert [item["id"] for item in items] == [wanted["id"]]
+
+
 # ---------------------------------------------------------------------------
 # Serials / IMEIs
 # ---------------------------------------------------------------------------

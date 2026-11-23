@@ -4,6 +4,8 @@ import { useEscapeClose } from '../hooks/useEscapeClose';
 import { fetchQuotationPdf } from '../api/quotationPdf';
 import ShareModal from './ShareModal';
 import PreviewToolbar, { type PreviewAction } from './PreviewToolbar';
+import PaperSizePicker from './PaperSizePicker';
+import { usePaperChoice } from '../hooks/usePaperChoice';
 import type { Quotation } from '../types/api';
 import { QUOTATION_DOCUMENT_LABELS, allowedQuotationActions } from '../utils/quotationStatus';
 
@@ -19,6 +21,7 @@ type QuotationPreviewProps = {
 export default function QuotationPreview({ quotation, menuActions = [], meta, onClose, onError }: QuotationPreviewProps) {
   const [showShareModal, setShowShareModal] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [paper, setPaper, requestPaper] = usePaperChoice();
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [loadingPdf, setLoadingPdf] = useState(true);
   const [pdfError, setPdfError] = useState('');
@@ -44,7 +47,7 @@ export default function QuotationPreview({ quotation, menuActions = [], meta, on
       setPdfUrl(null);
       setPreviewFailed(false);
       try {
-        const blob = await fetchQuotationPdf(quotation.id, 'Unable to load PDF preview');
+        const blob = await fetchQuotationPdf(quotation.id, 'Unable to load PDF preview', requestPaper);
         const nextUrl = window.URL.createObjectURL(blob);
         objectUrlToRevoke = nextUrl;
         if (!isMounted) {
@@ -68,11 +71,11 @@ export default function QuotationPreview({ quotation, menuActions = [], meta, on
     };
     // The status is in the key: the PDF prints a mark when it is cancelled or expired.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [quotation.id, quotation.status]);
+  }, [quotation.id, quotation.status, requestPaper]);
 
   const handleDownload = async () => {
     try {
-      const blob = await fetchQuotationPdf(quotation.id, 'Unable to download PDF');
+      const blob = await fetchQuotationPdf(quotation.id, 'Unable to download PDF', requestPaper);
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
@@ -99,6 +102,7 @@ export default function QuotationPreview({ quotation, menuActions = [], meta, on
     <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="quotation-preview-title">
       <div className="modal-panel modal-panel--invoice-preview">
         <PreviewToolbar
+          menuExtra={<PaperSizePicker value={paper} onChange={setPaper} />}
           eyebrow={`${label} preview`}
           titleId="quotation-preview-title"
           title={title}

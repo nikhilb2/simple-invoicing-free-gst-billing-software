@@ -29,10 +29,14 @@ def _format_number(
             year_part = fy.label if fy else "FY"
         elif series.year_format == "MM-YYYY":
             ref = invoice_date if invoice_date is not None else datetime.utcnow().date()
+            # Month plus calendar year is already unique across financial years,
+            # so this format keeps the calendar year (01-2027 for January 2027).
             year_part = ref.strftime("%m") + sep + str(ref.year)
         else:
             ref = invoice_date if invoice_date is not None else datetime.utcnow().date()
-            year_part = str(ref.year)
+            # Counters are per financial year, so a whole FY shares one label:
+            # the year it starts in. Without a known FY, fall back to the calendar year.
+            year_part = str(fy.start_date.year if fy else ref.year)
         return f"{series.prefix}{sep}{year_part}{sep}{seq_str}{suffix}"
     else:
         return f"{series.prefix}{sep}{seq_str}{suffix}"
@@ -212,10 +216,11 @@ def generate_next_number(
         if active_series is not None:
             format_series = active_series
 
-    # Resolve the FY label for "FY" year_format.  Always use the TARGET FY
-    # (financial_year_id) so a December 2025 invoice gets "2025-26", not "2026-27".
+    # Resolve the FY for the "FY", "YYYY" and "MM-YYYY" year formats.  Always use
+    # the TARGET FY (financial_year_id) so a December 2025 invoice gets "2025-26",
+    # not "2026-27", and a March 2027 invoice in 2026-27 gets 2026, not 2027.
     linked_fy: Optional[FinancialYear] = None
-    if format_series.include_year and format_series.year_format == "FY":
+    if format_series.include_year and format_series.year_format in ("FY", "YYYY", "MM-YYYY"):
         fy_id_for_label = financial_year_id if financial_year_id is not None else series.financial_year_id
         if fy_id_for_label is not None:
             linked_fy = db.query(FinancialYear).filter(

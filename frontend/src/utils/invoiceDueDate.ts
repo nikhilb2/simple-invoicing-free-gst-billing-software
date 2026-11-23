@@ -55,11 +55,11 @@ export type DueDateFormState = {
 };
 
 function parseIsoDateParts(value: string): [number, number, number] | null {
-  const parts = value.split('-').map(Number);
-  if (parts.length !== 3 || parts.some((part) => Number.isNaN(part))) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
     return null;
   }
-  return [parts[0], parts[1], parts[2]];
+  const [year, month, day] = value.split('-').map(Number);
+  return [year, month, day];
 }
 
 export function addDaysToIsoDate(value: string, days: number): string {
@@ -69,9 +69,14 @@ export function addDaysToIsoDate(value: string, days: number): string {
   }
 
   const [year, month, day] = parsed;
-  const nextDate = new Date(Date.UTC(year, month - 1, day));
+  const nextDate = new Date(0);
+  nextDate.setUTCFullYear(year, month - 1, day);
+  if (year < 1 || nextDate.getUTCMonth() !== month - 1 || nextDate.getUTCDate() !== day) {
+    return '';
+  }
   nextDate.setUTCDate(nextDate.getUTCDate() + days);
-  return nextDate.toISOString().slice(0, 10);
+  const dueYear = nextDate.getUTCFullYear();
+  return dueYear >= 1 && dueYear <= 9999 ? nextDate.toISOString().slice(0, 10) : '';
 }
 
 export function resolveDueDate(input: {
@@ -88,12 +93,13 @@ export function resolveDueDate(input: {
     return input.exactDate || undefined;
   }
 
-  const parsedDays = Number.parseInt(input.daysFromInvoice, 10);
-  if (Number.isNaN(parsedDays) || parsedDays < 0 || !input.invoiceDate) {
+  const days = input.daysFromInvoice.trim();
+  const parsedDays = Number(days);
+  if (!/^\d+$/.test(days) || !Number.isSafeInteger(parsedDays) || !input.invoiceDate) {
     return undefined;
   }
 
-  return addDaysToIsoDate(input.invoiceDate, parsedDays);
+  return addDaysToIsoDate(input.invoiceDate, parsedDays) || undefined;
 }
 
 export function createDueDateFormState(dueDate?: string | null): DueDateFormState {

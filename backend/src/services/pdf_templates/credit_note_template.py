@@ -19,8 +19,9 @@ from src.models.buyer import Buyer as Ledger
 from src.models.credit_note import CreditNote
 from src.models.invoice import Invoice
 from src.models.product import Product
+from src.services.gst_tax_service import to_india_date
 
-from .builders import _amount_in_words_indian, _e, _fmt_currency, _fmt_rate
+from .builders import _amount_in_words_indian, _e, _fmt_currency, _fmt_rate, _pdf_display_quantity, document_paper_css
 from .purchase_template import _extract_pan_from_gstin, _is_interstate_supply
 
 CREDIT_NOTE_TYPE_LABELS = {
@@ -71,6 +72,7 @@ def _build_credit_note_html(
     products: list[Product],
     company: CompanyProfile | None,
     ledger: Ledger | None,
+    paper: str = "a4",
 ) -> str:
     """Generate HTML for a credit note, or for a debit note when the note is inward.
 
@@ -78,6 +80,7 @@ def _build_credit_note_html(
     decides the seller and party snapshot and whether tax splits as IGST or
     CGST + SGST — the same rule ``create_credit_note`` used to compute the amounts.
     """
+    page_rule, paper_css = document_paper_css(paper)
     inward = credit_note.direction == "inward"
     document_label = "Debit Note" if inward else "Credit Note"
     first_invoice = invoices[0] if invoices else None
@@ -141,9 +144,9 @@ def _build_credit_note_html(
         <tr>
           <td>{idx}</td>
           <td>{product_name}</td>
-          <td>{hsn}</td>
+          <td class="nowrap">{hsn}</td>
           <td>{source_number}</td>
-          <td class="right">{item.quantity}</td>
+          <td class="right">{_pdf_display_quantity(item.quantity, getattr(prod, 'allow_decimal', None) if prod else None)}</td>
           <td class="right">{_fmt_currency(float(item.unit_price or 0), currency)}</td>
           <td class="right">{_fmt_currency(float(item.taxable_amount or 0), currency)}</td>
           <td class="right">{_fmt_rate(float(item.gst_rate or 0))}%</td>
@@ -202,7 +205,7 @@ def _build_credit_note_html(
 
     cancelled = credit_note.status == "cancelled"
     cancelled_html = (
-        f'<div class="sheet__cancelled">Cancelled on {_fmt_date(credit_note.cancelled_at)}</div>'
+        f'<div class="sheet__cancelled">Cancelled on {_fmt_date(to_india_date(credit_note.cancelled_at))}</div>'
         if cancelled
         else ""
     )
@@ -214,13 +217,10 @@ def _build_credit_note_html(
 <head>
 <meta charset="utf-8">
 <style>
-  @page {{
-    size: A4;
-    margin: 15mm 18mm;
-  }}
+  {page_rule}
   * {{ margin: 0; padding: 0; box-sizing: border-box; }}
   body {{
-    font-family: -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    font-family: -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, 'Noto Sans', 'Noto Sans Devanagari', sans-serif;
     font-size: 10px;
     color: #1f2937;
     line-height: 1.5;
@@ -383,7 +383,7 @@ def _build_credit_note_html(
     max-height: 80px;
     object-fit: contain;
   }}
-</style>
+{paper_css}</style>
 </head>
 <body>
 <div class="sheet">

@@ -194,7 +194,9 @@ def test_return_allows_maximum_stock(tenant, app_db, product, action):
         assert len(notes) == 1
         assert notes[0][1:] == ("active", None)
     else:
-        assert notes == []
+        # The cancelled note keeps its row (#800).
+        assert len(notes) == 1
+        assert notes[0][1] == "cancelled" and notes[0][2] is not None
 
 
 def test_production_database_error_is_private_and_rolls_back(tenant, app_db, product):
@@ -215,3 +217,52 @@ def test_production_database_error_is_private_and_rolls_back(tenant, app_db, pro
     assert response.status_code == 400, response.text
     assert response.json() == {"detail": "Production failed. Please try again."}
     assert _state(app_db) == before
+
+
+@pytest.mark.parametrize("direction, voucher_type, stock_change", [
+    ("outward", "sales", Decimal("1.125")),
+    ("inward", "purchase", Decimal("-1.125")),
+])
+def test_fractional_credit_note_persists_and_reverses_exact_stock(
+    tenant, app_db, product, direction, voucher_type, stock_change
+):
+    client = tenant["client"]
+    invoice_response = client.post("/api/invoices/", json={
+        "ledger_id": tenant["ledger"],
+        "voucher_type": voucher_type,
+        "items": [{"product_id": product, "quantity": 2.5, "unit_price": 100}],
+    })
+    assert invoice_response.status_code == 200, invoice_response.text
+    invoice = invoice_response.json()
+    before = _stock(app_db, product)
+    payload = {
+        "ledger_id": tenant["ledger"],
+        "invoice_ids": [invoice["id"]],
+        "direction": direction,
+        "items": [{
+            "invoice_id": invoice["id"],
+            "invoice_item_id": invoice["items"][0]["id"],
+            "quantity": 1.125,
+        }],
+    }
+    if direction == "inward":
+        payload.update(
+            supplier_credit_note_number="FRACTIONAL-SUPPLIER",
+            supplier_credit_note_date=india_today().isoformat(),
+        )
+
+    response = client.post("/api/credit-notes/", json=payload)
+
+    assert response.status_code == 201, response.text
+    note = response.json()
+    assert note["items"][0]["quantity"] == 1.125
+    with app_db.owner_engine.connect() as owner:
+        quantity = owner.execute(
+            text("SELECT quantity FROM credit_note_items WHERE credit_note_id = :id"),
+            {"id": note["id"]},
+        ).scalar_one()
+    assert quantity == Decimal("1.125")
+    assert _stock(app_db, product) == before + stock_change
+    cancelled = client.post(f"/api/credit-notes/{note['id']}/cancel")
+    assert cancelled.status_code == 200, cancelled.text
+    assert _stock(app_db, product) == before

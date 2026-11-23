@@ -26,8 +26,6 @@ from datetime import date, datetime
 from decimal import Decimal
 from io import BytesIO
 
-import weasyprint
-from src.services.pdf_render import safe_url_fetcher
 from fastapi import HTTPException, Request
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
@@ -45,7 +43,15 @@ from src.models.quotation import DOCUMENT_PROFORMA, STATUS_CANCELLED, STATUS_CON
 from src.models.share_link import ShareLink
 from src.services.gst_tax_service import india_today
 from src.services.invoice_payments import build_invoice_payment_summaries
-from src.services.pdf_templates import _build_credit_note_html, _build_multi_copy_invoice_html, _build_quotation_html, _build_statement_html, _fmt_currency
+from src.services.pdf_paper import Paper, ReportPaper, is_thermal, render_pdf, resolve_paper
+from src.services.pdf_templates import _build_credit_note_html, _build_multi_copy_invoice_html, _build_quotation_html, _build_statement_html, _copy_label, _fmt_currency
+from src.services.pdf_templates.thermal_template import (
+    build_thermal_copies,
+    thermal_credit_note_doc,
+    thermal_invoice_doc,
+    thermal_quotation_doc,
+    thermal_receipt_doc,
+)
 from src.services.pdf_templates.quotation_template import NOT_A_TAX_INVOICE_NOTE
 from src.services.serial_service import SerialManager
 from src.services.upi import (
@@ -391,8 +397,8 @@ def invoice_upi_payment(
 # HTML builders (also served to the desktop iframe) and their PDF wrappers
 # ---------------------------------------------------------------------------
 
-def _to_pdf(html: str) -> BytesIO:
-    return BytesIO(weasyprint.HTML(string=html, url_fetcher=safe_url_fetcher).write_pdf())
+def _to_pdf(html: str | list[str], paper: Paper = "a4") -> BytesIO:
+    return BytesIO(render_pdf(html, paper))
 
 
 def invoice_bank_accounts(db: Session, company_id: int) -> list[CompanyAccount]:
@@ -443,12 +449,15 @@ def build_invoice_html(
     copies: int = 1,
     *,
     share_url: str | None = None,
-) -> str:
+    paper: Paper = "a4",
+) -> str | list[str]:
     """The invoice document, identical for the owner and the customer.
 
     ``share_url``, when given, is rendered as a QR in the payment details block. It
     arrives already built rather than being minted here, because minting needs the
     request the URL's origin comes from and this function is deliberately request-free.
+
+    On a thermal ``paper`` the result is one HTML string per copy (see ``render_pdf``).
     """
     invoice = get_invoice(db, company_id, invoice_id)
     if not invoice:
@@ -471,6 +480,27 @@ def build_invoice_html(
 
     settlement = purchase_settlement(db, invoice)
 
+    if is_thermal(paper):
+        purchase = invoice.voucher_type == "purchase"
+        # A purchase bill never prints a pay QR, so none is drawn for it.
+        qr_uri = render_qr_png_data_uri(share_url) if share_url and not purchase else ""
+        # A purchase bill prints one copy, as it does on A4.
+        return build_thermal_copies(
+            [
+                thermal_invoice_doc(
+                    invoice,
+                    products,
+                    bank_accounts=accounts,
+                    copy_label="" if purchase else _copy_label(n),
+                    serials=serials,
+                    qr_uri=qr_uri,
+                    settlement=settlement,
+                )
+                for n in range(1, (1 if purchase else copies) + 1)
+            ],
+            paper,
+        )
+
     return _build_multi_copy_invoice_html(
         invoice,
         products,
@@ -482,6 +512,7 @@ def build_invoice_html(
         # Rendered once here, not inside the per-copy loop: a triplicate print would
         # otherwise encode the same QR three times.
         pay_qr_html=build_pay_qr_card_html(share_url),
+        paper=paper,
     )
 
 
@@ -492,9 +523,11 @@ def render_invoice_pdf(
     copies: int = 1,
     *,
     share_url: str | None = None,
+    paper: Paper = "a4",
 ) -> BytesIO:
     return _to_pdf(
-        build_invoice_html(db, company_id, invoice_id, copies=copies, share_url=share_url)
+        build_invoice_html(db, company_id, invoice_id, copies=copies, share_url=share_url, paper=paper),
+        paper,
     )
 
 
@@ -506,6 +539,7 @@ def build_statement_html(
     to_date: date,
     *,
     share_url: str | None = None,
+    paper: ReportPaper = "a4",
 ) -> str:
     # Deferred: see the circular-import note at the top of this module.
     from src.api.routes.ledgers import _build_ledger_statement_data
@@ -534,6 +568,7 @@ def build_statement_html(
         entries=statement_data.entries,
         currency=currency,
         pay_qr_html=build_pay_qr_card_html(share_url),
+        paper=paper,
     )
 
 
@@ -545,13 +580,15 @@ def render_statement_pdf(
     to_date: date,
     *,
     share_url: str | None = None,
+    paper: ReportPaper = "a4",
 ) -> BytesIO:
     return _to_pdf(
-        build_statement_html(db, company_id, ledger_id, from_date, to_date, share_url=share_url)
+        build_statement_html(db, company_id, ledger_id, from_date, to_date, share_url=share_url, paper=paper),
+        paper,
     )
 
 
-def build_receipt_html(db: Session, company_id: int, payment_id: int) -> str:
+def build_receipt_html(db: Session, company_id: int, payment_id: int, *, paper: Paper = "a4") -> str | list[str]:
     # Deferred: see the circular-import note at the top of this module.
     from src.api.routes.payments import _build_receipt_html
 
@@ -560,6 +597,8 @@ def build_receipt_html(db: Session, company_id: int, payment_id: int) -> str:
         raise HTTPException(status_code=404, detail="Payment not found")
 
     company = _company(db, company_id)
+    if is_thermal(paper):
+        return build_thermal_copies([thermal_receipt_doc(payment, company)], paper)
 
     allocations_by_invoice_id = {
         allocation.invoice.id: allocation.invoice
@@ -572,14 +611,14 @@ def build_receipt_html(db: Session, company_id: int, payment_id: int) -> str:
         for invoice_id, summary in invoice_summaries.items()
     }
 
-    return _build_receipt_html(payment, company, allocation_status_by_invoice_id)
+    return _build_receipt_html(payment, company, allocation_status_by_invoice_id, paper=paper)
 
 
-def render_receipt_pdf(db: Session, company_id: int, payment_id: int) -> BytesIO:
-    return _to_pdf(build_receipt_html(db, company_id, payment_id))
+def render_receipt_pdf(db: Session, company_id: int, payment_id: int, *, paper: Paper = "a4") -> BytesIO:
+    return _to_pdf(build_receipt_html(db, company_id, payment_id, paper=paper), paper)
 
 
-def build_credit_note_html(db: Session, company_id: int, credit_note_id: int) -> str:
+def build_credit_note_html(db: Session, company_id: int, credit_note_id: int, *, paper: Paper = "a4") -> str | list[str]:
     credit_note = get_credit_note(db, company_id, credit_note_id)
     if credit_note is None:
         raise HTTPException(status_code=404, detail="Credit note not found")
@@ -593,20 +632,26 @@ def build_credit_note_html(db: Session, company_id: int, credit_note_id: int) ->
     product_ids = {item.product_id for item in credit_note.items if item.product_id}
     products = db.query(Product).filter(Product.id.in_(product_ids)).all() if product_ids else []
 
+    company = _company(db, company_id)
+    if is_thermal(paper):
+        return build_thermal_copies(
+            [thermal_credit_note_doc(credit_note, invoices, products, company, credit_note.ledger)], paper
+        )
     return _build_credit_note_html(
         credit_note,
         invoices,
         products,
-        _company(db, company_id),
+        company,
         credit_note.ledger,
+        paper=paper,
     )
 
 
-def render_credit_note_pdf(db: Session, company_id: int, credit_note_id: int) -> BytesIO:
-    return _to_pdf(build_credit_note_html(db, company_id, credit_note_id))
+def render_credit_note_pdf(db: Session, company_id: int, credit_note_id: int, *, paper: Paper = "a4") -> BytesIO:
+    return _to_pdf(build_credit_note_html(db, company_id, credit_note_id, paper=paper), paper)
 
 
-def build_quotation_html(db: Session, company_id: int, quotation_id: int) -> str:
+def build_quotation_html(db: Session, company_id: int, quotation_id: int, *, paper: Paper = "a4") -> str | list[str]:
     quotation = get_quotation(db, company_id, quotation_id)
     if quotation is None:
         raise HTTPException(status_code=404, detail="Quotation not found")
@@ -617,16 +662,19 @@ def build_quotation_html(db: Session, company_id: int, quotation_id: int) -> str
     # Bank details print on a proforma only, and no UPI or pay QR on either. The
     # template takes neither, so there is nothing here to get wrong.
     accounts = invoice_bank_accounts(db, company_id) if quotation.document_type == DOCUMENT_PROFORMA else []
+    if is_thermal(paper):
+        return build_thermal_copies([thermal_quotation_doc(quotation, products, accounts)], paper)
     return _build_quotation_html(
         quotation,
         products,
         accounts,
         show_sku=company.show_sku_on_pdf if company else True,
+        paper=paper,
     )
 
 
-def render_quotation_pdf(db: Session, company_id: int, quotation_id: int) -> BytesIO:
-    return _to_pdf(build_quotation_html(db, company_id, quotation_id))
+def render_quotation_pdf(db: Session, company_id: int, quotation_id: int, *, paper: Paper = "a4") -> BytesIO:
+    return _to_pdf(build_quotation_html(db, company_id, quotation_id, paper=paper), paper)
 
 
 # ---------------------------------------------------------------------------
@@ -920,19 +968,28 @@ def render_share_pdf(db: Session, link: ShareLink, *, request: Request | None = 
     recipient forwards the PDF onward.
     """
     share_url = _link_share_url(db, link, request)
+    # The recipient has no picker: the copy they download is on the company's paper.
+    company = _company(db, link.company_id)
+    paper = resolve_paper(None, company)
     if link.resource_type == RESOURCE_INVOICE:
-        return render_invoice_pdf(db, link.company_id, link.resource_id, share_url=share_url)
+        return render_invoice_pdf(db, link.company_id, link.resource_id, share_url=share_url, paper=paper)
     if link.resource_type == RESOURCE_STATEMENT:
         from_date, to_date = _statement_share_window(db, link)
         return render_statement_pdf(
-            db, link.company_id, link.resource_id, from_date, to_date, share_url=share_url
+            db,
+            link.company_id,
+            link.resource_id,
+            from_date,
+            to_date,
+            share_url=share_url,
+            paper=resolve_paper(None, company, report=True),
         )
     if link.resource_type == RESOURCE_PAYMENT:
-        return render_receipt_pdf(db, link.company_id, link.resource_id)
+        return render_receipt_pdf(db, link.company_id, link.resource_id, paper=paper)
     if link.resource_type == RESOURCE_CREDIT_NOTE:
-        return render_credit_note_pdf(db, link.company_id, link.resource_id)
+        return render_credit_note_pdf(db, link.company_id, link.resource_id, paper=paper)
     if link.resource_type == RESOURCE_QUOTATION:
-        return render_quotation_pdf(db, link.company_id, link.resource_id)
+        return render_quotation_pdf(db, link.company_id, link.resource_id, paper=paper)
     raise HTTPException(status_code=404, detail="Not found")
 
 

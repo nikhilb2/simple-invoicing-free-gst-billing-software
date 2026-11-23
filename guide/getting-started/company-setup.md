@@ -20,6 +20,7 @@ description: "Set your GSTIN, logo, bank details, invoice terms, e-way bill sett
 
 Options below the form:
 
+- **Default paper size**: A4, A5, Thermal 80mm or Thermal 58mm. It is used for downloads, emailed PDFs and share links. See [Printing on A5 and thermal printers](../settings/printing).
 - **Show SKU column on invoice PDFs**: when off, the item description gets more width.
 - **Show pay-online QR on invoice PDFs**: adds a QR code that opens a page where your customer can pay by UPI. See [Pay by UPI](../sales/sending#pay-by-upi).
 - **Show "Pay by UPI" button on shared invoices**: adds tap-to-pay shortcuts. Turn it on only if your UPI ID is registered as a merchant, because otherwise apps such as Paytm warn your customer. The QR code works either way.
@@ -68,7 +69,7 @@ This section sets how documents are numbered in the active [financial year](./fi
 | **Prefix**, **Suffix** | Text before and after the number, in capitals. |
 | **Separator** | Up to 3 characters between the parts. Defaults to `-`. |
 | **Pad digits** | 001 has 3 digits. |
-| **Include year**, **Year format** | YYYY (2026), MM-YYYY (04-2026) or FY (2025-26). |
+| **Include year**, **Year format** | YYYY (2026), MM-YYYY (04-2026) or FY (2025-26). YYYY is the year your financial year starts in, so January to March 2027 in FY 2026-27 prints 2026. MM-YYYY uses the calendar year of the document date (01-2027). |
 | **Next number** | The next number to use. |
 
 The **Preview** line shows the result. The default for sales is `INV-2026-001`. Click **Save** on the card.

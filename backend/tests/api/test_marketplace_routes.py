@@ -869,3 +869,211 @@ class TestSyncRoutes:
                 client.post("/api/marketplace/sync", headers=headers_for(company)).status_code
                 == 200
             )
+
+
+# ---------------------------------------------------------------------------
+# GST resync: a product tax edit must reach its open listings (#888)
+# ---------------------------------------------------------------------------
+
+
+class TestMarketplaceGstResync:
+    def _listed_product(self, client, db_session, fake):
+        """A connected company with a product published at 18% GST."""
+        company = make_company(db_session, name="Acme", gst=GST_A)
+        client.post(
+            "/api/marketplace/connection",
+            json={"base_url": "http://marketplace.test"},
+            headers=headers_for(company),
+        )
+        product = make_product(db_session, company.id)
+        created = client.post(
+            "/api/marketplace/listings",
+            json={"product_id": product.id, "asking_price": 125.0},
+            headers=headers_for(company),
+        )
+        assert created.status_code == 201
+        assert created.json()["gst_rate"] == "18.00"
+        return company, product, created.json()
+
+    def _read_listing(self, client, company, listing_id):
+        listed = client.get(
+            "/api/marketplace/listings", headers=headers_for(company)
+        ).json()
+        return next(item for item in listed if item["id"] == listing_id)
+
+    def test_product_gst_edit_resyncs_the_open_listing(self, client, db_session, fake):
+        company, product, listing = self._listed_product(client, db_session, fake)
+
+        updated = client.put(
+            f"/api/products/{product.id}",
+            json={
+                "sku": "P1",
+                "name": "Product P1",
+                "price": 125.0,
+                "gst_rate": 12,
+                "hsn_sac": "8483",
+                "unit": "Numbers",
+            },
+            headers=headers_for(company),
+        )
+        assert updated.status_code == 200
+
+        synced = self._read_listing(client, company, listing["id"])
+        assert synced["gst_rate"] == "12.00"
+        assert synced["hsn_sac"] == "8483"
+        assert synced["unit"] == "Numbers"
+        # The remote marketplace must quote the new rate too, not just our row.
+        assert Decimal(
+            fake.listings[listing["remote_listing_id"]]["gst_rate"]
+        ) == Decimal("12")
+
+    def test_with_inventory_gst_edit_resyncs_the_open_listing(
+        self, client, db_session, fake
+    ):
+        company, product, listing = self._listed_product(client, db_session, fake)
+
+        updated = client.put(
+            f"/api/products/{product.id}/with-inventory",
+            json={"gst_rate": 12, "hsn_sac": "8483", "unit": "Numbers"},
+            headers=headers_for(company),
+        )
+        assert updated.status_code == 200
+
+        synced = self._read_listing(client, company, listing["id"])
+        assert synced["gst_rate"] == "12.00"
+        assert synced["hsn_sac"] == "8483"
+        assert synced["unit"] == "Numbers"
+
+    def test_withdrawn_listing_is_left_alone(self, client, db_session, fake):
+        company, product, listing = self._listed_product(client, db_session, fake)
+        assert (
+            client.delete(
+                f"/api/marketplace/listings/{listing['id']}",
+                headers=headers_for(company),
+            ).status_code
+            == 200
+        )
+
+        updated = client.put(
+            f"/api/products/{product.id}",
+            json={
+                "sku": "P1",
+                "name": "Product P1",
+                "price": 125.0,
+                "gst_rate": 12,
+                "hsn_sac": "8483",
+                "unit": "Numbers",
+            },
+            headers=headers_for(company),
+        )
+        assert updated.status_code == 200
+
+        left = self._read_listing(client, company, listing["id"])
+        assert left["status"] == "withdrawn"
+        assert left["gst_rate"] == "18.00"
+        assert left["hsn_sac"] == "8482"
+
+    def test_remote_failure_does_not_break_the_product_edit(
+        self, client, db_session, fake
+    ):
+        company, product, listing = self._listed_product(client, db_session, fake)
+        # The remote listing is gone, so the push PATCH 404s.
+        del fake.listings[listing["remote_listing_id"]]
+
+        updated = client.put(
+            f"/api/products/{product.id}",
+            json={
+                "sku": "P1",
+                "name": "Product P1",
+                "price": 125.0,
+                "gst_rate": 12,
+                "hsn_sac": "8483",
+                "unit": "Numbers",
+            },
+            headers=headers_for(company),
+        )
+        assert updated.status_code == 200
+
+        db_session.expire_all()
+        stored_product = (
+            db_session.query(Product).filter(Product.id == product.id).first()
+        )
+        assert Decimal(str(stored_product.gst_rate)) == Decimal("12")
+        stored_listing = (
+            db_session.query(MarketplaceListing)
+            .filter(MarketplaceListing.id == listing["id"])
+            .first()
+        )
+        # The local row still moves to the new rate even though the push failed.
+        assert Decimal(str(stored_listing.gst_rate)) == Decimal("12")
+        assert stored_listing.last_error
+
+    def test_clearing_the_hsn_reaches_the_remote_listing(
+        self, client, db_session, fake
+    ):
+        company, product, listing = self._listed_product(client, db_session, fake)
+
+        # The listing is published at creation, so last_published_at already
+        # has a value: only a later value proves the clear was pushed.
+        db_session.expire_all()
+        before = (
+            db_session.query(MarketplaceListing)
+            .filter(MarketplaceListing.id == listing["id"])
+            .first()
+        )
+        published_at = before.last_published_at
+        assert published_at is not None
+
+        updated = client.put(
+            f"/api/products/{product.id}",
+            json={
+                "sku": "P1",
+                "name": "Product P1",
+                "price": 125.0,
+                "gst_rate": 18,
+                "hsn_sac": None,
+                "unit": "Pieces",
+            },
+            headers=headers_for(company),
+        )
+        assert updated.status_code == 200
+        assert updated.json()["hsn_sac"] is None
+
+        db_session.expire_all()
+        stored = (
+            db_session.query(MarketplaceListing)
+            .filter(MarketplaceListing.id == listing["id"])
+            .first()
+        )
+        assert stored.hsn_sac is None
+        # last_published_at only moves after a successful remote push, so a
+        # later value proves the clear was pushed, not just written locally.
+        # (The fake drops nulls from PATCH bodies, so its own copy keeps
+        # the old HSN.)
+        assert stored.last_published_at > published_at
+
+    def test_csv_import_gst_edit_resyncs_the_open_listing(
+        self, client, db_session, fake
+    ):
+        company, product, listing = self._listed_product(client, db_session, fake)
+
+        csv_content = (
+            "Item Name,Item Code,Selling Price,Current Stock,Tax,HSN Code,Unit\n"
+            "Product P1,P1,125,100,12,8483,Numbers\n"
+        )
+        imported = client.post(
+            "/api/products/import-csv",
+            files={"file": ("p.csv", csv_content.encode(), "text/csv")},
+            headers=headers_for(company),
+        )
+        assert imported.status_code == 200
+        assert imported.json()["updated"] == 1
+
+        synced = self._read_listing(client, company, listing["id"])
+        assert synced["gst_rate"] == "12.00"
+        assert synced["hsn_sac"] == "8483"
+        assert synced["unit"] == "Numbers"
+        # The remote marketplace must quote the new rate too, not just our row.
+        assert Decimal(
+            fake.listings[listing["remote_listing_id"]]["gst_rate"]
+        ) == Decimal("12")

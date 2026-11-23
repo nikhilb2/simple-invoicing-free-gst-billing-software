@@ -19,10 +19,10 @@ Everyone can view ledgers and statements. Only admins and managers can create, e
    | Field | Notes |
    |---|---|
    | **Ledger name** | Required. |
-   | **Phone number** | Required. Used for the call and WhatsApp links. |
+   | **Phone number** | Optional. Used for the call and WhatsApp links. |
    | **GSTIN** | Optional. Spaces are removed and letters capitalised. Once valid, it shows the PAN and state code. |
    | **Opening balance** and **Type** | Optional. **Debit** means they owe you; **Credit** means you owe them. |
-   | **Address** | Required. |
+   | **Address** | Optional. Leave it blank for a walk-in customer. |
    | **Email**, **Website** | Optional. The email is used for sending documents. |
    | **Bank name**, **Branch**, **Account holder**, **Account number**, **IFSC** | Optional. |
 

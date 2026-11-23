@@ -6,6 +6,7 @@ from fastapi import HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
+from src.api.search import contains_pattern
 from src.models.credit_note import CreditNote, CreditNoteItem
 from src.models.invoice import Invoice
 from src.models.payment import Payment, PaymentInvoiceAllocation
@@ -227,7 +228,8 @@ def outstanding_due_invoices(
     if ledger_id is not None:
         base = base.filter(Invoice.ledger_id == ledger_id)
     if search.strip():
-        base = base.filter(Invoice.ledger_name.ilike(f"%{search.strip()}%"))
+        term = contains_pattern(search)
+        base = base.filter(Invoice.ledger_name.ilike(term, escape="\\"))
     if due_date_from is not None:
         base = base.filter(effective_due_date >= datetime.combine(due_date_from, datetime.min.time()))
     if due_date_to is not None:

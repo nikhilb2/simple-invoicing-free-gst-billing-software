@@ -12,6 +12,8 @@ import EwayBillModal from './EwayBillModal';
 import ShareModal from './ShareModal';
 import PreviewToolbar from './PreviewToolbar';
 import CopiesStepper from './CopiesStepper';
+import PaperSizePicker from './PaperSizePicker';
+import { usePaperChoice } from '../hooks/usePaperChoice';
 import ReceiptModal from './ReceiptModal';
 import { canRecordPayment } from '../utils/invoicePayment';
 import { lacksInvoiceBankDetails } from '../utils/invoiceBankNotice';
@@ -37,6 +39,7 @@ export default function InvoicePreview({ invoice, onClose, onError, onPaymentRec
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [copies, setCopies] = useState(1);
+  const [paper, setPaper, requestPaper] = usePaperChoice();
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [loadingPdf, setLoadingPdf] = useState(true);
   const [pdfError, setPdfError] = useState('');
@@ -104,7 +107,7 @@ export default function InvoicePreview({ invoice, onClose, onError, onPaymentRec
       setPreviewFailed(false);
 
       try {
-        const response = await api.get(`/invoices/${invoice.id}/pdf?copies=${copies}`, {
+        const response = await api.get(`/invoices/${invoice.id}/pdf?copies=${copies}${requestPaper ? `&paper=${requestPaper}` : ''}`, {
           responseType: 'blob',
         });
         const nextUrl = window.URL.createObjectURL(response.data as Blob);
@@ -137,11 +140,11 @@ export default function InvoicePreview({ invoice, onClose, onError, onPaymentRec
         window.URL.revokeObjectURL(objectUrlToRevoke);
       }
     };
-  }, [invoice.id, copies]);
+  }, [invoice.id, copies, requestPaper]);
 
   const handleDownloadPdf = async () => {
     try {
-      const response = await api.get(`/invoices/${invoice.id}/pdf?copies=${copies}`, {
+      const response = await api.get(`/invoices/${invoice.id}/pdf?copies=${copies}${requestPaper ? `&paper=${requestPaper}` : ''}`, {
         responseType: 'blob',
       });
       const url = window.URL.createObjectURL(response.data as Blob);
@@ -282,7 +285,7 @@ export default function InvoicePreview({ invoice, onClose, onError, onPaymentRec
               title: 'Generate E-Way Bill JSON',
             }] : []),
           ]}
-          menuExtra={<CopiesStepper value={copies} onChange={setCopies} />}
+          menuExtra={<><CopiesStepper value={copies} onChange={setCopies} /><PaperSizePicker value={paper} onChange={setPaper} /></>}
           menuOpen={menuOpen}
           onMenuOpenChange={setMenuOpen}
           onClose={onClose}

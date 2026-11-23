@@ -182,6 +182,7 @@ class InvoiceOut(BaseModel):
     supplier_invoice_number: str | None = None
     reference_notes: str | None = None
     status: str = "active"
+    cancelled_at: datetime | None = None
     credit_status: str = "not_credited"
     ledger: LedgerOut | None = None
     taxable_amount: float

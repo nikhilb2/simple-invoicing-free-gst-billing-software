@@ -1,6 +1,7 @@
 import api, { cleanParams, getBlobErrorMessage } from '../../api/client';
 import type {
   DeliveryChallan,
+  PdfPaper,
   DeliveryChallanConversionDraft,
   DeliveryChallanConvert,
   DeliveryChallanCreate,
@@ -67,9 +68,9 @@ export async function convertDeliveryChallan(id: number, payload: DeliveryChalla
  * `responseType: 'blob'`), so it is decoded and thrown as an Error carrying the
  * server's own message.
  */
-export async function fetchDeliveryChallanPdf(id: number, copies: number, fallback: string): Promise<Blob> {
+export async function fetchDeliveryChallanPdf(id: number, copies: number, fallback: string, paper?: PdfPaper): Promise<Blob> {
   try {
-    const response = await api.get(`/delivery-challans/${id}/pdf`, { params: { copies }, responseType: 'blob' });
+    const response = await api.get(`/delivery-challans/${id}/pdf`, { params: { copies, paper }, responseType: 'blob' });
     return response.data as Blob;
   } catch (err) {
     throw new Error(await getBlobErrorMessage(err, fallback));

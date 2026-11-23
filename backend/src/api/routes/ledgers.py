@@ -12,11 +12,11 @@ from sqlalchemy import case, func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
-import weasyprint
-from src.services.pdf_render import safe_url_fetcher
+from src.services.pdf_paper import ReportPaper, page_css, render_pdf, resolve_paper
 
 from src.api.deps import get_active_company, get_current_user, require_company_role
 from src.api.pagination import MAX_PAGE
+from src.api.search import contains_pattern
 from src.core.analytics import distinct_id_for, track
 from src.db.session import get_db
 from src.models.buyer import Buyer as Ledger
@@ -34,6 +34,7 @@ from src.schemas.invoice import OutstandingInvoiceOut
 from src.schemas.ledger import DayBookEntry, DayBookOut, Gstr1B2BInvoice, Gstr1CategorySummary, Gstr1DocSummary, Gstr1HsnSummaryItem, Gstr1JsonExport, Gstr1Summary, Gstr1ValidationError, Gstr1ValidationResult, LedgerCreate, LedgerOut, LedgerStatementEntry, LedgerStatementInvoiceAllocation, LedgerStatementOut, PaginatedLedgerOut, TaxLedgerEntry, TaxLedgerOut, TaxLedgerTotals, TaxLiability, TaxLiabilityBucket
 from src.schemas.ledger_address import LedgerAddressCreate, LedgerAddressOut, LedgerAddressUpdate
 from src.services.credit_note_reporting import get_credit_note_ledger_summary
+from src.services.credit_note_deadline import section34_warning
 from src.services.financial_year import get_active_fy
 from src.services.gst_returns.setoff import compute_setoff
 from src.services.invoice_payments import auto_allocate_outstanding_invoices, build_invoice_payment_summaries, get_outstanding_invoices_for_ledger
@@ -42,7 +43,7 @@ from src.services.invoice_payments import auto_allocate_outstanding_invoices, bu
 from src.services.pdf_templates import _build_day_book_html, _build_statement_html  # noqa: F401
 from src.services.pdf_templates.builders import _e
 from src.services.share_documents import get_ledger as get_shared_ledger, render_statement_pdf
-from src.services.gst_tax_service import b2cl_limit, gstr1_section, invoice_filing_pos, is_b2cl_invoice, is_interstate_pos, needs_place_of_supply
+from src.services.gst_tax_service import b2cl_limit, gstr1_section, india_now, invoice_filing_pos, is_b2cl_invoice, is_interstate_pos, needs_place_of_supply
 from src.services.uqc import hsn_uqc
 from src.core.validation import GSTIN_REGEX, GSTR1_DOCUMENT_NUMBER_RULE, HSN_SAC_REGEX, is_gst_rate_slab, is_gstr1_document_number, is_known_hsn_sac
 from src.services.company_access import company_scope, legacy_default_company
@@ -135,7 +136,7 @@ def _default_opening_balance_date(db: Session, company_id: int | None = None) ->
   active_fy = get_active_fy(db, company_id=company_id)
   if active_fy is not None:
     return datetime.combine(active_fy.start_date, time.min), active_fy.id
-  return datetime.utcnow(), None
+  return india_now(), None
 
 
 def _sync_opening_balance(
@@ -756,16 +757,7 @@ def list_ledgers(
     if company_id is not None:
       query = query.filter(company_scope(Ledger.company_id, company_id))
     if search.strip():
-        # Escape LIKE wildcards so a term such as 50% matches literally
-        # instead of matching every ledger. Phone numbers match on the raw
-        # stored text only in this first version, not on digits only.
-        escaped = (
-            search.strip()
-            .replace("\\", "\\\\")
-            .replace("%", "\\%")
-            .replace("_", "\\_")
-        )
-        pattern = f"%{escaped}%"
+        pattern = contains_pattern(search)
         query = query.filter(
             or_(
                 Ledger.name.ilike(pattern, escape="\\"),
@@ -865,6 +857,7 @@ def get_day_book(
 def download_day_book_pdf(
     from_date: date = Query(...),
     to_date: date = Query(...),
+    paper: ReportPaper | None = Query(None),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
     active_company: CompanyProfile = Depends(get_active_company),
@@ -875,6 +868,7 @@ def download_day_book_pdf(
 
     company = active_company if company_id is not None else legacy_default_company(db)
     currency = company.currency_code if company and company.currency_code else "INR"
+    resolved_paper = resolve_paper(paper, company, report=True)
 
     day_book_data = _build_day_book_data(
       db,
@@ -891,9 +885,10 @@ def download_day_book_pdf(
       total_debit=day_book_data.total_debit,
       total_credit=day_book_data.total_credit,
       currency=currency,
+      paper=resolved_paper,
     )
 
-    pdf_bytes = weasyprint.HTML(string=html, url_fetcher=safe_url_fetcher).write_pdf()
+    pdf_bytes = render_pdf(html, resolved_paper)
     buf = BytesIO(pdf_bytes)
     filename = f"day_book_{from_date}_{to_date}.pdf"
 
@@ -1260,13 +1255,17 @@ def update_ledger(
             raise HTTPException(status_code=400, detail="Ledger with this GST already exists")
 
     ledger.name = payload.name.strip()
-    ledger.address = payload.address.strip()
+    # Address and phone are optional (#955). One left out of the request keeps
+    # what is saved; an explicit blank or null clears it.
+    if "address" in payload.model_fields_set:
+        ledger.address = payload.address
     ledger.gst = gst
     ledger.pan = payload.pan
     ledger.party_type = payload.party_type
     if payload.tcs_declaration_received is not None:
         ledger.tcs_declaration_received = payload.tcs_declaration_received
-    ledger.phone_number = payload.phone_number.strip()
+    if "phone_number" in payload.model_fields_set:
+        ledger.phone_number = payload.phone_number
     ledger.email = payload.email.strip() if payload.email else None
     ledger.website = payload.website.strip() if payload.website else None
     ledger.bank_name = payload.bank_name.strip() if payload.bank_name else None
@@ -1331,6 +1330,14 @@ def delete_ledger(
     if has_payments:
         raise HTTPException(status_code=400, detail="Cannot delete ledger linked to payments")
 
+    # A cancelled note stays on the ledger it was issued to (#800), even after
+    # its invoice moves to another party.
+    has_credit_notes_query = db.query(CreditNote.id).filter(CreditNote.ledger_id == ledger_id)
+    if company_id is not None:
+        has_credit_notes_query = has_credit_notes_query.filter(company_scope(CreditNote.company_id, company_id))
+    if has_credit_notes_query.first():
+        raise HTTPException(status_code=400, detail="Cannot delete ledger linked to credit notes")
+
     db.delete(ledger)
     db.commit()
     return {"message": "Ledger deleted"}
@@ -1391,6 +1398,7 @@ def download_ledger_statement_pdf(
     ledger_id: int,
     from_date: date = Query(...),
     to_date: date = Query(...),
+    paper: ReportPaper | None = Query(None),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
     active_company: CompanyProfile = Depends(get_active_company),
@@ -1406,7 +1414,10 @@ def download_ledger_statement_pdf(
     if not ledger:
         raise HTTPException(status_code=404, detail=f"Ledger {ledger_id} not found")
 
-    buf = render_statement_pdf(db, company_id, ledger_id, from_date, to_date)
+    buf = render_statement_pdf(
+        db, company_id, ledger_id, from_date, to_date,
+        paper=resolve_paper(paper, active_company, report=True),
+    )
     filename = _statement_filename(ledger, from_date, to_date, "pdf")
 
     return StreamingResponse(
@@ -1667,6 +1678,7 @@ def download_tax_ledger_pdf(
     to_date: date = Query(...),
     voucher_type: str | None = Query(None, pattern="^(sales|purchase)$"),
     gst_rate: float | None = Query(None, ge=0, allow_inf_nan=False),
+    paper: ReportPaper | None = Query(None),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
     active_company: CompanyProfile = Depends(get_active_company),
@@ -1677,6 +1689,7 @@ def download_tax_ledger_pdf(
 
     company = active_company if company_id is not None else legacy_default_company(db)
     currency = company.currency_code if company and company.currency_code else "INR"
+    resolved_paper = resolve_paper(paper, company, report=True)
     result = _build_full_tax_ledger(db, from_date, to_date, voucher_type, gst_rate, company_id)
     totals = _build_tax_ledger_totals(result.entries)
 
@@ -1688,9 +1701,10 @@ def download_tax_ledger_pdf(
         totals=totals,
         liability=result.liability,
         currency=currency,
+        paper=resolved_paper,
     )
 
-    pdf_bytes = weasyprint.HTML(string=html, url_fetcher=safe_url_fetcher).write_pdf()
+    pdf_bytes = render_pdf(html, resolved_paper)
     buf = BytesIO(pdf_bytes)
     filename = f"tax_ledger_{from_date}_{to_date}.pdf"
 
@@ -1856,6 +1870,24 @@ def _build_full_tax_ledger(
     )
 
 
+# A5 overrides for the plain report PDFs (tax ledger, GSTR-1). They follow the
+# template's own styles; A4 output is unchanged.
+_A5_PLAIN_REPORT_CSS = """
+    body { margin: 0; }
+    h1 { font-size: 14px; }
+    th, td { padding: 3px 2px; font-size: 7px; }
+    td { white-space: nowrap; }
+"""
+# The party name wraps; the nine columns do not fit on A5 otherwise.
+_A5_TAX_LEDGER_CSS = """
+    .party { white-space: normal; }
+"""
+_A5_GSTR1_CSS = """
+    h2 { font-size: 11px; }
+    td.category { white-space: normal; }
+"""
+
+
 def _build_tax_ledger_pdf_html(
     *,
     company,
@@ -1865,6 +1897,7 @@ def _build_tax_ledger_pdf_html(
     totals: TaxLedgerTotals,
     liability: TaxLiability,
     currency: str,
+    paper: ReportPaper = "a4",
 ) -> str:
     rows_html = ""
     for entry in entries:
@@ -1875,7 +1908,7 @@ def _build_tax_ledger_pdf_html(
         <tr>
             <td>{entry.date.date().isoformat()}</td>
             <td>{_e(entry.reference_number)}</td>
-            <td>{_e(entry.ledger_name)}</td>
+            <td class="party">{_e(entry.ledger_name)}</td>
             <td>{_e(entry.ledger_gst or '')}</td>
             <td>{entry.gst_rate:.0f}%</td>
             <td style="text-align:right">₹{entry.taxable_amount:,.2f}</td>
@@ -1884,9 +1917,12 @@ def _build_tax_ledger_pdf_html(
             <td style="text-align:right">₹{igst:,.2f}</td>
         </tr>"""
 
+    a5_style = f"<style>{_A5_PLAIN_REPORT_CSS}{_A5_TAX_LEDGER_CSS}</style>" if paper == "a5" else ""
+
     return f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8">
 <style>
+    {page_css(paper) if paper == "a5" else ""}
     body {{ font-family: Arial, sans-serif; font-size: 11px; margin: 24px; }}
     h1 {{ font-size: 18px; margin-bottom: 4px; }}
     .meta {{ color: #555; margin-bottom: 16px; }}
@@ -1895,7 +1931,8 @@ def _build_tax_ledger_pdf_html(
     th {{ background: #f5f5f5; text-align: left; }}
     .totals {{ margin-top: 16px; }}
     .totals table {{ width: 60%; }}
-</style></head><body>
+</style>
+{a5_style}</head><body>
 <h1>Tax Ledger</h1>
 <p class="meta">
     {_e(company.name if company else '')} &mdash;
@@ -1960,12 +1997,19 @@ def _gstr1_period_error(from_date: date, to_date: date) -> str | None:
     )
 
 
-def _gstr1_credit_notes(db: Session, from_date: date, to_date: date, company_id: int | None) -> list[CreditNote]:
-    """Active credit notes on our sales dated in the range, with items eagerly loaded."""
+def _gstr1_credit_notes(
+    db: Session, from_date: date, to_date: date, company_id: int | None, *, status: str = "active",
+    include_expired: bool = False,
+) -> list[CreditNote]:
+    """Credit notes on our sales dated in the range, with items eagerly loaded.
+
+    Eligible active ones by default; validation and Table 13 also need expired
+    commercial notes, whose numbers still belong to the issued series.
+    """
     query = (
         db.query(CreditNote)
         .options(joinedload(CreditNote.items).joinedload(CreditNoteItem.invoice_item))
-        .filter(CreditNote.status == "active")
+        .filter(CreditNote.status == status)
         .filter(CreditNote.credit_note_date >= datetime.combine(from_date, time.min))
         .filter(CreditNote.credit_note_date <= datetime.combine(to_date, time.max))
     )
@@ -1974,12 +2018,12 @@ def _gstr1_credit_notes(db: Session, from_date: date, to_date: date, company_id:
     notes = query.all()
 
     invoice_ids = {item.invoice_id for cn in notes for item in cn.items if item.invoice_id}
-    voucher_types: dict[int, str] = {}
+    sources: dict[int, Invoice] = {}
     if invoice_ids:
-        types_query = db.query(Invoice.id, Invoice.voucher_type).filter(Invoice.id.in_(invoice_ids))
+        types_query = db.query(Invoice).filter(Invoice.id.in_(invoice_ids))
         if company_id is not None:
             types_query = types_query.filter(company_scope(Invoice.company_id, company_id))
-        voucher_types = dict(types_query.all())
+        sources = {inv.id: inv for inv in types_query.all()}
 
     def _is_on_a_sale(cn: CreditNote) -> bool:
         # GSTR-1 reports outward supplies. A note against a purchase is the
@@ -1988,18 +2032,35 @@ def _gstr1_credit_notes(db: Session, from_date: date, to_date: date, company_id:
         # on the Tax Ledger: migration 20260904000001 stamped every older note
         # outward, including those against purchases. With no known invoice, the
         # note's direction is all there is to go by.
-        sources = {voucher_types[item.invoice_id] for item in cn.items if item.invoice_id in voucher_types}
-        return "sales" in sources if sources else (cn.direction or "outward") == "outward"
+        types = {sources[item.invoice_id].voucher_type for item in cn.items if item.invoice_id in sources}
+        return "sales" in types if types else (cn.direction or "outward") == "outward"
 
-    return [cn for cn in notes if _is_on_a_sale(cn)]
+    return [
+        cn for cn in notes if _is_on_a_sale(cn)
+        and (include_expired or status != "active" or not _note_deadline_warnings(cn, sources))
+    ]
 
 
-def _note_invoices(db: Session, credit_notes: list[CreditNote]) -> dict[int, Invoice]:
+def _note_invoices(db: Session, credit_notes: list[CreditNote], company_id: int | None = None) -> dict[int, Invoice]:
     """The invoices these notes were raised against, by id."""
     invoice_ids = {item.invoice_id for cn in credit_notes for item in cn.items if item.invoice_id}
     if not invoice_ids:
         return {}
-    return {inv.id: inv for inv in db.query(Invoice).filter(Invoice.id.in_(invoice_ids)).all()}
+    query = db.query(Invoice).filter(Invoice.id.in_(invoice_ids))
+    if company_id is not None:
+        query = query.filter(company_scope(Invoice.company_id, company_id))
+    return {inv.id: inv for inv in query.all()}
+
+
+def _note_deadline_warnings(cn: CreditNote, invoices_by_id: dict[int, Invoice]) -> list[str]:
+    warnings = []
+    for invoice_id in sorted({item.invoice_id for item in cn.items if item.invoice_id}):
+        inv = invoices_by_id.get(invoice_id)
+        if inv is not None and inv.voucher_type == "sales":
+            warning = section34_warning(cn.credit_note_date, inv.invoice_date, inv.invoice_number or f"INV-{inv.id}")
+            if warning:
+                warnings.append(warning)
+    return warnings
 
 
 def _note_item_heads(cn: CreditNote, item: CreditNoteItem) -> tuple[float, float, float]:
@@ -2137,7 +2198,7 @@ def _note_filing_errors(cn: CreditNote, invoices_by_id: dict[int, Invoice], comp
         errors.append(("Credit Note Number", f"GSTR-1 needs a number of {GSTR1_DOCUMENT_NUMBER_RULE}"))
 
     # Only its number reaches the file, so nothing else on it can block one.
-    if _is_zero_value_note(cn):
+    if _is_zero_value_note(cn) or _note_deadline_warnings(cn, invoices_by_id):
         return errors
 
     for item in cn.items:
@@ -2572,6 +2633,17 @@ def _gstr1_invoice_query(db: Session, from_date: date, to_date: date, company_id
     return query.order_by(Invoice.invoice_date.asc()).all()
 
 
+def _gstr1_cancelled_credit_note_numbers(
+    db: Session, from_date: date, to_date: date, company_id: int | None
+) -> list[str]:
+    """Numbers of the credit notes on our sales cancelled in the range, which Table 13 still counts."""
+    return [
+        cn.credit_note_number
+        for cn in _gstr1_credit_notes(db, from_date, to_date, company_id, status="cancelled")
+        if cn.credit_note_number
+    ]
+
+
 def _gstr1_cancelled_numbers(db: Session, from_date: date, to_date: date, company_id: int | None) -> list[str]:
     """Numbers of the sales invoices cancelled in the range, which Table 13 still counts."""
     query = (
@@ -2701,13 +2773,18 @@ def gstr1_validate(
                 message=f"Duplicate invoice number: {num}", severity="error",
             ))
 
-    credit_notes = _gstr1_credit_notes(db, from_date, to_date, company_id)
-    invoices_by_id = _note_invoices(db, credit_notes)
+    credit_notes = _gstr1_credit_notes(db, from_date, to_date, company_id, include_expired=True)
+    invoices_by_id = _note_invoices(db, credit_notes, company_id)
     for cn in credit_notes:
         cn_num = cn.credit_note_number or f"CN-{cn.id}"
+        deadline_warnings = _note_deadline_warnings(cn, invoices_by_id)
+        for message in deadline_warnings:
+            errors.append(Gstr1ValidationError(
+                invoice_number=cn_num, field="Section 34 deadline", message=message, severity="warning",
+            ))
         for field, message in _note_filing_errors(cn, invoices_by_id, company_pos):
             errors.append(Gstr1ValidationError(invoice_number=cn_num, field=field, message=message, severity="error"))
-        if not _is_zero_value_note(cn):
+        if not _is_zero_value_note(cn) and not deadline_warnings:
             for item in cn.items:
                 off_list = _hsn_off_gst_list(_note_item_hsn(item))
                 if off_list:
@@ -2726,6 +2803,13 @@ def gstr1_validate(
                 message=f"Cancelled, and left out of Table 13: GSTR-1 needs a number of {GSTR1_DOCUMENT_NUMBER_RULE}",
                 severity="warning",
             ))
+    for number in _gstr1_cancelled_credit_note_numbers(db, from_date, to_date, company_id):
+        if not is_gstr1_document_number(number):
+            errors.append(Gstr1ValidationError(
+                invoice_number=number, field="Credit Note Number",
+                message=f"Cancelled, and left out of Table 13: GSTR-1 needs a number of {GSTR1_DOCUMENT_NUMBER_RULE}",
+                severity="warning",
+            ))
 
     filed_sales = _filed_sales(invoices)
     zero_rate_count, zero_rate_value = _zero_rate_sales(filed_sales)
@@ -2740,6 +2824,7 @@ def gstr1_validate(
             ),
         ))
 
+    credit_notes = [cn for cn in credit_notes if not _note_deadline_warnings(cn, invoices_by_id)]
     errors.extend(_negative_row_warnings(
         _b2cs_rows(filed_sales, credit_notes, invoices_by_id, company_pos),
         _hsn_section(db, filed_sales, credit_notes, invoices_by_id, to_date),
@@ -2778,7 +2863,9 @@ def gstr1_summary(
     nil_rated = Gstr1CategorySummary()
     exempt = Gstr1CategorySummary()
 
-    credit_notes = _gstr1_credit_notes(db, from_date, to_date, company_id)
+    issued_credit_notes = _gstr1_credit_notes(db, from_date, to_date, company_id, include_expired=True)
+    invoices_by_id = _note_invoices(db, issued_credit_notes, company_id)
+    credit_notes = [cn for cn in issued_credit_notes if not _note_deadline_warnings(cn, invoices_by_id)]
 
     cn_summary = Gstr1CategorySummary()
     # Kept so the response shape stays stable; no document here raises a
@@ -2837,7 +2924,7 @@ def gstr1_summary(
 
     # Use the exported Table 12 rows so units, rates and buyer categories agree.
     filed_sales = _filed_sales(invoices)
-    hsn_section = _hsn_section(db, filed_sales, credit_notes, _note_invoices(db, credit_notes), to_date)
+    hsn_section = _hsn_section(db, filed_sales, credit_notes, invoices_by_id, to_date)
     hsn_items: list[Gstr1HsnSummaryItem] = []
     for section, rows in hsn_section.items():
         category = {"hsn_b2b": "B2B", "hsn_b2c": "B2C", "data": None}[section]
@@ -2860,7 +2947,7 @@ def gstr1_summary(
     zero_rate_invoices, zero_rate_value = _zero_rate_sales(filed_sales)
     doc_summary = Gstr1DocSummary(
         total_invoices=total_sales,
-        total_credit_notes=len(credit_notes),
+        total_credit_notes=len(issued_credit_notes),
         total_debit_notes=0,
         cancelled_invoices=len(_gstr1_cancelled_numbers(db, from_date, to_date, company_id)),
     )
@@ -2901,11 +2988,11 @@ def gstr1_export_json(
         raise HTTPException(status_code=400, detail=period_error)
 
     invoices = _gstr1_invoice_query(db, from_date, to_date, company_id)
-    credit_notes = _gstr1_credit_notes(db, from_date, to_date, company_id)
+    credit_notes = _gstr1_credit_notes(db, from_date, to_date, company_id, include_expired=True)
     company_gstin = (active_company.gst or "").strip().upper() if active_company else ""
 
     # Validate before export
-    invoices_by_id = _note_invoices(db, credit_notes)
+    invoices_by_id = _note_invoices(db, credit_notes, company_id)
     validation_errors = _validate_gstr1_export(db, company_gstin, invoices, credit_notes, invoices_by_id)
     if validation_errors:
         raise HTTPException(
@@ -2913,6 +3000,8 @@ def gstr1_export_json(
             detail="GSTR-1 validation failed: " + "; ".join(validation_errors),
         )
 
+    issued_credit_notes = credit_notes
+    credit_notes = [cn for cn in credit_notes if not _note_deadline_warnings(cn, invoices_by_id)]
     company_pos = _derive_place_of_supply(company_gstin)
     # Filing period is MMYYYY per the GSTN schema. A quarterly return is filed
     # for the last month of its quarter.
@@ -3100,9 +3189,16 @@ def gstr1_export_json(
     # nature 5. Splitting it by credit_note_type reported part of the series as
     # a debit note series that was never issued. `credit_notes` is already
     # filtered to outward, so notes received from suppliers — which number out
-    # of their own DN series — never reach this range. A cancelled note's row is
-    # deleted, so it cannot be counted here.
-    cn_ranges = _doc_ranges([cn.credit_note_number or f"CN-{cn.id}" for cn in credit_notes])
+    # of their own DN series — never reach this range. Like a cancelled invoice,
+    # a cancelled note keeps its number and counts as issued (#800).
+    cancelled_note_numbers = [
+        number for number in _gstr1_cancelled_credit_note_numbers(db, from_date, to_date, company_id)
+        if is_gstr1_document_number(number)
+    ]
+    cn_ranges = _doc_ranges(
+        [cn.credit_note_number or f"CN-{cn.id}" for cn in issued_credit_notes] + cancelled_note_numbers,
+        frozenset(cancelled_note_numbers),
+    )
     if cn_ranges:  # 5 = Credit Note
         doc_det.append({"doc_num": 5, "docs": cn_ranges})
 
@@ -3188,7 +3284,7 @@ def gstr1_export_csv(
 
     # Notes are negative, so a column adds up to what the return files.
     credit_notes = _gstr1_credit_notes(db, from_date, to_date, company_id)
-    invoices_by_id = _note_invoices(db, credit_notes)
+    invoices_by_id = _note_invoices(db, credit_notes, company_id)
     for cn in credit_notes:
         section, ctin, pos = _note_section(cn, invoices_by_id, company_pos)
         original = next((invoices_by_id[i.invoice_id] for i in cn.items if i.invoice_id in invoices_by_id), None)
@@ -3221,6 +3317,7 @@ def gstr1_export_csv(
 def gstr1_export_pdf(
     from_date: date = Query(...),
     to_date: date = Query(...),
+    paper: ReportPaper | None = Query(None),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
     active_company: CompanyProfile = Depends(get_active_company),
@@ -3233,6 +3330,7 @@ def gstr1_export_pdf(
     # Reuse summary logic inline
     company = active_company if company_id is not None else legacy_default_company(db)
     currency = company.currency_code if company and company.currency_code else "INR"
+    resolved_paper = resolve_paper(paper, company, report=True)
 
     invoices = _gstr1_invoice_query(db, from_date, to_date, company_id)
     company_pos = _derive_place_of_supply(company.gst if company else None)
@@ -3248,9 +3346,11 @@ def gstr1_export_pdf(
     nil_rated_count = len(b2cs_all) - len(b2cs_invoices)
     credit_notes = _gstr1_credit_notes(db, from_date, to_date, company_id)
 
+    a5_style = f"<style>{_A5_PLAIN_REPORT_CSS}{_A5_GSTR1_CSS}</style>" if resolved_paper == "a5" else ""
     html = f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8">
 <style>
+    {page_css(resolved_paper) if resolved_paper == "a5" else ""}
     body {{ font-family: Arial, sans-serif; font-size: 11px; margin: 24px; }}
     h1 {{ font-size: 18px; margin-bottom: 4px; }}
     h2 {{ font-size: 14px; margin-top: 20px; }}
@@ -3259,7 +3359,8 @@ def gstr1_export_pdf(
     th, td {{ border: 1px solid #ccc; padding: 5px 8px; font-size: 10px; }}
     th {{ background: #f5f5f5; text-align: left; }}
     .right {{ text-align: right; }}
-</style></head><body>
+</style>
+{a5_style}</head><body>
 <h1>GSTR-1 Filing Report</h1>
 <p class="meta">
     {_e(company.name if company else '')} &mdash;
@@ -3272,25 +3373,25 @@ def gstr1_export_pdf(
         <th>CGST</th><th>SGST</th><th>IGST</th><th>Total Tax</th>
     </tr></thead>
     <tbody>
-        <tr><td>B2B (with GSTIN)</td><td>{len(b2b_invoices)}</td>
+        <tr><td class="category">B2B (with GSTIN)</td><td>{len(b2b_invoices)}</td>
             <td class="right">₹{sum(float(inv.taxable_amount or 0) for inv in b2b_invoices):,.2f}</td>
             <td class="right">₹{sum(float(inv.cgst_amount or 0) for inv in b2b_invoices):,.2f}</td>
             <td class="right">₹{sum(float(inv.sgst_amount or 0) for inv in b2b_invoices):,.2f}</td>
             <td class="right">₹{sum(float(inv.igst_amount or 0) for inv in b2b_invoices):,.2f}</td>
             <td class="right">₹{sum(_invoice_tax(inv) for inv in b2b_invoices):,.2f}</td>
         </tr>
-        <tr><td>B2CL (large interstate, no GSTIN)</td><td>{len(b2cl_invoices)}</td>
+        <tr><td class="category">B2CL (large interstate, no GSTIN)</td><td>{len(b2cl_invoices)}</td>
             <td class="right">₹{sum(float(inv.taxable_amount or 0) for inv in b2cl_invoices):,.2f}</td>
             <td colspan="4" class="right">-</td>
         </tr>
-        <tr><td>B2CS (other sales, no GSTIN, before credit notes)</td><td>{len(b2cs_invoices)}</td>
+        <tr><td class="category">B2CS (other sales, no GSTIN, before credit notes)</td><td>{len(b2cs_invoices)}</td>
             <td class="right">₹{sum(float(inv.taxable_amount or 0) for inv in b2cs_invoices):,.2f}</td>
             <td colspan="4" class="right">-</td>
         </tr>
-        <tr><td>B2C sales with no tax (filed in B2CS at rate 0)</td><td>{nil_rated_count}</td>
+        <tr><td class="category">B2C sales with no tax (filed in B2CS at rate 0)</td><td>{nil_rated_count}</td>
             <td colspan="5" class="right">-</td>
         </tr>
-        <tr><td>Credit notes</td><td>{len(credit_notes)}</td>
+        <tr><td class="category">Credit notes</td><td>{len(credit_notes)}</td>
             <td class="right">₹{sum(float(cn.taxable_amount or 0) for cn in credit_notes):,.2f}</td>
             <td colspan="4" class="right">-</td>
         </tr>
@@ -3299,7 +3400,7 @@ def gstr1_export_pdf(
 <p style="font-size: 9px; color: #888;">Generated on {datetime.now().strftime('%Y-%m-%d %H:%M')}</p>
 </body></html>"""
 
-    pdf_bytes = weasyprint.HTML(string=html, url_fetcher=safe_url_fetcher).write_pdf()
+    pdf_bytes = render_pdf(html, resolved_paper)
     buf = BytesIO(pdf_bytes)
     filename = f"gstr1_{from_date}_{to_date}.pdf"
 

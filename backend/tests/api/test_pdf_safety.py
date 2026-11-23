@@ -168,4 +168,16 @@ def test_every_pdf_render_uses_the_safe_fetcher():
                 assert isinstance(fetcher, ast.Name) and fetcher.id == "safe_url_fetcher", (
                     f"{path}:{node.lineno} renders without safe_url_fetcher"
                 )
-    assert calls >= 7
+    # Every PDF is rendered by src/services/pdf_paper.render_pdf (A4, A5 and the
+    # thermal rolls' two-pass layout), so that is where the one call lives.
+    assert calls >= 1
+
+
+def test_no_pdf_is_written_outside_the_paper_module():
+    """A ``write_pdf`` anywhere else would bypass both the fetcher and the paper size."""
+    for path in SRC.rglob("*.py"):
+        if path.name == "pdf_paper.py":
+            continue
+        for node in ast.walk(ast.parse(path.read_text())):
+            if isinstance(node, ast.Attribute) and node.attr == "write_pdf":
+                raise AssertionError(f"{path}:{node.lineno} writes a PDF outside pdf_paper.render_pdf")

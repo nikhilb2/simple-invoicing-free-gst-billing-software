@@ -235,7 +235,7 @@ def test_statement_email_uses_same_active_only_statement_math(db_session):
     with patch("src.api.routes.email._build_statement_html", return_value="<html>statement</html>") as build_html_mock, patch(
         "src.api.routes.email._jinja_env.get_template",
         return_value=fake_template,
-    ), patch("src.api.routes.email.weasyprint.HTML", return_value=fake_html_instance), patch(
+    ), patch("src.services.pdf_paper.weasyprint.HTML", return_value=fake_html_instance), patch(
         "src.api.routes.email.send_email",
         new=AsyncMock(),
     ) as send_email_mock:

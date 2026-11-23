@@ -1,4 +1,5 @@
 import api from '../../api/client';
+import type { PdfPaper } from '../../types/api';
 import type { Gstr3bExportFormat, Gstr3bWorksheet } from './types';
 
 const REPORT_TIMEOUT_MS = 60_000;
@@ -15,9 +16,10 @@ export async function downloadWorksheet(
   format: Gstr3bExportFormat,
   fromDate: string,
   toDate: string,
+  paper?: PdfPaper,
 ): Promise<void> {
   const response = await api.get(`/ledgers/tax-ledger/gstr3b/export-${format}`, {
-    params: { from_date: fromDate, to_date: toDate },
+    params: { from_date: fromDate, to_date: toDate, paper: format === 'pdf' ? paper : undefined },
     responseType: 'blob',
     timeout: REPORT_TIMEOUT_MS,
   });

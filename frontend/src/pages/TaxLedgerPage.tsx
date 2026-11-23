@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import api, { getApiErrorMessage, getBlobErrorMessage } from '../api/client';
 import StatusToasts from '../components/StatusToasts';
+import PaperSizePicker from '../components/PaperSizePicker';
+import { usePaperChoice } from '../hooks/usePaperChoice';
 import ScopeBar from '../components/ScopeBar';
 import DateRangePresets from '../components/DateRangePresets';
 import LoadingState from '../components/LoadingState';
@@ -13,6 +15,7 @@ import type {
   TaxLedger,
   TaxLiability,
   TaxLiabilityBucket,
+  PdfPaper,
 } from '../types/api';
 import formatCurrency, { formatDate, plural } from '../utils/formatting';
 import { parseGstRate } from '../utils/gstRate';
@@ -28,6 +31,7 @@ export default function TaxLedgerPage() {
   const { activeFY } = useFY();
 
   const [error, setError] = useState('');
+  const [paper, setPaper, requestPaper] = usePaperChoice(true);
   const [success, setSuccess] = useState('');
 
   const [period, setPeriod] = useState(() => ({
@@ -151,6 +155,7 @@ export default function TaxLedgerPage() {
           to_date: period.toDate,
           voucher_type: voucherType === 'all' ? undefined : voucherType,
           gst_rate: numericGstRate,
+          paper: format === 'pdf' ? requestPaper : undefined,
         },
         responseType: 'blob',
       });
@@ -206,6 +211,8 @@ export default function TaxLedgerPage() {
         gstRate={gstRate}
         setGstRate={setGstRate}
         downloading={downloading}
+        paper={paper}
+        onPaperChange={setPaper}
         onDownload={(fmt) => { void handleTaxLedgerDownload(fmt); }}
         activeCurrencyCode={activeCurrencyCode}
         taxLedger={taxLedger}
@@ -360,6 +367,8 @@ function TaxLedgerFilters({
   setGstRate,
   downloading,
   onDownload,
+  paper,
+  onPaperChange,
   activeCurrencyCode,
   taxLedger,
   activeFY,
@@ -371,6 +380,8 @@ function TaxLedgerFilters({
   gstRate: string;
   setGstRate: (v: string) => void;
   downloading: 'pdf' | 'csv' | null;
+  paper: PdfPaper;
+  onPaperChange: (next: PdfPaper) => void;
   onDownload: (fmt: 'pdf' | 'csv') => void;
   activeCurrencyCode: string;
   taxLedger: TaxLedger | null;
@@ -387,6 +398,7 @@ function TaxLedgerFilters({
         presets={<DateRangePresets value={period} onChange={setPeriod} fy={activeFY} />}
         actions={(
           <>
+            <PaperSizePicker value={paper} onChange={onPaperChange} reportOnly inline />
             <button
               type="button"
               className="button button--primary button--small"

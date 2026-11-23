@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from src.core.validation import normalize_gstin, normalize_pan, normalize_tan, pan_from_gstin
+from src.services.pdf_paper import Paper
 
 
 class CompanyTermOut(BaseModel):
@@ -58,6 +59,8 @@ class CompanyProfileBase(BaseModel):
     ifsc_code: str | None = None
     additional_company_info: str | None = None
     show_sku_on_pdf: bool = False
+    # None in a request means "leave it as it is"; responses always carry a value.
+    default_pdf_paper: Paper | None = None
     eway_enabled: bool = True
     # le= is what NUMERIC(12, 2) can hold, so an oversized value is a 422 and not a 500.
     eway_local_threshold: float = Field(default=50000, ge=0, le=9999999999.99)
@@ -96,6 +99,7 @@ class CompanyProfileUpdate(CompanyProfileBase):
 
 class CompanyProfileOut(CompanyProfileBase):
     id: int
+    default_pdf_paper: Paper = "a4"
     enable_purchase_tds: bool = False
     enable_tcs: bool = False
     logo_data: str | None = None

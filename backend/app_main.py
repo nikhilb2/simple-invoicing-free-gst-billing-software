@@ -15,7 +15,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from sqlalchemy import text
 
 from src.api.routes import auth, users, products, inventory, invoices, ledgers, company, payments, smtp, email as email_routes, shortcuts, invoice_series as invoice_series_routes, financial_years as financial_years_routes
-from src.api.routes import auth, users, products, inventory, invoices, ledgers, company, payments, smtp, email as email_routes, shortcuts, invoice_series as invoice_series_routes, financial_years as financial_years_routes, credit_notes as credit_notes_routes, backups as backups_routes, company_accounts as company_accounts_routes, bom as bom_routes, email_logs as email_logs_routes, api_keys as api_keys_routes, dashboard as dashboard_routes, analytics as analytics_routes, marketplace as marketplace_routes, serials as serials_routes, oauth as oauth_routes, well_known as well_known_routes, share as share_routes, public_share as public_share_routes, eway_bill as eway_bill_routes, quotations as quotations_routes, delivery_challans as delivery_challans_routes, gstr3b as gstr3b_routes
+from src.api.routes import auth, users, products, product_bulk_updates, inventory, invoices, ledgers, company, payments, smtp, email as email_routes, shortcuts, invoice_series as invoice_series_routes, financial_years as financial_years_routes, credit_notes as credit_notes_routes, backups as backups_routes, company_accounts as company_accounts_routes, bom as bom_routes, email_logs as email_logs_routes, api_keys as api_keys_routes, dashboard as dashboard_routes, analytics as analytics_routes, marketplace as marketplace_routes, serials as serials_routes, oauth as oauth_routes, well_known as well_known_routes, share as share_routes, public_share as public_share_routes, eway_bill as eway_bill_routes, quotations as quotations_routes, delivery_challans as delivery_challans_routes, gstr3b as gstr3b_routes
 from src.mcp_server import register_mcp
 from src.api.routes import tax_withholding as tax_withholding_routes
 from src.api.routes import tds as tds_routes
@@ -315,6 +315,7 @@ async def analytics_context(request, call_next):
 
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(users.router, prefix="/api/users", tags=["users"])
+app.include_router(product_bulk_updates.router, prefix="/api/products/bulk-update", tags=["products"])
 app.include_router(products.router, prefix="/api/products", tags=["products"])
 app.include_router(inventory.router, prefix="/api/inventory", tags=["inventory"])
 app.include_router(bom_routes.router, prefix="/api/bom", tags=["bom"])

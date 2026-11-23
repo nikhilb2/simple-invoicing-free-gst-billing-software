@@ -15,6 +15,7 @@ from src.schemas.inventory import InventoryAdjust, InventoryOut, PaginatedInvent
 from src.schemas.bom import ProduceRequest, ProductionTransactionOut, PaginatedProductionTransactionOut
 from src.api.deps import get_active_company, get_current_user, require_company_role
 from src.api.pagination import MAX_PAGE
+from src.api.search import contains_pattern
 from src.core.analytics import distinct_id_for, track
 from src.core.document_limits import QUANTITY_STORAGE_CUTOFF
 from src.services import bom_service
@@ -72,7 +73,7 @@ def adjust_inventory(
     inventory = db.query(Inventory).filter(
         Inventory.product_id == payload.product_id,
         Inventory.company_id == active_company.id,
-    ).first()
+    ).with_for_update().first()
     if not inventory:
         inventory = Inventory(company_id=active_company.id, product_id=payload.product_id, quantity=0)
         db.add(inventory)
@@ -170,9 +171,9 @@ def list_inventory(
         query = query.filter(Product.maintain_inventory.is_(maintain_inventory))
 
     if search.strip():
-        term = f"%{search.strip()}%"
+        term = contains_pattern(search)
         query = query.filter(
-            Product.name.ilike(term) | Product.sku.ilike(term)
+            Product.name.ilike(term, escape="\\") | Product.sku.ilike(term, escape="\\")
         )
 
     if sort_by == "name":

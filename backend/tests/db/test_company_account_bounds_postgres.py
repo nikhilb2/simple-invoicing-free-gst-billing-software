@@ -42,6 +42,11 @@ def tenant(app_db, signed_in):  # noqa: F811
     return seeded
 
 
+def _added(listing) -> list[dict]:
+    """The accounts a test added, without the "Cash" account every new company starts with."""
+    return [item for item in listing.json() if item["display_name"] == "Main Account"]
+
+
 def _accounts_count(db) -> int:
     with db.owner_engine.connect() as conn:
         return conn.execute(text("SELECT count(*) FROM company_accounts")).scalar_one()
@@ -69,10 +74,12 @@ def _account(opening_balance, **extra) -> dict:
 
 @pytest.mark.parametrize("amount", OUT_OF_RANGE)
 def test_create_refuses_opening_balance_that_overflows_the_column(tenant, app_db, amount):
+    # Not zero: every new company starts with a seeded "Cash" account.
+    before = _accounts_count(app_db)
     response = tenant["client"].post("/api/company-accounts/", json=_account(amount))
     assert response.status_code == 422, response.text[:500]
     assert response.json()["detail"][0]["loc"] == ["body", "opening_balance"]
-    assert _accounts_count(app_db) == 0
+    assert _accounts_count(app_db) == before
 
 
 @pytest.mark.parametrize("amount", OUT_OF_RANGE)
@@ -98,6 +105,7 @@ def test_create_refuses_nan_and_infinity_opening_balance(tenant, app_db, amount)
     # request is rejected before any row is written. json.dumps (unlike
     # httpx's own json= encoding) emits the bare NaN/Infinity literal, which
     # is exactly what a non-browser API client can send.
+    before = _accounts_count(app_db)
     response = tenant["client"].post(
         "/api/company-accounts/",
         content=json.dumps(_account(amount)),
@@ -105,11 +113,11 @@ def test_create_refuses_nan_and_infinity_opening_balance(tenant, app_db, amount)
     )
     assert response.status_code == 422, response.text[:500]
     assert response.json()["detail"][0]["loc"] == ["body", "opening_balance"]
-    assert _accounts_count(app_db) == 0
+    assert _accounts_count(app_db) == before
 
     listing = tenant["client"].get("/api/company-accounts/")
     assert listing.status_code == 200, listing.text[:500]
-    assert listing.json() == []
+    assert _added(listing) == []
 
 
 @pytest.mark.parametrize("amount", NOT_FINITE)
@@ -125,7 +133,7 @@ def test_update_refuses_nan_and_infinity_opening_balance(tenant, app_db, amount)
 
     listing = tenant["client"].get("/api/company-accounts/")
     assert listing.status_code == 200, listing.text[:500]
-    assert listing.json()[0]["opening_balance"] == pytest.approx(100)
+    assert _added(listing)[0]["opening_balance"] == pytest.approx(100)
 
 
 def test_largest_storable_opening_balance_is_saved(tenant, app_db):
@@ -137,4 +145,4 @@ def test_largest_storable_opening_balance_is_saved(tenant, app_db):
 
     listing = tenant["client"].get("/api/company-accounts/")
     assert listing.status_code == 200, listing.text[:500]
-    assert listing.json()[0]["opening_balance"] == 9_999_999_999.99
+    assert _added(listing)[0]["opening_balance"] == 9_999_999_999.99

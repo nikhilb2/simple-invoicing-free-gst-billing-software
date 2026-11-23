@@ -10,6 +10,7 @@ from src.db.session import get_db
 from src.db.tenant_context import set_tenant_context
 from src.models.company import CompanyProfile
 from src.models.user import User, UserRole
+from src.services.company_accounts import seed_default_cash_account
 from src.services.company_access import (
     can_access_company,
     company_role,
@@ -261,6 +262,8 @@ def _resolve_active_company(
             ifsc_code="",
         )
         db.add(fallback_company)
+        db.flush()
+        seed_default_cash_account(db, fallback_company)
         db.commit()
         db.refresh(fallback_company)
 

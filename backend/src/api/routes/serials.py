@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from typing import Literal
 
 from src.core.analytics import distinct_id_for, track
+from src.api.search import contains_pattern
 from src.db.session import get_db
 from src.models.company import CompanyProfile
 from src.models.invoice import Invoice
@@ -190,7 +191,8 @@ def list_serials(
         # list, so they surface only when asked for by name.
         query = query.filter(ProductSerial.status != STATUS_VOID)
     if search.strip():
-        query = query.filter(ProductSerial.serial_number.ilike(f"%{search.strip()}%"))
+        term = contains_pattern(search)
+        query = query.filter(ProductSerial.serial_number.ilike(term, escape="\\"))
 
     total = query.count()
     serials = (

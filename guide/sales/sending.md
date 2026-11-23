@@ -18,6 +18,8 @@ The preview opens after you save an invoice, or from the eye icon in the [Invoic
 | **E-Way Bill** | Builds the e-way bill JSON file. Sales only, when enabled. |
 | **⋯ → Copies** | Prints 1 to 10 copies, labelled Original, Duplicate, Triplicate and so on. |
 
+The paper picker next to **Copies** lets you print on A4, A5, Thermal 80mm or Thermal 58mm for that print. Your default comes from [Company setup](../getting-started/company-setup). See [Printing on A5 and thermal printers](../settings/printing).
+
 ## Share a link or send on WhatsApp
 
 1. Click **Share**. A link is created.

@@ -121,7 +121,7 @@ class InventoryManager:
                     case((Inventory.company_id == company_id, 0), else_=1)
                 )
             )
-        inventory = query.first()
+        inventory = query.with_for_update().first()
         if not inventory:
             inventory = Inventory(
                 company_id=company_id, product_id=product_id, quantity=0

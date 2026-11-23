@@ -198,6 +198,30 @@ class TestProductsWithInventory:
         assert res.status_code == 200
         assert res.json()["status"] == "active"
 
+    def test_inactive_status_cannot_disable_serial_tracked_inventory(self, client):
+        created = client.post("/api/products/", json={
+            "sku": "SERIAL-ACTIVE", "name": "Tracked phone", "price": 100,
+            "maintain_inventory": True, "track_serials": True,
+            "initial_quantity": 1, "serial_numbers": ["Z1"],
+        })
+        assert created.status_code == 200, created.text
+        product = created.json()
+
+        response = client.put(f"/api/products/{product['id']}/with-inventory", json={
+            "status": "inactive", "name": "Should not be saved",
+        })
+        assert response.status_code == 400, response.text
+        assert response.json()["detail"] == "Serial-tracked products must maintain inventory"
+
+        listing = client.get("/api/products/with-inventory?search=SERIAL-ACTIVE")
+        assert listing.status_code == 200, listing.text
+        item, = listing.json()["items"]
+        assert item["name"] == "Tracked phone"
+        assert item["status"] == "active"
+        assert item["maintain_inventory"] is True
+        assert item["track_serials"] is True
+        assert item["current_stock"] == 1
+
     @pytest.mark.parametrize("body", [{"unit": "   "}, {"status": "archived"}])
     def test_update_rejects_blank_unit_and_unknown_status(self, client, body):
         # Issue #667: the update route must reject a blank unit and an
