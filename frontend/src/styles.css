@@ -9330,3 +9330,52 @@ a.ledger-chip:focus-visible {
   .composer-submit .button { min-height: 48px; }
 
 }
+
+/* ── Delete a ledger with its entries (#1050) ─────────────────────────── */
+.modal-panel--ledger-delete {
+  width: min(480px, 100%);
+  display: grid;
+  gap: 14px;
+}
+
+/* A long party name wraps inside the title; the close button stays beside it.
+   The grid gap already spaces the header from the body. */
+.modal-panel--ledger-delete > .panel__header {
+  flex-wrap: nowrap;
+  margin-bottom: 0;
+}
+
+.ledger-delete__effects {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 6px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+/* "You can't undo this." */
+.ledger-delete__effects li:last-child {
+  font-weight: 700;
+}
+
+.ledger-delete__effects + .field-warning {
+  margin-top: 0;
+}
+
+/* 16px so iOS Safari does not zoom the page when the field takes focus. */
+.ledger-delete__confirm-input {
+  font-size: 1rem;
+  min-height: 44px;
+}
+
+.ledger-delete__actions {
+  justify-content: flex-end;
+}
+
+@media (max-width: 767px) {
+  .ledger-delete__actions .button {
+    flex: 1 1 100%;
+    min-height: 48px;
+  }
+}

@@ -140,6 +140,36 @@ export type LedgerCreate = {
   ifsc_code: string;
 };
 
+/** What deleting a ledger cancels (#1050). */
+export type LedgerEntryCounts = {
+  sales_invoices: number;
+  purchase_invoices: number;
+  receipts: number;
+  payments: number;
+  opening_balance: boolean;
+  credit_notes: number;
+  delivery_challans: number;
+  quotations: number;
+  share_links: number;
+};
+
+/** GET /ledgers/{id}/delete-preview */
+export type LedgerDeletePreview = {
+  ledger_id: number;
+  ledger_name: string;
+  /** Anything at all, cancelled or not, points at the ledger: only delete-with-entries can remove it. */
+  has_entries: boolean;
+  to_cancel: LedgerEntryCounts;
+  /** An invoice to cancel is from an earlier month, so may be in a filed GSTR-1. */
+  has_invoices_from_earlier_months: boolean;
+};
+
+/** POST /ledgers/{id}/delete-with-entries */
+export type LedgerDeleteWithEntriesResult = {
+  message: string;
+  cancelled: LedgerEntryCounts;
+};
+
 export type PaginatedLedgers = {
   items: Ledger[];
   total: number;

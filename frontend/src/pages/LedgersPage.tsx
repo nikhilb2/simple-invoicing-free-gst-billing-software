@@ -17,9 +17,18 @@ import {
 import api, { getApiErrorMessage } from '../api/client';
 import useDebouncedValue from '../hooks/useDebouncedValue';
 import StatusToasts from '../components/StatusToasts';
-import type { CompanyProfile, Ledger, PaginatedLedgers } from '../types/api';
+import type {
+  CompanyProfile,
+  Ledger,
+  LedgerDeletePreview,
+  LedgerDeleteWithEntriesResult,
+  PaginatedLedgers,
+} from '../types/api';
 import formatCurrency, { plural } from '../utils/formatting';
 import ConfirmDialog from '../components/ConfirmDialog';
+import LedgerDeleteDialog from '../components/LedgerDeleteDialog';
+import { useAuth } from '../context/AuthContext';
+import { ledgerDeletedMessage } from '../utils/ledgerDeletion';
 import LedgerCardPhoneChips from '../components/LedgerCardPhoneChips';
 import EmptyState from '../components/EmptyState';
 import LoadingState from '../components/LoadingState';
@@ -66,9 +75,11 @@ export default function LedgersPage() {
   const [ledgers, setLedgers] = useState<Ledger[]>([]);
   const [company, setCompany] = useState<CompanyProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const { isAdmin } = useAuth();
   const [deletingLedgerId, setDeletingLedgerId] = useState<number | null>(null);
-  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
-  const [pendingDeleteLedgerId, setPendingDeleteLedgerId] = useState<number | null>(null);
+  // The ledger whose delete was asked for, once its preview says what it holds.
+  const [deleteTarget, setDeleteTarget] = useState<{ ledger: Ledger; preview: LedgerDeletePreview } | null>(null);
+  const [deleteError, setDeleteError] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   // Search, sort and page live in the URL, like the Day Book page, so a
@@ -173,34 +184,63 @@ export default function LedgersPage() {
     };
   }, []);
 
-  function handleDeleteLedger(ledgerId: number) {
-    setPendingDeleteLedgerId(ledgerId);
-    setShowDeleteDialog(true);
-  }
-
-  function cancelDeleteLedger() {
-    setShowDeleteDialog(false);
-    setPendingDeleteLedgerId(null);
-  }
-
-  async function confirmDeleteLedger() {
-    if (pendingDeleteLedgerId === null) return;
-    setShowDeleteDialog(false);
-
+  // Ask first what the ledger holds: an empty one gets the plain confirm, one with
+  // entries the warning that deleting cancels them (#1050).
+  async function handleDeleteLedger(ledger: Ledger) {
     try {
-      setDeletingLedgerId(pendingDeleteLedgerId);
+      setDeletingLedgerId(ledger.id);
       setError('');
-      setSuccess('');
-      await api.delete(`/ledgers/${pendingDeleteLedgerId}`);
-      setLedgers((current) => current.filter((l) => l.id !== pendingDeleteLedgerId));
-      setTotal((t) => t - 1);
-      setSuccess('Ledger deleted successfully.');
-      setReloadKey((k) => k + 1);
+      setDeleteError('');
+      const res = await api.get<LedgerDeletePreview>(`/ledgers/${ledger.id}/delete-preview`);
+      setDeleteTarget({ ledger, preview: res.data });
     } catch (err) {
       setError(getApiErrorMessage(err, 'Unable to delete ledger'));
     } finally {
       setDeletingLedgerId(null);
-      setPendingDeleteLedgerId(null);
+    }
+  }
+
+  function cancelDeleteLedger() {
+    if (deletingLedgerId !== null) return;
+    setDeleteTarget(null);
+    setDeleteError('');
+  }
+
+  function ledgerRemoved(ledgerId: number, message: string) {
+    setDeleteTarget(null);
+    setLedgers((current) => current.filter((l) => l.id !== ledgerId));
+    setTotal((t) => t - 1);
+    setSuccess(message);
+    setReloadKey((k) => k + 1);
+  }
+
+  async function confirmDeleteLedger() {
+    if (deleteTarget === null) return;
+    const { ledger, preview } = deleteTarget;
+
+    try {
+      setDeletingLedgerId(ledger.id);
+      setError('');
+      setSuccess('');
+      setDeleteError('');
+      if (preview.has_entries) {
+        const res = await api.post<LedgerDeleteWithEntriesResult>(`/ledgers/${ledger.id}/delete-with-entries`);
+        ledgerRemoved(ledger.id, ledgerDeletedMessage(ledger.name, res.data.cancelled));
+      } else {
+        await api.delete(`/ledgers/${ledger.id}`);
+        ledgerRemoved(ledger.id, 'Ledger deleted successfully.');
+      }
+    } catch (err) {
+      const message = getApiErrorMessage(err, 'Unable to delete ledger');
+      if (preview.has_entries) {
+        // Shown in the dialog, beside the button: it names the document that refused.
+        setDeleteError(message);
+      } else {
+        setDeleteTarget(null);
+        setError(message);
+      }
+    } finally {
+      setDeletingLedgerId(null);
     }
   }
 
@@ -446,7 +486,7 @@ export default function LedgersPage() {
                           <button
                             type="button"
                             className="button button--danger button--icon"
-                            onClick={() => handleDeleteLedger(ledger.id)}
+                            onClick={() => void handleDeleteLedger(ledger)}
                             disabled={deletingLedgerId === ledger.id}
                             title={`Delete ledger ${ledger.name}`}
                             aria-label={`Delete ledger ${ledger.name}`}
@@ -494,13 +534,25 @@ export default function LedgersPage() {
         </article>
       </section>
 
-      {showDeleteDialog ? (
+      {deleteTarget && !deleteTarget.preview.has_entries ? (
         <ConfirmDialog
-          message={`Are you sure you want to delete ledger #${pendingDeleteLedgerId}?`}
+          message={`Delete ledger ${deleteTarget.ledger.name}? You can't undo this.`}
           title="Delete ledger"
           confirmText="Delete"
-          cancelText="Cancel"
+          cancelText="Keep ledger"
           danger={true}
+          confirmDisabled={deletingLedgerId !== null}
+          onConfirm={() => void confirmDeleteLedger()}
+          onCancel={cancelDeleteLedger}
+        />
+      ) : null}
+      {deleteTarget && deleteTarget.preview.has_entries ? (
+        <LedgerDeleteDialog
+          ledgerName={deleteTarget.ledger.name}
+          preview={deleteTarget.preview}
+          canDelete={isAdmin}
+          busy={deletingLedgerId !== null}
+          error={deleteError}
           onConfirm={() => void confirmDeleteLedger()}
           onCancel={cancelDeleteLedger}
         />
