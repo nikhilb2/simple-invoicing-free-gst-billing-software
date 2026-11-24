@@ -12,7 +12,7 @@ import {
 } from './fixtures';
 
 /**
- * The Catalogue — /catalogue, "Products & stock".
+ * The Catalogue — /catalogue, "Products & Stock".
  *
  * One page in place of the three this replaces (products.spec.ts and
  * inventory.spec.ts drove /products and /inventory, which are now redirects).
@@ -26,7 +26,7 @@ test.describe('Catalogue', () => {
 
   test('displays the products & stock heading', async ({ authedPage: page }) => {
     await clickNavLink(page, '/catalogue');
-    await expect(page.locator('h1')).toContainText('Products & stock');
+    await expect(page.locator('h1')).toContainText('Products & Stock');
   });
 
   // ── Creating, editing and deleting ─────────────────────────────────────────
@@ -497,7 +497,7 @@ test.describe('Catalogue redirects', () => {
     test(`${legacy} redirects to the catalogue`, async ({ authedPage: page }) => {
       await page.goto(legacy);
       await expect(page).toHaveURL('/catalogue', { timeout: EXPECT_TIMEOUT_MS });
-      await expect(page.locator('h1')).toContainText('Products & stock');
+      await expect(page.locator('h1')).toContainText('Products & Stock');
     });
   }
 

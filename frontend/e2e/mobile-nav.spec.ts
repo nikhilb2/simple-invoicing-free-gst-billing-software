@@ -69,7 +69,7 @@ test.describe('Mobile nav drawer', () => {
     // disclose it first — clickNavLink does that, and the leaf closes the drawer.
     await clickNavLink(page, '/catalogue');
     await expect(page.locator('.sidebar')).not.toHaveClass(/sidebar--open/);
-    await expect(page.locator('h1')).toContainText('Products & stock', {
+    await expect(page.locator('h1')).toContainText('Products & Stock', {
       timeout: 5_000,
     });
   });

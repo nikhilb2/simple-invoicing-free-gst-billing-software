@@ -391,15 +391,17 @@ test.describe('Serial scanning', () => {
     await page.click('button:has-text("Create invoice")');
 
     // Stated on the line that is short, not thrown at the top of the page.
-    const blocker = page.getByRole('alert').filter({
-      hasText: 'This product is serial tracked — scan or add at least one serial before saving.',
-    });
+    const line = page.locator('.line-item').first();
+    const blocker = line.getByRole('alert');
     await expect(blocker).toBeVisible({ timeout: EXPECT_TIMEOUT_MS });
+    await expect(blocker).toContainText('Add a serial number to bill this product.');
+    await expect(blocker.getByRole('button', { name: 'Add serials to stock', exact: true })).toBeVisible();
+    await expect(page.getByRole('alert').filter({ hasText: 'Line 1 has no serial number yet.' })).toBeVisible();
     await expect(page.locator('.toast')).toHaveCount(0);
 
     // Still composing, with the caret already where the fix is.
     await expect(page.locator('h1')).toContainText('Invoice composer');
-    await expect(scanInput(page)).toBeFocused();
+    await expect(line.locator('[id$="-serial-input"]')).toBeFocused();
   });
 
   test('the scan box keeps focus across consecutive scans', async ({ authedPage: page }) => {
