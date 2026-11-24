@@ -122,7 +122,7 @@ describe('GetStartedCard', () => {
     expect(html).toContain('Create your first invoice');
     expect(html).toContain('(optional)');
     expect(html).toContain('href="/cash-bank/accounts"');
-    expect(html).toContain('https://guide.simpleinvoicings.com/getting-started/');
+    expect(html).toContain('https://guide.gstbill.in/getting-started/');
   });
 
   it('shows finished steps as done without an action link', () => {

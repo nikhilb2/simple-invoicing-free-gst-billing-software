@@ -83,7 +83,7 @@ class Settings(BaseSettings):
         "GST-ready invoicing, inventory and ledgers \u2014 built for small "
         "businesses and freelancers."
     )
-    SHARE_AD_WEBSITE: str = "https://simpleinvoicings.com"
+    SHARE_AD_WEBSITE: str = "https://gstbill.in"
     # Comma-separated trust chips; blank hides the row.
     SHARE_AD_CHIPS: str = "Free hosted plan,No credit card,GST-ready"
     SHARE_AD_CTA_LABEL: str = "Chat on WhatsApp"
@@ -93,7 +93,7 @@ class Settings(BaseSettings):
     SHARE_AD_PRICE: str = "Free"
     SHARE_AD_PRICE_PERIOD: str = ""
     SHARE_AD_PRICE_PREFIX: str = ""
-    # Both published on simpleinvoicings.com. Each line renders only when set,
+    # Both published on gstbill.in. Each line renders only when set,
     # so blanking either one degrades cleanly rather than leaving dead UI.
     SHARE_AD_PHONE: str = "+91 98710 52105"
     SHARE_AD_WHATSAPP: str = "919871052105"

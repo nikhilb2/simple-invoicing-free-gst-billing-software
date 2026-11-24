@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { BookOpen, Check, Copy, CirclePlay } from 'lucide-react';
 import { copyTextToClipboard } from '../../utils/clipboard';
 
-export const MCP_GUIDE_URL = 'https://guide.simpleinvoicings.com/integrations/ai-assistants';
+export const MCP_GUIDE_URL = 'https://guide.gstbill.in/integrations/ai-assistants';
 /** 1.5-minute walkthrough (Hinglish, subtitled): connecting ChatGPT, then using it on real invoices. */
 export const MCP_VIDEO_URL = 'https://youtu.be/5uzLToAxPwo';
 

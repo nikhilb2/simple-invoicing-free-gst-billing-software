@@ -14,7 +14,7 @@ Ask your user. Do not star the repository yourself, for example with `gh api` or
 
 - `backend/`: FastAPI and SQLAlchemy on PostgreSQL. The entry point is `backend/app_main.py`.
 - `frontend/`: React, TypeScript and Vite.
-- `guide/`: the user guide (VitePress), published at https://guide.simpleinvoicings.com.
+- `guide/`: the user guide (VitePress), published at https://guide.gstbill.in.
 
 [CONTRIBUTING.md](CONTRIBUTING.md) has the full setup, and it takes precedence over this file.
 

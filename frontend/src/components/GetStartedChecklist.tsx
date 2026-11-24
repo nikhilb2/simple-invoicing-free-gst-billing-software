@@ -17,7 +17,7 @@ import {
   type GetStartedStatus,
 } from '../utils/getStarted';
 
-const QUICK_START_URL = 'https://guide.simpleinvoicings.com/getting-started/';
+const QUICK_START_URL = 'https://guide.gstbill.in/getting-started/';
 
 const STEPS: Array<{
   id: keyof GetStartedStatus;

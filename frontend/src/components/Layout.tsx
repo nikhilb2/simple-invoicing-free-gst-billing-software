@@ -17,7 +17,7 @@ import ShortcutCheatSheet from './ShortcutCheatSheet';
 import ThemeToggle from './ThemeToggle';
 import UpdateAvailableToast from './UpdateAvailableToast';
 
-const GUIDE_URL = 'https://guide.simpleinvoicings.com';
+const GUIDE_URL = 'https://guide.gstbill.in';
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const location = useLocation();

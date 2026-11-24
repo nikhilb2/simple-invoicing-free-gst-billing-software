@@ -301,7 +301,7 @@ def _share_route(request: Request) -> str:
 # Campaign tags on the ad's outbound link. This page sends
 # `Referrer-Policy: no-referrer` and marks the link `rel="noreferrer"` on purpose,
 # so the share token never reaches the marketing site in a Referer header — which
-# also means simpleinvoicings.com would otherwise log every one of these arrivals
+# also means the marketing site would otherwise log every one of these arrivals
 # as direct traffic. These tags are the only thing that identifies a visitor who
 # came from a shared document; utm_content says which kind of document it was.
 _AD_UTM = (

@@ -4,8 +4,8 @@ import McpConnectPanel, { MCP_GUIDE_URL, MCP_VIDEO_URL } from './McpConnectPanel
 
 describe('McpConnectPanel', () => {
   it('shows the URL to paste, a copy button and the guide', () => {
-    const html = renderToStaticMarkup(<McpConnectPanel mcpUrl="https://app.simpleinvoicings.com/mcp" />);
-    expect(html).toContain('https://app.simpleinvoicings.com/mcp');
+    const html = renderToStaticMarkup(<McpConnectPanel mcpUrl="https://app.gstbill.in/mcp" />);
+    expect(html).toContain('https://app.gstbill.in/mcp');
     expect(html).toContain('Copy MCP server URL');
     expect(html).toContain(`href="${MCP_GUIDE_URL}"`);
     expect(html).toContain('target="_blank"');
@@ -37,6 +37,6 @@ describe('McpConnectPanel', () => {
   });
 
   it('points at the AI assistants page of the guide', () => {
-    expect(MCP_GUIDE_URL).toBe('https://guide.simpleinvoicings.com/integrations/ai-assistants');
+    expect(MCP_GUIDE_URL).toBe('https://guide.gstbill.in/integrations/ai-assistants');
   });
 });
