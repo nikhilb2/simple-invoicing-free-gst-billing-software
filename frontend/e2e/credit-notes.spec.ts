@@ -124,6 +124,8 @@ test.describe('Credit notes', () => {
 
   test('cancelling a note from its preview moves it to the Cancelled count', async ({ authedPage: page }) => {
     const { sku, ledgerName } = await seed(page);
+    // Buy before selling: the product counts stock.
+    await createInvoice(page, { sku, ledgerName, voucherType: 'purchase', quantity: '10' });
     await createInvoice(page, { sku, ledgerName, voucherType: 'sales', quantity: '3' });
 
     await openNewCreditNote(page);

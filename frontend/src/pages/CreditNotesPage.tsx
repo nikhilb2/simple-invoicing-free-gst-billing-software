@@ -227,8 +227,11 @@ export default function CreditNotesPage() {
         setProducts(productsRes.data.items);
         setAllInvoices(invoicesRes.data.items);
 
-        if (!hadDeepLink.current && ledgersRes.data.items[0]) {
-          setSelectedLedgerId(String(ledgersRes.data.items[0].id));
+        // This load runs again when the voucher type changes; keep the ledger
+        // the user already picked and only default to the first one.
+        const firstLedger = ledgersRes.data.items[0];
+        if (!hadDeepLink.current && firstLedger) {
+          setSelectedLedgerId((current) => current || String(firstLedger.id));
         }
       } catch (err) {
         if (!cancelled) {
