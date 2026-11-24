@@ -8,6 +8,7 @@ import {
   uniqueGstin,
   selectComboboxOption,
   clickNavLink,
+  openNewCreditNote,
   createProduct,
 } from './fixtures';
 
@@ -115,7 +116,7 @@ test.describe('GSTR-1 filing', () => {
 
   /** Returns one unit of the ledger's first invoice, on a note with this date. */
   async function createNote(page: Page, ledger: string, date: string) {
-    await clickNavLink(page, '/credit-notes');
+    await openNewCreditNote(page);
     await selectComboboxOption(page, 'credit-note-ledger', ledger);
     await page.fill('#credit-note-date', date);
     await page.locator('label:has(input[type="checkbox"])').first().click();

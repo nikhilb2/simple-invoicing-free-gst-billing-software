@@ -6,6 +6,7 @@ import {
   uniqueGstin,
   selectComboboxOption,
   clickNavLink,
+  openNewCreditNote,
   createProduct,
   catalogueSearch,
   catalogueRow,
@@ -69,11 +70,6 @@ test.describe('Credit notes', () => {
     }
   }
 
-  async function openNewCreditNote(page: import('@playwright/test').Page) {
-    await clickNavLink(page, '/credit-notes');
-    await page.getByRole('button', { name: 'New credit note' }).first().click();
-  }
-
   async function stockOf(page: import('@playwright/test').Page, sku: string) {
     await clickNavLink(page, '/catalogue');
     await catalogueSearch(page).fill(sku);
@@ -124,6 +120,36 @@ test.describe('Credit notes', () => {
 
     await page.selectOption('#credit-note-direction', 'inward');
     await expect(page.getByText(/1 active purchase invoice for this ledger/)).toBeVisible({ timeout });
+  });
+
+  test('cancelling a note from its preview moves it to the Cancelled count', async ({ authedPage: page }) => {
+    const { sku, ledgerName } = await seed(page);
+    await createInvoice(page, { sku, ledgerName, voucherType: 'sales', quantity: '3' });
+
+    await openNewCreditNote(page);
+    await selectComboboxOption(page, 'credit-note-ledger', ledgerName);
+    await page.locator('label:has(input[type="checkbox"])').first().click();
+    await page.locator('input[type="number"]').first().fill('1');
+    await page.getByRole('button', { name: 'Create Credit Note' }).click();
+    await expectSuccess(page, 'created');
+
+    await page.locator('#credit-note-search').fill(ledgerName);
+    await expect(page.locator('tbody .link-button')).toHaveCount(1, { timeout });
+
+    const cancelledChip = page.getByRole('group', { name: 'Filter by status' }).getByRole('button', { name: /^Cancelled \(/ });
+    const countOf = async () => Number(((await cancelledChip.textContent()) || '').replace(/\D/g, ''));
+    // The ledger is new, so this search holds only the one note: Cancelled (0).
+    await expect.poll(countOf, { timeout }).toBe(0);
+
+    await page.locator('tbody .link-button').first().click();
+    const preview = page.locator('.modal-overlay[aria-labelledby="credit-note-preview-title"]');
+    await expect(preview).toBeVisible({ timeout });
+    await preview.getByRole('button', { name: 'More actions' }).click();
+    await preview.getByRole('menuitem', { name: /Cancel this/ }).click();
+    await page.getByRole('button', { name: 'Cancel credit note', exact: true }).last().click();
+    await expectSuccess(page, 'Credit note cancelled');
+
+    await expect.poll(countOf, { timeout }).toBe(1);
   });
 
   test('the supplier fields only exist on the purchase tab', async ({ authedPage: page }) => {

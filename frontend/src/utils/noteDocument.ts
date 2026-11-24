@@ -22,8 +22,3 @@ export function noteDocumentFileName(label: NoteDocumentLabel, number: string | 
   const prefix = label.toLowerCase().replace(' ', '_');
   return `${prefix}_${(number || String(id)).replace(/\//g, '_')}.pdf`;
 }
-
-/** The button that opens the preview: only an active note can be shared. */
-export function noteViewButtonLabel(status: string): string {
-  return status === 'active' ? 'View / Share' : 'View';
-}

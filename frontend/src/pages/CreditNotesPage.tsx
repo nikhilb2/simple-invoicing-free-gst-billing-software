@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FilePlus2, Plus, XCircle } from 'lucide-react';
+import { FilePlus2, Plus } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { cancelCreditNote, createCreditNote, listCreditNotes } from '../api/creditNotes';
 import api, { getApiErrorMessage } from '../api/client';
@@ -13,6 +13,8 @@ import LoadingState from '../components/LoadingState';
 import ModalCloseButton from '../components/ModalCloseButton';
 import SearchInput from '../components/SearchInput';
 import { useEscapeClose } from '../hooks/useEscapeClose';
+import useDebouncedValue from '../hooks/useDebouncedValue';
+import { focusAfterCancelDialog } from '../utils/creditNoteCancelFocus';
 import CreditNotesList from './credit-notes/CreditNotesList';
 import { invoiceCreditStatusMeta } from '../common/invoiceCreditStatus';
 import type {
@@ -20,7 +22,6 @@ import type {
   CreditNote,
   CreditNoteCreate,
   CreditNoteDirection,
-  CreditNoteType,
   Invoice,
   PaginatedInvoices,
   PaginatedLedgers,
@@ -36,7 +37,7 @@ import { creditNoteCancelMessage } from '../utils/creditNoteCancelMessage';
 import { billedLineAmounts, returnPreviewTotal } from '../utils/creditNoteAmounts';
 import { toIsoDate } from '../utils/dateRanges';
 import { exportCreditNotesCsv } from './credit-notes/exports';
-import { deepLinkClass, numericParam, useDeepLinkScroll } from '../utils/deepLink';
+import { numericParam, useDeepLinkScroll } from '../utils/deepLink';
 
 type SelectedLineItem = {
   invoice: Invoice;
@@ -44,12 +45,6 @@ type SelectedLineItem = {
   productName: string;
   wholeQuantity: boolean;
   quantityKey: string;
-};
-
-const creditNoteTypeLabels: Record<CreditNoteType, string> = {
-  return: 'Return',
-  discount: 'Discount',
-  adjustment: 'Adjustment',
 };
 
 const createCreditNoteTypeLabels: Record<'return' | 'discount', string> = {
@@ -108,6 +103,8 @@ export default function CreditNotesPage() {
   const [counts, setCounts] = useState({ active: 0, cancelled: 0 });
 
   const [search, setSearch] = useState('');
+  // The list and the status counts follow the debounced text, not each keystroke.
+  const debouncedSearch = useDebouncedValue(search, 300);
   const [statusFilter, setStatusFilter] = useState('');
   const [directionFilter, setDirectionFilter] = useState('');
   const [dateFrom, setDateFrom] = useState('');
@@ -159,17 +156,21 @@ export default function CreditNotesPage() {
     }
   }
 
-  useEscapeClose(useCallback(() => {
-    if (formOpen && !previewCreditNote) closeForm();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [formOpen, submitting, searchParams]));
+  // Read through a ref so the listener keeps one identity and never sees a stale closure.
+  const escapeHandler = useRef(() => {});
+  useEffect(() => {
+    escapeHandler.current = () => {
+      if (formOpen && !previewCreditNote) closeForm();
+    };
+  });
+  useEscapeClose(useCallback(() => escapeHandler.current(), []));
 
   // Status chip counts follow the other filters but not the status itself.
   useEffect(() => {
     let cancelled = false;
     const base = {
       page_size: 1,
-      search,
+      search: debouncedSearch,
       direction: (directionFilter || undefined) as CreditNoteDirection | undefined,
       date_from: dateFrom || undefined,
       date_to: dateTo || undefined,
@@ -186,16 +187,12 @@ export default function CreditNotesPage() {
       }
     })();
     return () => { cancelled = true; };
-  }, [dateFrom, dateTo, directionFilter, refreshKey, search]);
+  }, [dateFrom, dateTo, directionFilter, refreshKey, debouncedSearch]);
 
   useEffect(() => {
     if (!cancelTarget) return;
     document.querySelector<HTMLButtonElement>('[aria-labelledby="confirm-dialog-title"] button')?.focus();
-    return () => {
-      // The table row or the phone card, whichever is showing.
-      Array.from(document.querySelectorAll<HTMLButtonElement>(`#credit-note-${cancelTarget.id} button, #credit-note-${cancelTarget.id}-card button`))
-        .find((button) => button.offsetParent !== null)?.focus();
-    };
+    return () => focusAfterCancelDialog(document, cancelTarget.id);
   }, [cancelTarget]);
 
   // A note only ever covers one voucher type, so the picker only ever offers
@@ -286,7 +283,7 @@ export default function CreditNotesPage() {
         const response = await listCreditNotes({
           page: listPage,
           page_size: pageSize,
-          search,
+          search: debouncedSearch,
           status: statusFilter || undefined,
           direction: (directionFilter || undefined) as CreditNoteDirection | undefined,
           date_from: dateFrom || undefined,
@@ -312,7 +309,7 @@ export default function CreditNotesPage() {
     return () => {
       cancelled = true;
     };
-  }, [dateFrom, dateTo, directionFilter, listPage, refreshKey, search, statusFilter]);
+  }, [dateFrom, dateTo, directionFilter, listPage, refreshKey, debouncedSearch, statusFilter]);
 
   useEffect(() => {
     if (deepLinkCreditNoteId === null) return undefined;
