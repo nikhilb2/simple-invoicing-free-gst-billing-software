@@ -18,6 +18,7 @@ A free, open-source **invoice maker** and **Tally alternative** for shops, trade
 [![Backend: FastAPI](https://img.shields.io/badge/Backend-FastAPI-009688?logo=fastapi)](https://fastapi.tiangolo.com/)
 [![Frontend: React](https://img.shields.io/badge/Frontend-React-61DAFB?logo=react)](https://react.dev/)
 [![DB: PostgreSQL](https://img.shields.io/badge/DB-PostgreSQL-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+[![nikhilb2/simple-invoicing-free-gst-billing-software MCP server](https://glama.ai/mcp/servers/nikhilb2/simple-invoicing-free-gst-billing-software/badges/score.svg)](https://glama.ai/mcp/servers/nikhilb2/simple-invoicing-free-gst-billing-software)
 
 </div>
 

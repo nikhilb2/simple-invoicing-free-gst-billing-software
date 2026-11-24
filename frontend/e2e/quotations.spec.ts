@@ -202,7 +202,11 @@ test.describe('Quotations', () => {
     await expect(banner.locator('[data-warning="serials_required"]')).toContainText('Scan the 2 units');
     await expect(page.locator('#invoice-quantity-1')).toBeDisabled();
     await page.click('button:has-text("Create invoice")');
-    await expect(page.locator('.serial-line__message--blocking')).toBeVisible();
+    const line = page.locator('.line-item').first();
+    await expect(line.getByRole('alert')).toContainText('Add a serial number to bill this product.');
+    await expect(line.getByRole('button', { name: 'Add serials to stock', exact: true })).toBeVisible();
+    await expect(page.getByRole('alert').filter({ hasText: 'Line 1 has no serial number yet.' })).toBeVisible();
+    await expect(line.locator('[id$="-serial-input"]')).toBeFocused();
 
     await page.locator('#scan-bar-input').click();
     for (const imei of imeis) {

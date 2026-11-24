@@ -14,7 +14,7 @@ test.describe('Navigation', () => {
     // clickNavLink re-opens the one it needs. /company is absent because it
     // moved behind /settings and no longer has a rail link (see company.spec).
     const routes: [string, string][] = [
-      ['/catalogue', 'Products & stock'],
+      ['/catalogue', 'Products & Stock'],
       ['/ledgers', 'Ledger master'],
       ['/day-book', 'Day book'],
       ['/invoices', 'Invoice composer'],
@@ -31,7 +31,7 @@ test.describe('Navigation', () => {
 
   test('brand link navigates to dashboard', async ({ authedPage: page }) => {
     await clickNavLink(page, '/catalogue');
-    await expect(page.locator('h1')).toContainText('Products & stock');
+    await expect(page.locator('h1')).toContainText('Products & Stock');
     await page.locator('a.sidebar__brand').click();
     await expect(page.locator('h1')).toContainText('Operations dashboard');
   });
