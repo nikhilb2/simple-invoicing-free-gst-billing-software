@@ -56,11 +56,10 @@ class RestorePreflight:
 
 
 class MigrationFailed(Exception):
-    def __init__(self, name: str, error: Exception):
+    def __init__(self, step: str, error: Exception):
         # A DBAPI error's first line is the database's message; the rest is SQL.
-        message = str(getattr(error, "orig", None) or error).strip().splitlines()
-        super().__init__(f"migration {name} failed: {message[0] if message else type(error).__name__}")
-        self.name = name
+        message = str(getattr(error, "orig", None) or getattr(error, "detail", None) or error).strip().splitlines()
+        super().__init__(f"{step} failed: {message[0] if message else type(error).__name__}")
 
 
 class _PreparedBackup:
@@ -448,7 +447,7 @@ def _apply_pending_migrations() -> int:
                 module.up(conn)
             except Exception as err:
                 # Raising inside engine.begin() rolls back every migration of this run.
-                raise MigrationFailed(migration_file.stem, err) from err
+                raise MigrationFailed(f"migration {migration_file.stem}", err) from err
             conn.execute(
                 text("INSERT INTO _migrations (name) VALUES (:name)"),
                 {"name": migration_file.stem},
@@ -627,11 +626,16 @@ def restore_backup(upload: UploadFile) -> tuple[str, int]:
 
         try:
             applied_count = _apply_pending_migrations()
-        except MigrationFailed as err:
-            logger.error(f"restore migration failed: {err}")
+        except Exception as err:
+            # Any failure here (not only a migration's up(): also loading one,
+            # recording it, the row-level security step or the connection itself)
+            # leaves the backup's data on its older schema.
+            failure = err if isinstance(err, MigrationFailed) else MigrationFailed("running the pending migrations", err)
+            failure.__cause__ = failure.__cause__ or err
+            logger.error(f"restore migration failed: {failure}")
             if snapshot_path is None:
-                raise HTTPException(status_code=500, detail=f"Restore failed: {err}") from err
-            _roll_back_restore(snapshot_path, env, err)
+                raise HTTPException(status_code=500, detail=f"Restore failed: {failure}") from err
+            _roll_back_restore(snapshot_path, env, failure)
         logger.debug(f"restore completed: compatibility={compatibility}, applied_migrations={applied_count}")
         return compatibility, applied_count
     finally:
@@ -648,16 +652,20 @@ def _roll_back_restore(snapshot_path: Path, env: dict[str, str], failure: Migrat
         _terminate_other_db_sessions(env)
         _dispose_engines()
         # Drop every app table first, so constraints only the backup's older
-        # schema had cannot block the snapshot's own DROP commands.
+        # schema had cannot block the snapshot's own DROP commands. This only
+        # drops tables the current models define: a table that exists only in
+        # the backup's older schema stays in the database after the rollback.
         _apply_dump(snapshot_path, env, _app_table_drops(keep=set()))
-    except HTTPException as rollback_err:
-        logger.error(f"restore rollback failed: {rollback_err.detail}")
+    except Exception as err:
+        rollback_detail = getattr(err, "detail", None) or str(err) or type(err).__name__
+        logger.error(f"restore rollback failed: {rollback_detail}")
         raise HTTPException(
             status_code=500,
             detail=(
                 f"Restore failed: {failure}. Putting back the data from before the restore also "
-                f"failed ({rollback_err.detail}), so the database holds the backup's data on an "
-                "older schema. Restart the app to retry the migrations, or restore another backup."
+                f"failed ({rollback_detail}), so the database holds the backup's data on an "
+                "older schema. Restore another (newer) backup, or fix the data and restart the "
+                "app to retry the migrations."
             ),
         ) from failure
     logger.debug("restore rolled back to the pre-restore snapshot")
