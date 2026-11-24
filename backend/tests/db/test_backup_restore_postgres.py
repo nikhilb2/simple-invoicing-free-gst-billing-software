@@ -123,3 +123,62 @@ def test_restore_error_rolls_back_table_cleanup_and_data(backup_db, monkeypatch)
         assert conn.execute(text("SELECT name FROM company_profiles")).scalar_one() == "After the backup"
         assert conn.execute(text("SELECT id FROM product_bulk_updates")).scalar_one() == "new-update"
     assert NEW_MIGRATION in backup.get_applied_migrations()
+
+
+FAILING_MIGRATION = "20991231000001_fails_on_backup_data"
+
+
+def add_migration_that_fails_on_backup_data(monkeypatch, tmp_path):
+    """Apply one more migration that the current data passes and the backup's data does not."""
+    migrations = tmp_path / "migrations"
+    migrations.mkdir()
+    for path in backup.MIGRATIONS_DIR.glob("*.py"):
+        (migrations / path.name).symlink_to(path)
+    (migrations / f"{FAILING_MIGRATION}.py").write_text(
+        "from sqlalchemy import text\n\n"
+        "def up(conn):\n"
+        "    conn.execute(text(\"SELECT 1 / (CASE WHEN name = 'In the backup' THEN 0 ELSE 1 END) FROM company_profiles\"))\n"
+    )
+    monkeypatch.setattr(backup, "MIGRATIONS_DIR", migrations)
+    assert backup._apply_pending_migrations() == 1
+
+
+def assert_database_as_before_restore(db):
+    with db.connect() as conn:
+        assert conn.execute(text("SELECT name FROM company_profiles")).scalar_one() == "After the backup"
+        assert conn.execute(text("SELECT id FROM product_bulk_updates")).scalar_one() == "new-update"
+    applied = backup.get_applied_migrations()
+    assert NEW_MIGRATION in applied
+    assert FAILING_MIGRATION in applied
+
+
+def test_failed_migration_after_restore_rolls_back_and_names_it(backup_db, monkeypatch, tmp_path):
+    path = old_archive(backup_db)
+    add_migration_that_fails_on_backup_data(monkeypatch, tmp_path)
+
+    with pytest.raises(HTTPException) as failure:
+        backup.restore_backup(upload(path))
+
+    assert failure.value.status_code == 500
+    assert "rolled back" in failure.value.detail
+    assert f"migration {FAILING_MIGRATION} failed: division by zero" in failure.value.detail
+    assert_database_as_before_restore(backup_db)
+
+
+def test_failed_rollback_after_failed_migration_is_reported(backup_db, monkeypatch, tmp_path):
+    path = old_archive(backup_db)
+    add_migration_that_fails_on_backup_data(monkeypatch, tmp_path)
+    drops = backup._app_table_drops
+    # Only the rollback drops every app table; make that step fail.
+    monkeypatch.setattr(
+        backup,
+        "_app_table_drops",
+        lambda keep: drops(keep) if keep else "SELECT missing_function_to_fail_rollback();\n",
+    )
+
+    with pytest.raises(HTTPException) as failure:
+        backup.restore_backup(upload(path))
+
+    assert f"migration {FAILING_MIGRATION} failed" in failure.value.detail
+    assert "also failed" in failure.value.detail
+    assert "Restart the app to retry the migrations" in failure.value.detail
