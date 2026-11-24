@@ -133,14 +133,18 @@ test.describe('Credit notes', () => {
     await page.locator('label:has(input[type="checkbox"])').first().click();
     await page.locator('input[type="number"]').first().fill('1');
     await page.getByRole('button', { name: 'Create Credit Note' }).click();
-    await expectSuccess(page, 'created');
+    // "Credit note CN-… created." The list search matches note numbers, not ledgers.
+    const toast = page.locator('.toast--success').filter({ hasText: /Credit note \S+ created/ }).last();
+    await expect(toast).toBeVisible({ timeout });
+    const noteNumber = ((await toast.textContent()) || '').match(/Credit note (\S+) created/)?.[1] || '';
+    expect(noteNumber).not.toBe('');
 
-    await page.locator('#credit-note-search').fill(ledgerName);
+    await page.locator('#credit-note-search').fill(noteNumber);
     await expect(page.locator('tbody .link-button')).toHaveCount(1, { timeout });
 
     const cancelledChip = page.getByRole('group', { name: 'Filter by status' }).getByRole('button', { name: /^Cancelled \(/ });
     const countOf = async () => Number(((await cancelledChip.textContent()) || '').replace(/\D/g, ''));
-    // The ledger is new, so this search holds only the one note: Cancelled (0).
+    // The search holds only this note: Cancelled (0).
     await expect.poll(countOf, { timeout }).toBe(0);
 
     await page.locator('tbody .link-button').first().click();
