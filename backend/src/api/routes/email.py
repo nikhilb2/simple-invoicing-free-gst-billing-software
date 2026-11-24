@@ -250,7 +250,7 @@ async def send_ledger_statement_email(
     if payload.from_date > payload.to_date:
         raise HTTPException(status_code=400, detail="from_date must be before or equal to to_date")
 
-    ledger_query = db.query(Ledger).filter(Ledger.id == ledger_id)
+    ledger_query = db.query(Ledger).filter(Ledger.id == ledger_id, Ledger.deleted_at.is_(None))
     if company_id is not None:
         ledger_query = ledger_query.filter(company_scope(Ledger.company_id, company_id))
     ledger = ledger_query.first()
@@ -360,7 +360,7 @@ async def send_payment_reminder_email(
     if payload is None:
         payload = EmailSendRequest()
 
-    ledger_query = db.query(Ledger).filter(Ledger.id == ledger_id)
+    ledger_query = db.query(Ledger).filter(Ledger.id == ledger_id, Ledger.deleted_at.is_(None))
     if company_id is not None:
         ledger_query = ledger_query.filter(company_scope(Ledger.company_id, company_id))
     ledger = ledger_query.first()

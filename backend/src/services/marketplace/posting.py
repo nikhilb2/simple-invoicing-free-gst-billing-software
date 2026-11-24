@@ -113,6 +113,7 @@ def resolve_counterparty_ledger(
         )
 
     remote_id = order.counterparty_remote_id
+    link = None
     if remote_id:
         link = (
             db.query(MarketplaceLedgerLink)
@@ -123,13 +124,19 @@ def resolve_counterparty_ledger(
             .first()
         )
         if link:
-            ledger = db.query(Ledger).filter(Ledger.id == link.ledger_id).first()
+            ledger = db.query(Ledger).filter(Ledger.id == link.ledger_id, Ledger.deleted_at.is_(None)).first()
             if ledger:
                 return ledger
 
+    # A deleted ledger (#1050) is never posted to: its GSTIN finds a live ledger
+    # or a new one, and the seller's link moves there.
     ledger = (
         db.query(Ledger)
-        .filter(Ledger.company_id == connection.company_id, Ledger.gst == gstin)
+        .filter(
+            Ledger.company_id == connection.company_id,
+            Ledger.gst == gstin,
+            Ledger.deleted_at.is_(None),
+        )
         .first()
     )
     if ledger is None:
@@ -145,7 +152,10 @@ def resolve_counterparty_ledger(
         db.add(ledger)
         db.flush()
 
-    if remote_id:
+    if remote_id and link:
+        link.ledger_id = ledger.id
+        db.flush()
+    elif remote_id:
         db.add(
             MarketplaceLedgerLink(
                 company_id=connection.company_id,

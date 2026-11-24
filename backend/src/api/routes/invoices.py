@@ -996,6 +996,13 @@ def restore_invoice(
         invoice, source_quotation = lock_invoice_for_status_change(db, invoice)
         if invoice.status != "cancelled":
             raise HTTPException(status_code=400, detail="Invoice is not cancelled")
+        # Deleting a ledger cancels its invoices (#1050); one brought back would be
+        # live on a ledger that no longer shows anywhere.
+        if invoice.ledger is not None and invoice.ledger.deleted_at is not None:
+            raise HTTPException(
+                status_code=400,
+                detail="This invoice's ledger was deleted, so the invoice cannot be restored",
+            )
         require_restorable(db, source_quotation, invoice)
         require_challan_restorable(db, source_challan, invoice)
         processor = InvoiceProcessor(db)

@@ -229,9 +229,11 @@ def get_invoice(db: Session, company_id: int, invoice_id: int) -> Invoice | None
 def get_ledger(db: Session, company_id: int, ledger_id: int) -> Ledger | None:
     # The `company_id IS NULL` arm mirrors the authenticated ledger routes exactly:
     # pre-multi-company rows were never backfilled and are still reachable there.
+    # A deleted ledger (#1050) is not found, so its statement can be neither
+    # shared nor downloaded.
     return (
         db.query(Ledger)
-        .filter(Ledger.id == ledger_id)
+        .filter(Ledger.id == ledger_id, Ledger.deleted_at.is_(None))
         .filter(company_scope(Ledger.company_id, company_id))
         .first()
     )

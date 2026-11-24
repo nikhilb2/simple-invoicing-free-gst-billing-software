@@ -299,6 +299,32 @@ class TestSellerPosting:
         assert invoice.ledger_id == existing.id
         assert db_session.query(Buyer).filter(Buyer.company_id == company.id).count() == 1
 
+    def test_a_deleted_ledger_is_never_posted_to(self, db_session):
+        """A ledger deleted with its entries (#1050) is hidden: the next order goes
+        to a new ledger with the same GSTIN, and the seller's link moves to it."""
+        company = make_company(db_session)
+        user = make_user(db_session)
+        make_fy(db_session, company.id)
+        product = make_product(db_session, company.id)
+        connection = make_connection(db_session, company.id, user.id)
+        make_listing(db_session, company.id, product.id)
+        first = make_order(db_session, company.id, remote_order_id="ord_1")
+        db_session.commit()
+        posting_service.post_order(db_session, connection, first.id)
+        deleted = db_session.query(Buyer).filter(Buyer.company_id == company.id).one()
+        deleted.deleted_at = datetime.utcnow()
+        second = make_order(db_session, company.id, remote_order_id="ord_2")
+        db_session.commit()
+
+        posting_service.post_order(db_session, connection, second.id)
+
+        db_session.refresh(second)
+        invoice = db_session.query(Invoice).filter(Invoice.id == second.posted_invoice_id).one()
+        assert invoice.ledger_id != deleted.id
+        assert db_session.get(Buyer, invoice.ledger_id).gst == BUYER_SAME_STATE
+        links = db_session.query(MarketplaceLedgerLink).all()
+        assert [link.ledger_id for link in links] == [invoice.ledger_id]
+
     def test_posting_report_payload_carries_decimal_strings(self, db_session):
         company = make_company(db_session)
         user = make_user(db_session)

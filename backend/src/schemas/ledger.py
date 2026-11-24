@@ -115,6 +115,37 @@ class PaginatedLedgerOut(BaseModel):
     total_pages: int
 
 
+class LedgerEntryCountsOut(BaseModel):
+    """What deleting a ledger cancels (#1050). Opening balance is yes or no."""
+
+    sales_invoices: int = 0
+    purchase_invoices: int = 0
+    receipts: int = 0
+    payments: int = 0
+    opening_balance: bool = False
+    credit_notes: int = 0
+    delivery_challans: int = 0
+    quotations: int = 0
+    share_links: int = 0
+
+
+class LedgerDeletePreviewOut(BaseModel):
+    ledger_id: int
+    ledger_name: str
+    # Anything at all points at the ledger, cancelled or not. False: a plain delete
+    # removes it. True: only deleting it with its entries can.
+    has_entries: bool
+    to_cancel: LedgerEntryCountsOut
+    # An invoice to cancel is dated before this month, so it may already be in a
+    # GSTR-1 that was filed.
+    has_invoices_from_earlier_months: bool
+
+
+class LedgerDeleteWithEntriesOut(BaseModel):
+    message: str
+    cancelled: LedgerEntryCountsOut
+
+
 class LedgerStatementInvoiceAllocation(BaseModel):
     invoice_id: int
     invoice_number: str | None = None

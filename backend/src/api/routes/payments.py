@@ -117,7 +117,8 @@ def create_payment(
     _ensure_single_opening_balance(db, payload.ledger_id, payload.voucher_type, company_id)
 
     if payload.ledger_id is not None:
-        ledger_query = db.query(Ledger).filter(Ledger.id == payload.ledger_id)
+        # A deleted ledger (#1050) takes no new receipts or payments.
+        ledger_query = db.query(Ledger).filter(Ledger.id == payload.ledger_id, Ledger.deleted_at.is_(None))
         if company_id is not None:
           ledger_query = ledger_query.filter(company_scope(Ledger.company_id, company_id))
         ledger = ledger_query.first()

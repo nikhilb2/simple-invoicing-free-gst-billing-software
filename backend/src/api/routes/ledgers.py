@@ -1,5 +1,6 @@
 import calendar
 import csv
+import logging
 import re
 from dataclasses import dataclass
 from datetime import date, datetime, time, timezone
@@ -31,9 +32,11 @@ from src.models.quotation import Quotation
 from src.models.delivery_challan import DeliveryChallan
 from src.models.user import User, UserRole
 from src.schemas.invoice import OutstandingInvoiceOut
+from src.schemas.ledger import LedgerDeletePreviewOut, LedgerDeleteWithEntriesOut, LedgerEntryCountsOut
 from src.schemas.ledger import DayBookEntry, DayBookOut, Gstr1B2BInvoice, Gstr1CategorySummary, Gstr1DocSummary, Gstr1HsnSummaryItem, Gstr1JsonExport, Gstr1Summary, Gstr1ValidationError, Gstr1ValidationResult, LedgerCreate, LedgerOut, LedgerStatementEntry, LedgerStatementInvoiceAllocation, LedgerStatementOut, PaginatedLedgerOut, TaxLedgerEntry, TaxLedgerOut, TaxLedgerTotals, TaxLiability, TaxLiabilityBucket
 from src.schemas.ledger_address import LedgerAddressCreate, LedgerAddressOut, LedgerAddressUpdate
 from src.services.credit_note_reporting import get_credit_note_ledger_summary
+from src.services.ledger_deletion import delete_ledger_with_entries, ledger_has_documents, preview_ledger_deletion
 from src.services.credit_note_deadline import section34_warning
 from src.services.financial_year import get_active_fy
 from src.services.gst_returns.setoff import compute_setoff
@@ -48,6 +51,8 @@ from src.services.gst_tax_service import b2cl_limit, gstr1_section, india_now, i
 from src.services.uqc import hsn_uqc
 from src.core.validation import GSTIN_REGEX, GSTR1_DOCUMENT_NUMBER_RULE, HSN_SAC_REGEX, is_gst_rate_slab, is_gstr1_document_number, is_known_hsn_sac
 from src.services.company_access import company_scope, legacy_default_company
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -681,7 +686,8 @@ def create_ledger(
   company_id = getattr(active_company, "id", None)
   gst = payload.gst
   if gst:
-    existing_query = db.query(Ledger).filter(Ledger.gst == gst)
+    # A deleted ledger's GSTIN is free again (#1050).
+    existing_query = db.query(Ledger).filter(Ledger.gst == gst, Ledger.deleted_at.is_(None))
     if company_id is not None:
       existing_query = existing_query.filter(company_scope(Ledger.company_id, company_id))
     existing_ledger = existing_query.first()
@@ -754,7 +760,9 @@ def list_ledgers(
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     company_id = getattr(active_company, "id", None)
-    query = db.query(Ledger)
+    # Every ledger picker and search reads this list, so a deleted ledger (#1050)
+    # drops out of all of them here.
+    query = db.query(Ledger).filter(Ledger.deleted_at.is_(None))
     if company_id is not None:
       query = query.filter(company_scope(Ledger.company_id, company_id))
     if search.strip():
@@ -1175,12 +1183,7 @@ def get_ledger(
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     company_id = getattr(active_company, "id", None)
-    query = db.query(Ledger).filter(Ledger.id == ledger_id)
-    if company_id is not None:
-        query = query.filter(company_scope(Ledger.company_id, company_id))
-    ledger = query.first()
-    if not ledger:
-        raise HTTPException(status_code=404, detail=f"Ledger {ledger_id} not found")
+    ledger = _get_ledger_or_404(db, ledger_id, company_id)
     return _serialize_ledger(db, ledger, company_id=company_id)
 
 @router.get("/{ledger_id}/unpaid-invoices", response_model=list[OutstandingInvoiceOut])
@@ -1194,12 +1197,7 @@ def list_unpaid_invoices(
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     company_id = getattr(active_company, "id", None)
-    ledger_query = db.query(Ledger).filter(Ledger.id == ledger_id)
-    if company_id is not None:
-      ledger_query = ledger_query.filter(company_scope(Ledger.company_id, company_id))
-    ledger = ledger_query.first()
-    if not ledger:
-        raise HTTPException(status_code=404, detail=f"Ledger {ledger_id} not found")
+    _get_ledger_or_404(db, ledger_id, company_id)
 
     rows = get_outstanding_invoices_for_ledger(
         db,
@@ -1239,16 +1237,13 @@ def update_ledger(
   active_company: CompanyProfile = Depends(get_active_company),
 ):
     company_id = getattr(active_company, "id", None)
-    ledger_query = db.query(Ledger).filter(Ledger.id == ledger_id)
-    if company_id is not None:
-        ledger_query = ledger_query.filter(company_scope(Ledger.company_id, company_id))
-    ledger = ledger_query.first()
-    if not ledger:
-        raise HTTPException(status_code=404, detail=f"Ledger {ledger_id} not found")
+    ledger = _get_ledger_or_404(db, ledger_id, company_id)
 
     gst = payload.gst
     if gst:
-        gst_owner_query = db.query(Ledger).filter(Ledger.gst == gst, Ledger.id != ledger_id)
+        gst_owner_query = db.query(Ledger).filter(
+            Ledger.gst == gst, Ledger.id != ledger_id, Ledger.deleted_at.is_(None)
+        )
         if company_id is not None:
           gst_owner_query = gst_owner_query.filter(company_scope(Ledger.company_id, company_id))
         gst_owner = gst_owner_query.first()
@@ -1298,13 +1293,10 @@ def delete_ledger(
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     company_id = getattr(active_company, "id", None)
-    ledger_query = db.query(Ledger).filter(Ledger.id == ledger_id)
-    if company_id is not None:
-        ledger_query = ledger_query.filter(company_scope(Ledger.company_id, company_id))
-    ledger = ledger_query.first()
-    if not ledger:
-        raise HTTPException(status_code=404, detail=f"Ledger {ledger_id} not found")
+    ledger = _get_ledger_or_404(db, ledger_id, company_id)
 
+    # A ledger with entries is only deleted together with them, through
+    # delete-with-entries below, which the UI asks for after a warning.
     has_invoices_query = db.query(Invoice.id).filter(Invoice.ledger_id == ledger_id)
     if company_id is not None:
         has_invoices_query = has_invoices_query.filter(company_scope(Invoice.company_id, company_id))
@@ -1344,6 +1336,65 @@ def delete_ledger(
     return {"message": "Ledger deleted"}
 
 
+# Both routes below are include_in_schema=False so that they never become MCP tools
+# (see src/mcp_server/registry.py): cancelling every document of a party is a step a
+# person takes in the UI, after reading what it does.
+@router.get("/{ledger_id}/delete-preview", response_model=LedgerDeletePreviewOut, include_in_schema=False)
+def preview_delete_ledger(
+    ledger_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_company_role(UserRole.admin, UserRole.manager)),
+    active_company: CompanyProfile = Depends(get_active_company),
+):
+    """What deleting the ledger cancels, for the warning dialog (#1050)."""
+    company_id = getattr(active_company, "id", None)
+    ledger = _get_ledger_or_404(db, ledger_id, company_id)
+    counts, earlier_months = preview_ledger_deletion(db, ledger, company_id)
+    return LedgerDeletePreviewOut(
+        ledger_id=ledger.id,
+        ledger_name=ledger.name,
+        has_entries=ledger_has_documents(db, ledger.id, company_id),
+        to_cancel=LedgerEntryCountsOut(**counts.as_dict()),
+        has_invoices_from_earlier_months=earlier_months,
+    )
+
+
+@router.post("/{ledger_id}/delete-with-entries", response_model=LedgerDeleteWithEntriesOut, include_in_schema=False)
+def delete_ledger_with_entries_route(
+    ledger_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_company_role(UserRole.admin)),
+    active_company: CompanyProfile = Depends(get_active_company),
+):
+    """Cancel everything live on the ledger and hide it, in one transaction (#1050).
+
+    Admins only. If any document refuses to cancel, nothing changes and the 409
+    names that document.
+    """
+    company_id = getattr(active_company, "id", None)
+    ledger = _get_ledger_or_404(db, ledger_id, company_id)
+    try:
+        counts = delete_ledger_with_entries(db, ledger, company_id, current_user.id)
+        db.commit()
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception:
+        logger.exception("Error deleting ledger %s with its entries", ledger_id)
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Failed to delete the ledger")
+
+    track(
+        "ledger_deleted_with_entries",
+        distinct_id_for(current_user),
+        {"ledger_id": ledger_id, **counts.as_dict()},
+    )
+    return LedgerDeleteWithEntriesOut(
+        message="Ledger deleted and its entries cancelled",
+        cancelled=LedgerEntryCountsOut(**counts.as_dict()),
+    )
+
+
 @router.get("/{ledger_id}/statement", response_model=LedgerStatementOut)
 def get_ledger_statement(
     ledger_id: int,
@@ -1371,12 +1422,7 @@ def get_ledger_statement(
     if from_date > to_date:
         raise HTTPException(status_code=400, detail="from_date must be before or equal to to_date")
 
-    ledger_query = db.query(Ledger).filter(Ledger.id == ledger_id)
-    if company_id is not None:
-      ledger_query = ledger_query.filter(company_scope(Ledger.company_id, company_id))
-    ledger = ledger_query.first()
-    if not ledger:
-        raise HTTPException(status_code=404, detail=f"Ledger {ledger_id} not found")
+    ledger = _get_ledger_or_404(db, ledger_id, company_id)
 
     statement_data = _build_ledger_statement_data(db, ledger, from_date, to_date, company_id=company_id)
 
@@ -1515,7 +1561,9 @@ def download_ledger_statement_csv(
 # ---------------------------------------------------------------------------
 
 def _get_ledger_or_404(db: Session, ledger_id: int, company_id: int | None) -> Ledger:
-    query = db.query(Ledger).filter(Ledger.id == ledger_id)
+    """A live ledger of the company. A deleted one (#1050) is not found: its
+    documents keep its name, but the ledger itself is gone from every screen."""
+    query = db.query(Ledger).filter(Ledger.id == ledger_id, Ledger.deleted_at.is_(None))
     if company_id is not None:
         query = query.filter(company_scope(Ledger.company_id, company_id))
     ledger = query.first()

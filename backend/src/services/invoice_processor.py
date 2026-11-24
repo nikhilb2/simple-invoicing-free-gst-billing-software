@@ -146,7 +146,8 @@ class InvoiceProcessor:
 
         Raises 404 if not found.
         """
-        query = self.db.query(Ledger).filter(Ledger.id == ledger_id)
+        # A deleted ledger (#1050) takes no new documents.
+        query = self.db.query(Ledger).filter(Ledger.id == ledger_id, Ledger.deleted_at.is_(None))
         if company_id is not None:
             query = query.filter(
                 company_scope(Ledger.company_id, company_id)
