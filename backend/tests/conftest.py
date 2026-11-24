@@ -63,11 +63,26 @@ def db_session():
     finally:
         db.close()
 
-@pytest.fixture(autouse=True)
-def setup_db():
+@pytest.fixture(scope="session", autouse=True)
+def _sqlite_schema():
+    # The schema is built once per process (so once per pytest-xdist worker, each
+    # worker being its own process with its own in-memory database), not around
+    # every test: create_all and drop_all of ~60 tables took ~45 s over the suite.
     Base.metadata.create_all(bind=engine)
     yield
     Base.metadata.drop_all(bind=engine)
+
+
+@pytest.fixture(autouse=True)
+def setup_db(_sqlite_schema):
+    # Every test starts on empty tables, as it did on a freshly created schema.
+    # Deleting after the test (children before parents) leaves the same state as
+    # drop_all and create_all did: SQLite hands out ids from max(id) + 1, so an
+    # empty table restarts at 1, and no model uses AUTOINCREMENT.
+    yield
+    with engine.begin() as connection:
+        for table in reversed(Base.metadata.sorted_tables):
+            connection.execute(table.delete())
 
 @pytest.fixture(autouse=True)
 def _reset_auth_module_state():

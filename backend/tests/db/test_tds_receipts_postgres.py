@@ -7,7 +7,6 @@ spend the same remaining amount. SQLite ignores FOR UPDATE, so that can only be 
 here. Skipped when DATABASE_URL is not Postgres.
 """
 
-import time
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
@@ -15,6 +14,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text
 
 from app_main import app
+from lock_helpers import wait_until_blocked
 from src.core.config import settings
 from test_quotation_bounds_postgres import tenant  # noqa: F401
 from test_quotation_convert_postgres import app_db, deployment, signed_in  # noqa: F401
@@ -165,7 +165,7 @@ def _pile_up_behind_a_lock(db, invoice_id: int, requests: list) -> list:
     try:
         with ThreadPoolExecutor(max_workers=len(requests)) as pool:
             futures = [pool.submit(request) for request in requests]
-            time.sleep(1)
+            wait_until_blocked(db, owner, holding, futures)
             assert not any(future.done() for future in futures), "a request went past a held invoice row lock"
             holding.commit()
             return [future.result(timeout=30) for future in futures]

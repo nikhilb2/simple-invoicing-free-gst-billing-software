@@ -9,7 +9,6 @@ it, whatever order the threads run in. Skipped when DATABASE_URL is not Postgres
 """
 
 import sys
-import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -18,6 +17,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text
 
 from app_main import app
+from lock_helpers import wait_until_blocked
 from src.core.config import settings
 # Fixtures, imported by name so pytest finds them here too.
 from test_quotation_convert_postgres import (  # noqa: F401
@@ -54,7 +54,7 @@ def _pile_up_behind_a_lock(db, lock_sql: str, row_id: int, requests: list, *, wh
     try:
         with ThreadPoolExecutor(max_workers=len(requests)) as pool:
             futures = [pool.submit(request) for request in requests]
-            time.sleep(1)
+            wait_until_blocked(db, owner, holding, futures)
             assert not any(future.done() for future in futures), "a request went straight past a held row lock"
             if while_held is not None:
                 while_held(owner)

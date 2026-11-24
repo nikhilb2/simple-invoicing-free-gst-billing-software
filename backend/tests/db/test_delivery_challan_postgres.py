@@ -11,7 +11,6 @@ Skipped when DATABASE_URL is not Postgres.
 import random
 import sys
 import threading
-import time
 from concurrent.futures import ThreadPoolExecutor
 from decimal import Decimal
 from pathlib import Path
@@ -24,6 +23,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app_main import app
+from lock_helpers import wait_until_blocked
 from src.api.deps import get_current_user
 from src.core.config import settings
 from src.db.session import get_db
@@ -330,7 +330,7 @@ def test_a_converter_really_waits_on_the_challan_lock(app_db, signed_in):
             future = pool.submit(
                 lambda: TestClient(app).post(f"/api/delivery-challans/{challan['id']}/convert", json=draft)
             )
-            time.sleep(1)
+            wait_until_blocked(app_db, owner, holding, [future])
             assert not future.done(), "conversion went straight past a held row lock"
             assert _invoices_for(app_db, challan["id"]) == []
             owner.execute(text("UPDATE delivery_challans SET status = 'cancelled' WHERE id = :c"), {"c": challan["id"]})
