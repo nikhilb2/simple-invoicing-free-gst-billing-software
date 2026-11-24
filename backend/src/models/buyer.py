@@ -27,6 +27,11 @@ class Buyer(Base):
     account_number = Column(String, nullable=True)
     ifsc_code = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+    # Soft delete (#1050): a ledger deleted with its entries keeps its row, since its
+    # cancelled documents still point at it, and is hidden everywhere a ledger is
+    # picked or listed. Null means live.
+    deleted_at = Column(DateTime, nullable=True)
+    deleted_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     invoices = relationship("Invoice", back_populates="ledger")
     addresses = relationship("LedgerAddress", back_populates="ledger", cascade="all, delete-orphan")
