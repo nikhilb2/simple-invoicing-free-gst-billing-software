@@ -9330,3 +9330,31 @@ a.ledger-chip:focus-visible {
   .composer-submit .button { min-height: 48px; }
 
 }
+
+/* Credit / Debit Notes: the form is a wide dialog; the list is a table on
+   desktop and cards on a phone. Chips keep one wrapping row (a .button-row
+   would stack them full width under 720px). */
+.modal-panel--credit-note-form {
+  width: min(860px, 100%);
+}
+
+.chip-row {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.credit-notes-cards {
+  display: none;
+}
+
+@media (max-width: 720px) {
+  .credit-notes-table {
+    display: none;
+  }
+
+  .credit-notes-cards {
+    display: grid;
+  }
+}

@@ -103,7 +103,7 @@ export default function InvoicesAdvancedView() {
   }
 
   function handleCreditNote(invoice: Invoice) {
-    navigate('/credit-notes', { state: { invoiceId: invoice.id } });
+    navigate(`/credit-notes?invoice=${invoice.id}`);
   }
 
   const duplicateMutation = useMutation({

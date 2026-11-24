@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Download, ExternalLink, Printer, Share2 } from 'lucide-react';
+import { Ban, Download, ExternalLink, Printer, Share2 } from 'lucide-react';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import api, { getApiErrorMessage } from '../api/client';
 import ShareModal from './ShareModal';
@@ -19,6 +19,9 @@ type CreditNotePreviewProps = {
   ledgerPhone?: string | null;
   /** Named in the WhatsApp message so the customer knows who sent it. */
   companyName?: string | null;
+  /** Offered in the menu on an active note; the page asks for confirmation. */
+  onCancelNote?: () => void;
+  cancelling?: boolean;
   onClose: () => void;
   onError?: (message: string) => void;
 };
@@ -30,6 +33,8 @@ export default function CreditNotePreview({
   canShare = true,
   ledgerPhone,
   companyName,
+  onCancelNote,
+  cancelling = false,
   onClose,
   onError,
 }: CreditNotePreviewProps) {
@@ -165,6 +170,13 @@ export default function CreditNotePreview({
               onClick: handleOpenInNewTab,
               disabled: !pdfUrl,
             },
+            ...(onCancelNote ? [{
+              label: cancelling ? 'Cancelling...' : 'Cancel credit note',
+              icon: <Ban size={16} aria-hidden="true" />,
+              onClick: onCancelNote,
+              disabled: cancelling,
+              title: `Cancel this ${noun}`,
+            }] : []),
           ]}
           menuOpen={menuOpen}
           onMenuOpenChange={setMenuOpen}

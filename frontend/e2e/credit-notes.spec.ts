@@ -69,6 +69,11 @@ test.describe('Credit notes', () => {
     }
   }
 
+  async function openNewCreditNote(page: import('@playwright/test').Page) {
+    await clickNavLink(page, '/credit-notes');
+    await page.getByRole('button', { name: 'New credit note' }).first().click();
+  }
+
   async function stockOf(page: import('@playwright/test').Page, sku: string) {
     await clickNavLink(page, '/catalogue');
     await catalogueSearch(page).fill(sku);
@@ -84,7 +89,7 @@ test.describe('Credit notes', () => {
 
     expect(await stockOf(page, sku)).toBe(10);
 
-    await clickNavLink(page, '/credit-notes');
+    await openNewCreditNote(page);
     await page.selectOption('#credit-note-direction', 'inward');
     await selectComboboxOption(page, 'credit-note-ledger', ledgerName);
 
@@ -99,9 +104,8 @@ test.describe('Credit notes', () => {
     await expectSuccess(page, 'SUP/CN/E2E recorded as');
 
     // Our own DN number, kept out of the outward credit note series.
-    const card = page.locator('.panel', { hasText: 'SUP/CN/E2E' }).first();
-    await expect(card).toContainText('Purchase');
-    await expect(card).toContainText(/DN-/);
+    const row = page.locator('tr', { hasText: 'Purchase' }).first();
+    await expect(row).toContainText(/DN-/);
 
     // The goods went back, so stock falls rather than rises.
     expect(await stockOf(page, sku)).toBe(6);
@@ -112,7 +116,7 @@ test.describe('Credit notes', () => {
     await createInvoice(page, { sku, ledgerName, voucherType: 'purchase', quantity: '10' });
     await createInvoice(page, { sku, ledgerName, voucherType: 'sales', quantity: '2' });
 
-    await clickNavLink(page, '/credit-notes');
+    await openNewCreditNote(page);
     await selectComboboxOption(page, 'credit-note-ledger', ledgerName);
 
     // Sales tab: one invoice, the sale.
@@ -123,7 +127,7 @@ test.describe('Credit notes', () => {
   });
 
   test('the supplier fields only exist on the purchase tab', async ({ authedPage: page }) => {
-    await clickNavLink(page, '/credit-notes');
+    await openNewCreditNote(page);
     await expect(page.locator('#credit-note-supplier-number')).toBeHidden();
 
     await page.selectOption('#credit-note-direction', 'inward');
