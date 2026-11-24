@@ -96,7 +96,9 @@ def test_legacy_token_without_iat_is_refused_once_a_cutoff_exists(client, db_ses
     assert _me(client, _token_without_iat("owner@example.com")).status_code == 401
 
 
-def test_password_reset_ends_access_tokens_already_issued(client, db_session, real_auth, monkeypatch):
+def test_password_reset_ends_access_tokens_already_issued(
+    client, db_session, real_auth, monkeypatch, tokens_issued_earlier,
+):
     from src.services import platform_mail
 
     monkeypatch.setattr(settings, "DEPLOYMENT_MODE", "shared_hosting")
@@ -107,16 +109,15 @@ def test_password_reset_ends_access_tokens_already_issued(client, db_session, re
     monkeypatch.setattr(platform_mail, "_deliver", sent.append)
 
     _user(db_session)
-    stolen = client.post(
-        "/api/auth/login", json={"email": "owner@example.com", "password": "GoodPass@123"}
-    ).json()["access_token"]
+    # The cutoff and iat are compared in whole seconds; issue the token in an earlier second.
+    with tokens_issued_earlier():
+        stolen = client.post(
+            "/api/auth/login", json={"email": "owner@example.com", "password": "GoodPass@123"}
+        ).json()["access_token"]
     assert _me(client, stolen).status_code == 200
 
-    # The cutoff and iat are compared in whole seconds.
     import re
-    import time
 
-    time.sleep(1.1)
     client.post("/api/auth/forgot-password", json={"email": "owner@example.com"})
     body = sent[0].get_body(preferencelist=("plain",)).get_content()
     token = re.search(r"/reset-password\?token=([A-Za-z0-9_\-\.]+)", body).group(1)

@@ -52,6 +52,34 @@ app.dependency_overrides[get_db] = override_get_db
 app.dependency_overrides[get_current_user] = override_get_current_user
 
 @pytest.fixture
+def tokens_issued_earlier(monkeypatch):
+    """Context manager: session tokens minted inside it carry an ``iat`` that many seconds ago.
+
+    Tokens carry whole-second ``iat`` and the session cutoff is compared in whole
+    seconds, so a test that needs a token issued before a cutoff used to sleep
+    past the second. Back-dating the clock the token code reads does the same
+    without waiting.
+    """
+    import contextlib
+    from datetime import datetime, timedelta
+
+    from src.core import security
+
+    @contextlib.contextmanager
+    def back_dated(seconds=5):
+        class _Earlier(datetime):
+            @classmethod
+            def utcnow(cls):
+                return datetime.utcnow() - timedelta(seconds=seconds)
+
+        with monkeypatch.context() as patch:
+            patch.setattr(security, "datetime", _Earlier)
+            yield
+
+    return back_dated
+
+
+@pytest.fixture
 def client():
     return TestClient(app)
 
