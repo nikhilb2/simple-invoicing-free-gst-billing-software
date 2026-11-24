@@ -87,7 +87,7 @@ Deleting cannot be undone, and it is blocked if the product is:
 - a component in another product's bill of materials
 - part of your production history
 
-There is no archive option. If a product you no longer sell has history, leave it in place. Turning off **Maintain stock for this product** takes it out of your stock counts.
+There is no archive option. If a product you no longer sell has history, leave it in place. Turning off **Maintain inventory for this product** takes it out of your stock counts.
 
 ## Export the catalogue
 
