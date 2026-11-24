@@ -40,8 +40,6 @@ from src.services.gst_tax_service import india_today
 from src.services.invoice_payments import (
     build_invoice_payment_summaries,
     invoice_has_active_payment_allocations,
-    invoice_has_tds_allocated,
-    payment_allocated_to_invoice,
     outstanding_due_invoices as _outstanding_due_invoices,
 )
 from src.services.pdf_templates import (
@@ -49,19 +47,18 @@ from src.services.pdf_templates import (
     _build_multi_copy_invoice_html,
     _copy_label,
 )
+from src.services.invoice_cancellation import cancel_invoice_record
 from src.services.invoice_creation import create_invoice_record
 from src.services.invoice_processor import InvoiceProcessor, detach_cancelled_credit_notes, invoice_has_credit_notes
 from src.services.delivery_challan import (
     close_challan_after_invoice_restored,
     lock_source_challan,
-    reopen_challan_after_invoice_cancelled,
     require_challan_restorable,
 )
 from src.services.quotation import (
     close_after_invoice_restored,
     lock_invoice,
     lock_invoice_for_status_change,
-    reopen_after_invoice_cancelled,
     require_restorable,
 )
 from src.services.serial_service import SerialManager
@@ -955,49 +952,7 @@ def cancel_invoice(
         raise HTTPException(status_code=404, detail=f"Invoice {invoice_id} not found")
 
     try:
-        # Before any stock moves: conversion takes the challan and quotation rows
-        # first as well.
-        source_challan = lock_source_challan(db, invoice)
-        invoice, source_quotation = lock_invoice_for_status_change(db, invoice)
-        if invoice.status == "cancelled":
-            raise HTTPException(status_code=400, detail="Invoice is already cancelled")
-        # An active credit note has already returned part of the stock and
-        # is still filed and counted; reversing the full invoice quantities
-        # here would double-return the noted part and orphan the note.
-        if invoice_has_credit_notes(db, invoice.id):
-            raise HTTPException(
-                status_code=400,
-                detail="This invoice has credit notes against it — cancel them first",
-            )
-        # TDS settled on it would otherwise stay in the TDS report and the
-        # ledger with no invoice behind it.
-        if invoice_has_tds_allocated(db, invoice.id):
-            side = "receipt" if invoice.voucher_type == "sales" else "payment"
-            raise HTTPException(
-                status_code=400,
-                detail=f"TDS is recorded against this invoice. Remove the TDS from the {side} first, then cancel the invoice.",
-            )
-        # A receipt/payment still allocated here would be left pointing at a
-        # cancelled invoice: it couldn't be saved again, and the allocation
-        # couldn't be removed from the page either (#792).
-        allocated_payment = payment_allocated_to_invoice(db, invoice.id)
-        if allocated_payment is not None:
-            side = "receipt" if allocated_payment.voucher_type == "receipt" else "payment"
-            voucher_number = allocated_payment.payment_number or allocated_payment.id
-            raise HTTPException(
-                status_code=400,
-                detail=f"Remove this invoice from {side} {voucher_number} first",
-            )
-        processor = InvoiceProcessor(db)
-        # Serials first: cancelling a purchase whose units are already sold is
-        # refused, and that message is more useful than a stock shortfall.
-        processor.reverse_serials(invoice)
-        processor.reverse_inventory(invoice)
-        invoice.status = "cancelled"
-        invoice.cancelled_at = datetime.utcnow()
-        reopen_after_invoice_cancelled(source_quotation)
-        # The challan's goods are out on it again, now the invoice's are back.
-        reopen_challan_after_invoice_cancelled(db, source_challan, invoice)
+        invoice = cancel_invoice_record(db, invoice)
         db.commit()
         db.refresh(invoice)
     except HTTPException:

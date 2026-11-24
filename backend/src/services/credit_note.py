@@ -229,7 +229,7 @@ def create_credit_note(
     gst_warnings: list[str] | None = None,
 ) -> CreditNote:
     # ── 1. Validate ledger ───────────────────────────────────────────────────
-    ledger_query = db.query(Ledger).filter(Ledger.id == payload.ledger_id)
+    ledger_query = db.query(Ledger).filter(Ledger.id == payload.ledger_id, Ledger.deleted_at.is_(None))
     if company_id is not None:
         ledger_query = ledger_query.filter(company_scope(Ledger.company_id, company_id))
     ledger = ledger_query.first()
@@ -698,7 +698,14 @@ def create_credit_note(
     return cn
 
 
-def cancel_credit_note(cn_id: int, db: Session, company_id: int | None = None) -> CreditNoteOut:
+def cancel_credit_note(
+    cn_id: int, db: Session, company_id: int | None = None, *, commit: bool = True
+) -> CreditNoteOut:
+    """Cancel a note and put back what it moved.
+
+    ``commit=False`` leaves the transaction to the caller: deleting a ledger (#1050)
+    cancels its notes together with its invoices and payments, all or nothing.
+    """
     query = db.query(CreditNote).filter(CreditNote.id == cn_id)
     if company_id is not None:
         query = query.filter(company_scope(CreditNote.company_id, company_id))
@@ -778,5 +785,6 @@ def cancel_credit_note(cn_id: int, db: Session, company_id: int | None = None) -
         kwargs = {"company_id": company_id} if company_id is not None else {}
         _recompute_credit_status(inv_id, db, **kwargs)
 
-    db.commit()
+    if commit:
+        db.commit()
     return snapshot

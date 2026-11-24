@@ -75,7 +75,7 @@ class TestInvoiceEndpointsDoNotLeakException:
 
     def test_cancel_invoice_500_returns_generic_detail(self, client, monkeypatch):
         invoice = _create_invoice(client)
-        monkeypatch.setattr(invoices_module, "InvoiceProcessor", _boom)
+        monkeypatch.setattr(invoices_module, "cancel_invoice_record", _boom)
 
         res = client.delete(f"/api/invoices/{invoice['id']}")
 

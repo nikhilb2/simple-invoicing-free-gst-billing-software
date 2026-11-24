@@ -504,6 +504,7 @@ ALLOWED_QUOTATION_IMPORTERS = {
     "src/api/routes/ledgers.py",  # delete guard
     "src/api/routes/share.py",
     "src/api/routes/invoices.py",  # cancel and restore hooks
+    "src/services/invoice_cancellation.py",  # the cancel hooks, shared with ledger delete
     "src/services/quotation.py",
     "src/services/series.py",  # _number_taken
     "src/services/share_documents.py",
