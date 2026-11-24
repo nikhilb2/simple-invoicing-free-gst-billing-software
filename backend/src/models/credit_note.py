@@ -73,7 +73,7 @@ class CreditNoteItem(Base):
     invoice_id = Column(Integer, ForeignKey("invoices.id"), nullable=True)
     invoice_item_id = Column(Integer, ForeignKey("invoice_items.id"), nullable=True)
     product_id = Column(Integer, ForeignKey("products.id"), nullable=True)
-    quantity = Column(Numeric(12, 3), nullable=False)
+    quantity = Column(Integer, nullable=False)
     stock_applied = Column(Boolean, nullable=True)
     unit_price = Column(Numeric(10, 2), nullable=False)
     gst_rate = Column(Numeric(5, 2), nullable=False, default=0)

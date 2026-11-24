@@ -995,7 +995,7 @@ def cancel_invoice(
         invoice.status = "cancelled"
         reopen_after_invoice_cancelled(source_quotation)
         # The challan's goods are out on it again, now the invoice's are back.
-        reopen_challan_after_invoice_cancelled(db, source_challan)
+        reopen_challan_after_invoice_cancelled(db, source_challan, invoice)
         db.commit()
         db.refresh(invoice)
     except HTTPException:
@@ -1044,7 +1044,7 @@ def restore_invoice(
         processor = InvoiceProcessor(db)
         processor.restore_serials(invoice, company_id=active_company.id)
         # Release the challan's hold before the invoice takes its own goods out.
-        close_challan_after_invoice_restored(db, source_challan)
+        close_challan_after_invoice_restored(db, source_challan, invoice)
         processor.restore_inventory(invoice, company_id=active_company.id)
         invoice.status = "active"
         close_after_invoice_restored(source_quotation)

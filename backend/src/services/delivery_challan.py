@@ -148,6 +148,7 @@ def _move_challan_stock(
     *,
     document: str,
     context: str,
+    stock_by_product: dict[int, bool] | None = None,
 ) -> None:
     """Apply signed stock changes (negative = goods out) for the products that keep stock.
 
@@ -167,7 +168,10 @@ def _move_challan_stock(
         )
         if product is None:
             raise HTTPException(status_code=404, detail=f"Product {product_id} not found")
-        if not product.maintain_inventory:
+        if stock_by_product is not None:
+            if not stock_by_product.get(product_id, False):
+                continue
+        elif not product.maintain_inventory:
             continue
         if product.track_serials:
             # Challan stock has no serial rows, so moving it would break "stock equals
@@ -203,23 +207,25 @@ def _move_challan_stock(
         )
 
 
-def _take_out(db: Session, challan: DeliveryChallan, *, document: str, context: str) -> None:
+def _take_out(db: Session, challan: DeliveryChallan, *, document: str, context: str, stock_by_product: dict[int, bool] | None = None) -> None:
     _move_challan_stock(
         db,
         challan.company_id,
         {product_id: -quantity for product_id, quantity in challan_quantities(challan).items()},
         document=document,
         context=context,
+        stock_by_product=stock_by_product,
     )
 
 
-def _release(db: Session, challan: DeliveryChallan, *, context: str) -> None:
+def _release(db: Session, challan: DeliveryChallan, *, context: str, stock_by_product: dict[int, bool] | None = None) -> None:
     _move_challan_stock(
         db,
         challan.company_id,
         challan_quantities(challan),
         document=CHALLAN_DOCUMENT,
         context=context,
+        stock_by_product=stock_by_product,
     )
 
 
@@ -727,7 +733,7 @@ def lock_source_challan(db: Session, invoice: Invoice) -> DeliveryChallan | None
     )
 
 
-def reopen_challan_after_invoice_cancelled(db: Session, challan: DeliveryChallan | None) -> None:
+def reopen_challan_after_invoice_cancelled(db: Session, challan: DeliveryChallan | None, invoice: Invoice | None = None) -> None:
     """The invoice is gone, so the challan's goods are out on it again: back to open, -C.
 
     Runs after the invoice's own stock has come back (+I), so the shortfall it can
@@ -738,11 +744,13 @@ def reopen_challan_after_invoice_cancelled(db: Session, challan: DeliveryChallan
     challan.status = STATUS_OPEN
     challan.invoiced_at = None
     challan.updated_at = datetime.utcnow()
+    effects = {item.product_id: bool(item.stock_applied) for item in invoice.items} if invoice is not None else None
     _take_out(
         db,
         challan,
         document=f"re-opening delivery challan {challan.challan_number}",
         context=f"re-opening delivery challan {challan.challan_number}",
+        stock_by_product=effects,
     )
 
 
@@ -766,7 +774,7 @@ def require_challan_restorable(db: Session, challan: DeliveryChallan | None, inv
         )
 
 
-def close_challan_after_invoice_restored(db: Session, challan: DeliveryChallan | None) -> None:
+def close_challan_after_invoice_restored(db: Session, challan: DeliveryChallan | None, invoice: Invoice | None = None) -> None:
     """The invoice is live again, so the challan is invoiced again and releases its hold.
 
     Runs before the invoice's own stock is taken. A challan cancelled in the meantime
@@ -774,7 +782,8 @@ def close_challan_after_invoice_restored(db: Session, challan: DeliveryChallan |
     """
     if challan is None or challan.status != STATUS_OPEN:
         return
-    _release(db, challan, context=f"invoicing delivery challan {challan.challan_number}")
+    effects = {item.product_id: bool(item.stock_applied) for item in invoice.items} if invoice is not None else None
+    _release(db, challan, context=f"invoicing delivery challan {challan.challan_number}", stock_by_product=effects)
     challan.status = STATUS_INVOICED
     challan.invoiced_at = datetime.utcnow()
     challan.updated_at = challan.invoiced_at

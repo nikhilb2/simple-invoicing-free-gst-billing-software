@@ -24,9 +24,7 @@ from src.services.company_access import company_scope
 
 logger = logging.getLogger(__name__)
 
-
 def line_applied_stock(item, product: Product) -> bool:
-    """Use the saved effect when known and the legacy rule for older rows."""
     recorded = getattr(item, "stock_applied", None)
     return recorded if recorded is not None else bool(getattr(product, "maintain_inventory", True))
 
@@ -323,34 +321,33 @@ class InventoryManager:
             invoice.id,
             company_id,
         )
-        old_effect: dict[int, Decimal] = defaultdict(lambda: Decimal("0"))
-        next_effect: dict[int, Decimal] = defaultdict(lambda: Decimal("0"))
+        existing_effect: dict[int, Decimal] = defaultdict(lambda: Decimal("0"))
         stock_by_product: dict[int, bool] = {}
-        context = f"editing invoice {invoice.id}"
-        products = {
-            product_id: self._get_product(product_id, company_id, context)
-            for product_id in {item.product_id for item in invoice.items}
-            | {item.product_id for item in payload.items}
-        }
+        products = {p: self._get_product(p, company_id, f"editing invoice {invoice.id}") for p in {i.product_id for i in invoice.items} | {i.product_id for i in payload.items}}
         for item in invoice.items:
             applied = line_applied_stock(item, products[item.product_id])
             stock_by_product[item.product_id] = applied
             if applied:
-                old_effect[item.product_id] += self.effect_for_voucher_type(item.quantity, invoice.voucher_type)
+                existing_effect[item.product_id] += self.effect_for_voucher_type(item.quantity, invoice.voucher_type)
 
+        next_effect: dict[int, Decimal] = defaultdict(lambda: Decimal("0"))
         for item in payload.items:
-            # Keeping a product on an invoice keeps its original stock policy.
             applied = stock_by_product.setdefault(item.product_id, bool(products[item.product_id].maintain_inventory))
             if applied:
                 next_effect[item.product_id] += self.effect_for_voucher_type(item.quantity, payload.voucher_type)
 
-        for product_id in sorted(old_effect.keys() | next_effect.keys()):
-            delta = next_effect[product_id] - old_effect[product_id]
-            if delta:
-                self.update_quantity(
-                    product_id, delta, company_id=company_id, context=context,
-                    product_name=products[product_id].name,
-                )
+        for product_id in set(existing_effect) | set(next_effect):
+            delta = next_effect[product_id] - existing_effect[product_id]
+            if delta == 0:
+                continue
+
+            self.update_quantity(
+                product_id,
+                delta,
+                company_id=company_id,
+                context=f"editing invoice {invoice.id}",
+                product_name=products[product_id].name,
+            )
         return stock_by_product
 
     def apply_new_items(
