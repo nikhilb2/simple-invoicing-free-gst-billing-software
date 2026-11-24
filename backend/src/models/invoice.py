@@ -145,5 +145,10 @@ class InvoiceItem(Base):
     description = Column(Text, nullable=True)
     discount_type = Column(String(20), nullable=True)
     discount_value = Column(Numeric(10, 2), nullable=True)
+    # Whether saving this line moved stock, fixed when the line is written. Undoing
+    # the invoice (cancel, restore, edit, return) moves only what the line moved,
+    # even if "Maintain inventory" was switched since (#905). NULL means unknown
+    # and falls back to the product's current setting.
+    stock_applied = Column(Boolean, nullable=True)
 
     invoice = relationship("Invoice", back_populates="items")

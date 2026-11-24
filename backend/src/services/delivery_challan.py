@@ -148,13 +148,14 @@ def _move_challan_stock(
     *,
     document: str,
     context: str,
+    stock_policy: dict[int, bool] | None = None,
 ) -> None:
     """Apply signed stock changes (negative = goods out) for the products that keep stock.
 
     Every shortfall is checked before anything moves, so a refusal is a clean
-    ``insufficient_stock`` 400 rather than a half-applied change. The flag is read
-    now, as reverse_invoice_inventory does: a product that stopped keeping stock is
-    left alone.
+    ``insufficient_stock`` 400 rather than a half-applied change. Whether a product
+    keeps stock comes from *stock_policy* (product_id -> moves stock) when given,
+    else from its flag now: a product that stopped keeping stock is left alone.
     """
     moves: list[tuple[Product, Decimal]] = []
     for product_id, delta in deltas.items():
@@ -167,7 +168,8 @@ def _move_challan_stock(
         )
         if product is None:
             raise HTTPException(status_code=404, detail=f"Product {product_id} not found")
-        if not product.maintain_inventory:
+        keeps_stock = (stock_policy or {}).get(product_id, bool(product.maintain_inventory))
+        if not keeps_stock:
             continue
         if product.track_serials:
             # Challan stock has no serial rows, so moving it would break "stock equals
@@ -203,23 +205,38 @@ def _move_challan_stock(
         )
 
 
-def _take_out(db: Session, challan: DeliveryChallan, *, document: str, context: str) -> None:
+def _take_out(
+    db: Session,
+    challan: DeliveryChallan,
+    *,
+    document: str,
+    context: str,
+    stock_policy: dict[int, bool] | None = None,
+) -> None:
     _move_challan_stock(
         db,
         challan.company_id,
         {product_id: -quantity for product_id, quantity in challan_quantities(challan).items()},
         document=document,
         context=context,
+        stock_policy=stock_policy,
     )
 
 
-def _release(db: Session, challan: DeliveryChallan, *, context: str) -> None:
+def _release(
+    db: Session,
+    challan: DeliveryChallan,
+    *,
+    context: str,
+    stock_policy: dict[int, bool] | None = None,
+) -> None:
     _move_challan_stock(
         db,
         challan.company_id,
         challan_quantities(challan),
         document=CHALLAN_DOCUMENT,
         context=context,
+        stock_policy=stock_policy,
     )
 
 
@@ -732,11 +749,15 @@ def lock_source_challan(db: Session, invoice: Invoice) -> DeliveryChallan | None
     )
 
 
-def reopen_challan_after_invoice_cancelled(db: Session, challan: DeliveryChallan | None) -> None:
+def reopen_challan_after_invoice_cancelled(
+    db: Session, challan: DeliveryChallan | None, invoice: Invoice
+) -> None:
     """The invoice is gone, so the challan's goods are out on it again: back to open, -C.
 
     Runs after the invoice's own stock has come back (+I), so the shortfall it can
-    raise is only when that stock has since been sold elsewhere.
+    raise is only when that stock has since been sold elsewhere. A product moves
+    only if the invoice's lines for it moved stock, so the two still cancel out
+    after "Maintain inventory" was switched (#905).
     """
     if challan is None or challan.status != STATUS_INVOICED:
         return
@@ -748,6 +769,7 @@ def reopen_challan_after_invoice_cancelled(db: Session, challan: DeliveryChallan
         challan,
         document=f"re-opening delivery challan {challan.challan_number}",
         context=f"re-opening delivery challan {challan.challan_number}",
+        stock_policy=InventoryManager(db).stock_policy(invoice),
     )
 
 
@@ -771,15 +793,23 @@ def require_challan_restorable(db: Session, challan: DeliveryChallan | None, inv
         )
 
 
-def close_challan_after_invoice_restored(db: Session, challan: DeliveryChallan | None) -> None:
+def close_challan_after_invoice_restored(
+    db: Session, challan: DeliveryChallan | None, invoice: Invoice
+) -> None:
     """The invoice is live again, so the challan is invoiced again and releases its hold.
 
     Runs before the invoice's own stock is taken. A challan cancelled in the meantime
     stays cancelled and holds nothing; the restored invoice then stands on its own.
+    Like re-opening, a product moves only if the invoice's lines for it moved stock.
     """
     if challan is None or challan.status != STATUS_OPEN:
         return
-    _release(db, challan, context=f"invoicing delivery challan {challan.challan_number}")
+    _release(
+        db,
+        challan,
+        context=f"invoicing delivery challan {challan.challan_number}",
+        stock_policy=InventoryManager(db).stock_policy(invoice),
+    )
     challan.status = STATUS_INVOICED
     challan.invoiced_at = datetime.utcnow()
     challan.updated_at = challan.invoiced_at

@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from src.core.document_limits import QUANTITY_STORAGE_CUTOFF
 from src.models.inventory import Inventory
-from src.models.invoice import Invoice
+from src.models.invoice import Invoice, InvoiceItem
 from src.models.product import Product
 from src.schemas.invoice import InvoiceCreate
 from src.services.company_access import company_scope
@@ -240,6 +240,29 @@ class InventoryManager:
             )
         return product
 
+    @staticmethod
+    def line_moved_stock(item: InvoiceItem, product: Product) -> bool:
+        """Whether saving *item* moved stock (#905).
+
+        Read from the line, not the product: "Maintain inventory" may have been
+        switched since. A line with no record follows the product's setting now.
+        """
+        if item.stock_applied is None:
+            return bool(product.maintain_inventory)
+        return bool(item.stock_applied)
+
+    def stock_policy(self, invoice: Invoice) -> dict[int, bool]:
+        """product_id -> whether the invoice's lines for that product moved stock."""
+        policy: dict[int, bool] = {}
+        for item in invoice.items:
+            product = self._get_product(
+                item.product_id, invoice.company_id, f"reading invoice {invoice.id}"
+            )
+            policy[item.product_id] = policy.get(item.product_id, False) or self.line_moved_stock(
+                item, product
+            )
+        return policy
+
     def reverse_invoice_inventory(self, invoice: Invoice) -> None:
         """Undo the inventory effect of all line items on *invoice*.
 
@@ -254,7 +277,7 @@ class InventoryManager:
             product = self._get_product(
                 item.product_id, invoice.company_id, f"reversing invoice {invoice.id}"
             )
-            if not product.maintain_inventory:
+            if not self.line_moved_stock(item, product):
                 continue
 
             reverse_delta = (
@@ -286,7 +309,7 @@ class InventoryManager:
             product = self._get_product(
                 item.product_id, company_id, f"restoring invoice {invoice.id}"
             )
-            if not product.maintain_inventory:
+            if not self.line_moved_stock(item, product):
                 continue
 
             restore_delta = (
@@ -308,47 +331,59 @@ class InventoryManager:
         payload: InvoiceCreate,
         *,
         company_id: int | None,
-    ) -> None:
+    ) -> dict[int, bool]:
         """Compute and apply the *net* inventory delta when editing an invoice.
 
         Compares existing line items against incoming payload items and applies
         only the difference, avoiding a full reverse-then-reapply cycle.
+
+        A product already on the invoice keeps what its lines did to stock, so an
+        edit of an invoice saved before "Maintain inventory" was switched moves
+        nothing it would not have moved then (#905). A product new to the invoice
+        follows its setting now. Returns that product_id -> moves-stock map, for
+        the new lines to record.
         """
         logger.info(
             "inventory: applying net delta for invoice_id=%s company_id=%s",
             invoice.id,
             company_id,
         )
+        context = f"editing invoice {invoice.id}"
+        policy = self.stock_policy(invoice)
+        products: dict[int, Product] = {}
+        for item in payload.items:
+            if item.product_id not in policy:
+                products[item.product_id] = self._get_product(item.product_id, company_id, context)
+                policy[item.product_id] = bool(products[item.product_id].maintain_inventory)
+
         existing_effect: dict[int, Decimal] = defaultdict(lambda: Decimal("0"))
         for item in invoice.items:
-            existing_effect[item.product_id] += self.effect_for_voucher_type(
-                item.quantity, invoice.voucher_type
-            )
+            if policy[item.product_id]:
+                existing_effect[item.product_id] += self.effect_for_voucher_type(
+                    item.quantity, invoice.voucher_type
+                )
 
         next_effect: dict[int, Decimal] = defaultdict(lambda: Decimal("0"))
         for item in payload.items:
-            next_effect[item.product_id] += self.effect_for_voucher_type(
-                item.quantity, payload.voucher_type
-            )
+            if policy[item.product_id]:
+                next_effect[item.product_id] += self.effect_for_voucher_type(
+                    item.quantity, payload.voucher_type
+                )
 
         for product_id in set(existing_effect) | set(next_effect):
             delta = next_effect[product_id] - existing_effect[product_id]
             if delta == 0:
                 continue
 
-            product = self._get_product(
-                product_id, company_id, f"editing invoice {invoice.id}"
-            )
-            if not product.maintain_inventory:
-                continue
-
+            product = products.get(product_id) or self._get_product(product_id, company_id, context)
             self.update_quantity(
                 product_id,
                 delta,
                 company_id=company_id,
-                context=f"editing invoice {invoice.id}",
+                context=context,
                 product_name=product.name,
             )
+        return policy
 
     def apply_new_items(
         self,

@@ -184,12 +184,13 @@ class InvoiceProcessor:
         payload: InvoiceCreate,
         *,
         company_id: int | None,
-    ) -> None:
+    ) -> dict[int, bool]:
         """Compute and apply the *net* inventory delta when editing an invoice.
 
-        Delegates to :meth:`InventoryManager.apply_invoice_changes`.
+        Delegates to :meth:`InventoryManager.apply_invoice_changes`, and returns
+        its product_id -> moves-stock map for the new lines to record.
         """
-        self.inventory.apply_invoice_changes(invoice, payload, company_id=company_id)
+        return self.inventory.apply_invoice_changes(invoice, payload, company_id=company_id)
 
     # ------------------------------------------------------------------
     # Serial helpers — delegate to SerialManager
@@ -467,11 +468,15 @@ class InvoiceProcessor:
         active_financial_year_id: int | None = None,
         regenerate_number: bool = True,
         apply_inventory_changes: bool = True,
+        stock_policy: dict[int, bool] | None = None,
     ) -> None:
         """Apply *payload* data onto *invoice*, updating all scalar fields,
         creating new InvoiceItem rows, and recalculating totals.
 
         This is the primary entry-point used by both create and update routes.
+        Each new line records whether it moved stock: per *stock_policy*
+        (product_id -> moved) when an edit passes one, else the product's
+        "Maintain inventory" setting now.
         """
         company = active_company
         if company is None:
@@ -628,6 +633,9 @@ class InvoiceProcessor:
                 description=result["item_schema"].description,
                 discount_type=item_dtype,
                 discount_value=item_dval,
+                stock_applied=(stock_policy or {}).get(
+                    result["product"].id, bool(result["product"].maintain_inventory)
+                ),
             )
             created_items.append(invoice_item)
             self.db.add(invoice_item)

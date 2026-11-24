@@ -54,12 +54,14 @@ def make_invoice(id, ledger_id=1, status="active", company_gst="29XYZAB1234C1ZQ"
     return inv
 
 
-def make_invoice_item(id, invoice_id, product_id=1, quantity=10, unit_price=100, gst_rate=18):
+def make_invoice_item(id, invoice_id, product_id=1, quantity=10, unit_price=100, gst_rate=18, stock_applied=True):
     ii = InvoiceItem()
     ii.id = id
     ii.invoice_id = invoice_id
     ii.product_id = product_id
     ii.quantity = quantity
+    # A return moves stock only if its invoice line did (#905).
+    ii.stock_applied = stock_applied
     ii.unit_price = unit_price
     ii.gst_rate = gst_rate
     ii.taxable_amount = Decimal(str(quantity * unit_price))

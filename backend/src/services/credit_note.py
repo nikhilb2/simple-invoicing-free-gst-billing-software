@@ -662,7 +662,11 @@ def create_credit_note(
                     detail=f"{product.name} is not serial-tracked — remove the serial numbers",
                 )
 
-            if not getattr(product, "maintain_inventory", True):
+            # Only what the invoice line itself moved comes back, whatever the
+            # product's setting is now (#905).
+            if not InventoryManager.line_moved_stock(
+                invoice_item_map[item_data["invoice_item_id"]], product
+            ):
                 continue
 
             kwargs = {"company_id": company_id} if company_id is not None else {}
@@ -745,7 +749,13 @@ def cancel_credit_note(cn_id: int, db: Session, company_id: int | None = None) -
                             quantity=int(item.quantity),
                         )
 
-                if not getattr(product, "maintain_inventory", True):
+                # An active note's invoice can be neither edited nor cancelled, so
+                # its line still says what creating the note moved (#905).
+                if item.invoice_item is not None:
+                    moved = InventoryManager.line_moved_stock(item.invoice_item, product)
+                else:
+                    moved = bool(getattr(product, "maintain_inventory", True))
+                if not moved:
                     continue
 
                 kwargs = {"company_id": company_id} if company_id is not None else {}

@@ -797,7 +797,7 @@ def update_invoice(
             payload,
             company_id=active_company.id,
         )
-        processor.apply_inventory_delta_for_update(
+        stock_policy = processor.apply_inventory_delta_for_update(
             invoice,
             payload,
             company_id=active_company.id,
@@ -814,6 +814,7 @@ def update_invoice(
             active_company,
             regenerate_number=False,
             apply_inventory_changes=False,
+            stock_policy=stock_policy,
         )
         db.commit()
         db.refresh(invoice)
@@ -996,7 +997,7 @@ def cancel_invoice(
         invoice.cancelled_at = datetime.utcnow()
         reopen_after_invoice_cancelled(source_quotation)
         # The challan's goods are out on it again, now the invoice's are back.
-        reopen_challan_after_invoice_cancelled(db, source_challan)
+        reopen_challan_after_invoice_cancelled(db, source_challan, invoice)
         db.commit()
         db.refresh(invoice)
     except HTTPException:
@@ -1045,7 +1046,7 @@ def restore_invoice(
         processor = InvoiceProcessor(db)
         processor.restore_serials(invoice, company_id=active_company.id)
         # Release the challan's hold before the invoice takes its own goods out.
-        close_challan_after_invoice_restored(db, source_challan)
+        close_challan_after_invoice_restored(db, source_challan, invoice)
         processor.restore_inventory(invoice, company_id=active_company.id)
         invoice.status = "active"
         invoice.cancelled_at = None
