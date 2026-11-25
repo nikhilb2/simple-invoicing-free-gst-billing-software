@@ -248,6 +248,7 @@ export default function CreateInvoiceModal({
     dueDateDays,
     referenceNotes,
     placeOfSupplyChoice: placeOfSupplyChoice?.code ?? '',
+    tcsForm,
     items,
   });
 

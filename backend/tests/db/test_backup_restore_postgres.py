@@ -9,6 +9,7 @@ import pytest
 from fastapi import HTTPException, UploadFile
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
+from sqlalchemy.exc import OperationalError
 
 from src.core.config import settings
 from src.db.base import Base
@@ -123,3 +124,115 @@ def test_restore_error_rolls_back_table_cleanup_and_data(backup_db, monkeypatch)
         assert conn.execute(text("SELECT name FROM company_profiles")).scalar_one() == "After the backup"
         assert conn.execute(text("SELECT id FROM product_bulk_updates")).scalar_one() == "new-update"
     assert NEW_MIGRATION in backup.get_applied_migrations()
+
+
+FAILING_MIGRATION = "20991231000001_fails_on_backup_data"
+
+
+def add_migration_that_fails_on_backup_data(monkeypatch, tmp_path):
+    """Apply one more migration that the current data passes and the backup's data does not."""
+    migrations = tmp_path / "migrations"
+    migrations.mkdir()
+    for path in backup.MIGRATIONS_DIR.glob("*.py"):
+        (migrations / path.name).symlink_to(path)
+    (migrations / f"{FAILING_MIGRATION}.py").write_text(
+        "from sqlalchemy import text\n\n"
+        "def up(conn):\n"
+        "    conn.execute(text(\"SELECT 1 / (CASE WHEN name = 'In the backup' THEN 0 ELSE 1 END) FROM company_profiles\"))\n"
+    )
+    monkeypatch.setattr(backup, "MIGRATIONS_DIR", migrations)
+    assert backup._apply_pending_migrations() == 1
+
+
+def assert_database_as_before_restore(db):
+    with db.connect() as conn:
+        assert conn.execute(text("SELECT name FROM company_profiles")).scalar_one() == "After the backup"
+        assert conn.execute(text("SELECT id FROM product_bulk_updates")).scalar_one() == "new-update"
+    applied = backup.get_applied_migrations()
+    assert NEW_MIGRATION in applied
+    assert FAILING_MIGRATION in applied
+
+
+def test_failed_migration_after_restore_rolls_back_and_names_it(backup_db, monkeypatch, tmp_path):
+    path = old_archive(backup_db)
+    add_migration_that_fails_on_backup_data(monkeypatch, tmp_path)
+
+    with pytest.raises(HTTPException) as failure:
+        backup.restore_backup(upload(path))
+
+    assert failure.value.status_code == 500
+    assert "rolled back" in failure.value.detail
+    assert f"migration {FAILING_MIGRATION} failed: division by zero" in failure.value.detail
+    assert_database_as_before_restore(backup_db)
+
+
+def test_failed_rollback_after_failed_migration_is_reported(backup_db, monkeypatch, tmp_path):
+    path = old_archive(backup_db)
+    add_migration_that_fails_on_backup_data(monkeypatch, tmp_path)
+    drops = backup._app_table_drops
+    # Only the rollback drops every app table; make that step fail.
+    monkeypatch.setattr(
+        backup,
+        "_app_table_drops",
+        lambda keep: drops(keep) if keep else "SELECT missing_function_to_fail_rollback();\n",
+    )
+
+    with pytest.raises(HTTPException) as failure:
+        backup.restore_backup(upload(path))
+
+    assert f"migration {FAILING_MIGRATION} failed" in failure.value.detail
+    assert "also failed" in failure.value.detail
+    assert "Restore another (newer) backup, or fix the data and restart" in failure.value.detail
+    with backup_db.connect() as conn:
+        assert conn.execute(text("SELECT name FROM company_profiles")).scalar_one() == "In the backup"
+
+
+def test_error_outside_a_migration_after_restore_also_rolls_back(backup_db, monkeypatch):
+    path = old_archive(backup_db)
+
+    def lose_connection():
+        raise OperationalError("SELECT 1", {}, Exception("server closed the connection unexpectedly"))
+
+    monkeypatch.setattr(backup, "_apply_pending_migrations", lose_connection)
+
+    with pytest.raises(HTTPException) as failure:
+        backup.restore_backup(upload(path))
+
+    assert failure.value.status_code == 500
+    assert "rolled back" in failure.value.detail
+    assert "running the pending migrations failed: server closed the connection unexpectedly" in failure.value.detail
+    with backup_db.connect() as conn:
+        assert conn.execute(text("SELECT name FROM company_profiles")).scalar_one() == "After the backup"
+        assert conn.execute(text("SELECT id FROM product_bulk_updates")).scalar_one() == "new-update"
+    assert NEW_MIGRATION in backup.get_applied_migrations()
+
+
+def fail_pg_dump(output_path):
+    raise HTTPException(status_code=500, detail="pg_dump failed: disk full")
+
+
+def test_failed_snapshot_cancels_older_backup_restore(backup_db, monkeypatch):
+    path = old_archive(backup_db)
+    monkeypatch.setattr(backup, "_run_pg_dump", fail_pg_dump)
+
+    with pytest.raises(HTTPException) as failure:
+        backup.restore_backup(upload(path))
+
+    assert failure.value.status_code == 500
+    assert "Restore cancelled, nothing was changed" in failure.value.detail
+    assert "pg_dump failed: disk full" in failure.value.detail
+    with backup_db.connect() as conn:
+        assert conn.execute(text("SELECT name FROM company_profiles")).scalar_one() == "After the backup"
+        assert conn.execute(text("SELECT id FROM product_bulk_updates")).scalar_one() == "new-update"
+    assert NEW_MIGRATION in backup.get_applied_migrations()
+
+
+def test_same_version_restore_takes_no_snapshot(backup_db, monkeypatch):
+    with backup_db.begin() as conn:
+        conn.execute(text("UPDATE company_profiles SET name = 'In the backup'"))
+    path = archive()
+    monkeypatch.setattr(backup, "_run_pg_dump", fail_pg_dump)
+
+    assert backup.restore_backup(upload(path)) == ("exact", 0)
+    with backup_db.connect() as conn:
+        assert conn.execute(text("SELECT name FROM company_profiles")).scalar_one() == "In the backup"

@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from typing import NoReturn
 from zipfile import ZIP_DEFLATED, ZipFile
 
 from fastapi import HTTPException, UploadFile
@@ -52,6 +53,13 @@ class RestorePreflight:
     backup_migration_head: str | None
     current_migration_head: str | None
     migration_gap_count: int | None
+
+
+class MigrationFailed(Exception):
+    def __init__(self, step: str, error: Exception):
+        # A DBAPI error's first line is the database's message; the rest is SQL.
+        message = str(getattr(error, "orig", None) or getattr(error, "detail", None) or error).strip().splitlines()
+        super().__init__(f"{step} failed: {message[0] if message else type(error).__name__}")
 
 
 class _PreparedBackup:
@@ -345,20 +353,23 @@ def _post_backup_table_drops(table_of_contents: str) -> str:
     Keep the public schema (including its grants) and non-application objects.
     These statements must run in the same transaction as the restore itself.
     """
-    import src.models  # noqa: F401 -- populate the application's table registry
-    from src.db.base import Base
-
     archived_tables = set()
     for line in table_of_contents.splitlines():
         fields = line.split()
         if len(fields) >= 7 and fields[0].endswith(";") and fields[3:5] == ["TABLE", "public"]:
             archived_tables.add(fields[5])
+    return _app_table_drops(keep=archived_tables)
+
+
+def _app_table_drops(keep: set[str]) -> str:
+    import src.models  # noqa: F401 -- populate the application's table registry
+    from src.db.base import Base
 
     quote = engine.dialect.identifier_preparer.quote_identifier
     return "".join(
         f"DROP TABLE IF EXISTS public.{quote(table.name)} CASCADE;\n"
         for table in sorted(Base.metadata.tables.values(), key=lambda table: table.name)
-        if table.schema in (None, "public") and table.name not in archived_tables
+        if table.schema in (None, "public") and table.name not in keep
     )
 
 
@@ -430,9 +441,13 @@ def _apply_pending_migrations() -> int:
             spec = importlib.util.spec_from_file_location(migration_file.stem, migration_file)
             if spec is None or spec.loader is None:
                 raise HTTPException(status_code=500, detail=f"Unable to load migration module {migration_file.name}")
-            module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(module)
-            module.up(conn)
+            try:
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+                module.up(conn)
+            except Exception as err:
+                # Raising inside engine.begin() rolls back every migration of this run.
+                raise MigrationFailed(f"migration {migration_file.stem}", err) from err
             conn.execute(
                 text("INSERT INTO _migrations (name) VALUES (:name)"),
                 {"name": migration_file.stem},
@@ -490,6 +505,74 @@ def _terminate_other_db_sessions(env: dict[str, str]) -> None:
         raise HTTPException(status_code=500, detail=f"Restore failed: {detail}") from err
 
 
+def _apply_dump(dump_path: Path, env: dict[str, str], prefix_sql: str = "") -> None:
+    """Replace the database's contents with a custom-format dump, in one transaction."""
+    # Step 1: extract plain SQL from the custom-format dump.
+    # --clean --if-exists generates DROP … IF EXISTS before each object.
+    # -f - writes SQL to stdout instead of directly to the DB so we can
+    # filter version-specific SET commands that older server versions reject
+    # (e.g. "SET transaction_timeout" was added in pg_dump 17 but PG 16 rejects it).
+    extract_cmd = [
+        "pg_restore",
+        "--clean",
+        "--if-exists",
+        "--no-owner",
+        "--no-privileges",
+        "-f", "-",
+        str(dump_path),
+    ]
+    try:
+        extracted = subprocess.run(
+            extract_cmd, check=True, capture_output=True, text=True, env=env
+        )
+        logger.debug(f"extracted SQL bytes={len(extracted.stdout.encode('utf-8'))}")
+    except FileNotFoundError as err:
+        logger.error("extract failed: pg_restore not found")
+        raise HTTPException(status_code=500, detail="pg_restore is not available on the server") from err
+    except subprocess.CalledProcessError as err:
+        detail = (err.stderr or err.stdout or "pg_restore failed").strip()
+        logger.error(f"extract failed: {detail}")
+        raise HTTPException(status_code=500, detail=f"Restore failed: {detail}") from err
+
+    # Step 2: filter out session-level SET commands that the target server may
+    # not support (e.g. transaction_timeout introduced in PostgreSQL 17).
+    _UNSUPPORTED_SET_PREFIXES = ("SET transaction_timeout",)
+    filtered_lines = [
+        line for line in extracted.stdout.splitlines()
+        if not any(line.strip().startswith(p) for p in _UNSUPPORTED_SET_PREFIXES)
+    ]
+    filtered_sql = prefix_sql + "\n".join(filtered_lines)
+    logger.debug(f"filtered SQL lines={len(filtered_lines)}")
+
+    # Step 3: apply via psql in a single transaction; ON_ERROR_STOP=1 rolls
+    # back and surfaces the first error (equivalent to --exit-on-error).
+    psql_cmd = [
+        "psql",
+        "--no-psqlrc",
+        "--single-transaction",
+        "--set", "ON_ERROR_STOP=1",
+        "--dbname", _database_dsn(),
+        "--file", "-",
+    ]
+    try:
+        subprocess.run(
+            psql_cmd,
+            input=filtered_sql,
+            check=True,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        logger.debug("psql restore apply success")
+    except FileNotFoundError as err:
+        logger.error("restore apply failed: psql not found")
+        raise HTTPException(status_code=500, detail="psql is not available on the server") from err
+    except subprocess.CalledProcessError as err:
+        detail = (err.stderr or err.stdout or "psql restore failed").strip()
+        logger.error(f"restore apply failed: {detail}")
+        raise HTTPException(status_code=500, detail=f"Restore failed: {detail}") from err
+
+
 def restore_backup(upload: UploadFile) -> tuple[str, int]:
     logger.debug(f"restore start: filename={upload.filename}")
     prepared = _prepare_uploaded_backup(upload)
@@ -515,79 +598,44 @@ def restore_backup(upload: UploadFile) -> tuple[str, int]:
         _terminate_other_db_sessions(env)
         _dispose_engines()
 
-        # Step 1: extract plain SQL from the custom-format dump.
-        # --clean --if-exists generates DROP … IF EXISTS before each object.
-        # -f - writes SQL to stdout instead of directly to the DB so we can
-        # filter version-specific SET commands that older server versions reject
-        # (e.g. "SET transaction_timeout" was added in pg_dump 17 but PG 16 rejects it).
-        extract_cmd = [
-            "pg_restore",
-            "--clean",
-            "--if-exists",
-            "--no-owner",
-            "--no-privileges",
-            "-f", "-",
-            str(prepared.dump_path),
-        ]
-        try:
-            extracted = subprocess.run(
-                extract_cmd, check=True, capture_output=True, text=True, env=env
-            )
-            logger.debug(f"extracted SQL bytes={len(extracted.stdout.encode('utf-8'))}")
-        except FileNotFoundError as err:
-            logger.error("extract failed: pg_restore not found")
-            raise HTTPException(status_code=500, detail="pg_restore is not available on the server") from err
-        except subprocess.CalledProcessError as err:
-            detail = (err.stderr or err.stdout or "pg_restore failed").strip()
-            logger.error(f"extract failed: {detail}")
-            raise HTTPException(status_code=500, detail=f"Restore failed: {detail}") from err
-
-        # Step 2: filter out session-level SET commands that the target server may
-        # not support (e.g. transaction_timeout introduced in PostgreSQL 17).
-        _UNSUPPORTED_SET_PREFIXES = ("SET transaction_timeout",)
-        filtered_lines = [
-            line for line in extracted.stdout.splitlines()
-            if not any(line.strip().startswith(p) for p in _UNSUPPORTED_SET_PREFIXES)
-        ]
-        filtered_sql = "\n".join(filtered_lines)
+        # An older backup is restored and then migrated in two transactions (psql
+        # cannot run the Python migrations), so keep the current database to put
+        # back if a migration fails: the app must never run on a half-migrated
+        # schema (#974).
+        snapshot_path: Path | None = None
         if compatibility == "requires_migration":
-            filtered_sql = _post_backup_table_drops(table_of_contents) + filtered_sql
-        logger.debug(f"filtered SQL lines={len(filtered_lines)}")
+            snapshot_path = Path(prepared.temp_dir.name) / "before_restore.dump"
+            try:
+                _run_pg_dump(snapshot_path)
+            except HTTPException as err:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Restore cancelled, nothing was changed: could not save the current data first. {err.detail}",
+                ) from err
 
-        # Step 3: apply via psql in a single transaction; ON_ERROR_STOP=1 rolls
-        # back and surfaces the first error (equivalent to --exit-on-error).
-        psql_cmd = [
-            "psql",
-            "--no-psqlrc",
-            "--single-transaction",
-            "--set", "ON_ERROR_STOP=1",
-            "--dbname", _database_dsn(),
-            "--file", "-",
-        ]
-        try:
-            subprocess.run(
-                psql_cmd,
-                input=filtered_sql,
-                check=True,
-                capture_output=True,
-                text=True,
-                env=env,
-            )
-            logger.debug("psql restore apply success")
-        except FileNotFoundError as err:
-            logger.error("restore apply failed: psql not found")
-            raise HTTPException(status_code=500, detail="psql is not available on the server") from err
-        except subprocess.CalledProcessError as err:
-            detail = (err.stderr or err.stdout or "psql restore failed").strip()
-            logger.error(f"restore apply failed: {detail}")
-            raise HTTPException(status_code=500, detail=f"Restore failed: {detail}") from err
+        _apply_dump(
+            prepared.dump_path,
+            env,
+            _post_backup_table_drops(table_of_contents) if compatibility == "requires_migration" else "",
+        )
 
         # Discard all pooled connections — they point to the pre-restore state.
         # SQLAlchemy will open fresh connections on the next request.
         logger.debug("disposing SQLAlchemy engine after restore")
         _dispose_engines()
 
-        applied_count = _apply_pending_migrations()
+        try:
+            applied_count = _apply_pending_migrations()
+        except Exception as err:
+            # Any failure here (not only a migration's up(): also loading one,
+            # recording it, the row-level security step or the connection itself)
+            # leaves the backup's data on its older schema.
+            failure = err if isinstance(err, MigrationFailed) else MigrationFailed("running the pending migrations", err)
+            failure.__cause__ = failure.__cause__ or err
+            logger.error(f"restore migration failed: {failure}")
+            if snapshot_path is None:
+                raise HTTPException(status_code=500, detail=f"Restore failed: {failure}") from err
+            _roll_back_restore(snapshot_path, env, failure)
         logger.debug(f"restore completed: compatibility={compatibility}, applied_migrations={applied_count}")
         return compatibility, applied_count
     finally:
@@ -595,3 +643,33 @@ def restore_backup(upload: UploadFile) -> tuple[str, int]:
         prepared.temp_dir.cleanup()
         # On both success and failure, force pool reset so new requests reconnect cleanly.
         _dispose_engines()
+
+
+def _roll_back_restore(snapshot_path: Path, env: dict[str, str], failure: MigrationFailed) -> NoReturn:
+    """Put back the database as it was before the restore, then raise ``failure`` as an HTTP error."""
+    try:
+        _dispose_engines()
+        _terminate_other_db_sessions(env)
+        _dispose_engines()
+        # Drop every app table first, so constraints only the backup's older
+        # schema had cannot block the snapshot's own DROP commands. This only
+        # drops tables the current models define: a table that exists only in
+        # the backup's older schema stays in the database after the rollback.
+        _apply_dump(snapshot_path, env, _app_table_drops(keep=set()))
+    except Exception as err:
+        rollback_detail = getattr(err, "detail", None) or str(err) or type(err).__name__
+        logger.error(f"restore rollback failed: {rollback_detail}")
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"Restore failed: {failure}. Putting back the data from before the restore also "
+                f"failed ({rollback_detail}), so the database holds the backup's data on an "
+                "older schema. Restore another (newer) backup, or fix the data and restart the "
+                "app to retry the migrations."
+            ),
+        ) from failure
+    logger.debug("restore rolled back to the pre-restore snapshot")
+    raise HTTPException(
+        status_code=500,
+        detail=f"Restore failed and was rolled back, your data is unchanged: {failure}.",
+    ) from failure

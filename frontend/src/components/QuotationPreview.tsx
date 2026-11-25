@@ -8,6 +8,7 @@ import PaperSizePicker from './PaperSizePicker';
 import { usePaperChoice } from '../hooks/usePaperChoice';
 import type { Quotation } from '../types/api';
 import { QUOTATION_DOCUMENT_LABELS, allowedQuotationActions } from '../utils/quotationStatus';
+import { printPdf } from '../utils/printPdf';
 
 type QuotationPreviewProps = {
   quotation: Quotation;
@@ -118,8 +119,7 @@ export default function QuotationPreview({ quotation, menuActions = [], meta, on
               label: 'Print',
               icon: <Printer size={16} aria-hidden="true" />,
               onClick: () => {
-                iframeRef.current?.contentWindow?.focus();
-                iframeRef.current?.contentWindow?.print();
+                printPdf(iframeRef.current, pdfUrl);
               },
               disabled: !pdfUrl || loadingPdf || previewFailed,
               title: `Print ${label.toLowerCase()}`,

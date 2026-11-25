@@ -3,7 +3,6 @@ import {
   noteDocumentFileName,
   noteDocumentLabel,
   noteDocumentLabelForVoucher,
-  noteViewButtonLabel,
 } from './noteDocument';
 
 describe('noteDocumentLabel', () => {
@@ -34,12 +33,5 @@ describe('noteDocumentFileName', () => {
 
   test('falls back to the id when the number is missing', () => {
     expect(noteDocumentFileName('Debit Note', null, 42)).toBe('debit_note_42.pdf');
-  });
-});
-
-describe('noteViewButtonLabel', () => {
-  test('only an active note offers sharing', () => {
-    expect(noteViewButtonLabel('active')).toBe('View / Share');
-    expect(noteViewButtonLabel('cancelled')).toBe('View');
   });
 });

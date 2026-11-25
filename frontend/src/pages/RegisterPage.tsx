@@ -66,7 +66,9 @@ export default function RegisterPage() {
         {/* People who signed up before, often with Google, land here and wait for a
             link; the way back in has to be a button, not a footnote. */}
         <div className="stack" style={{ gap: '8px' }}>
-          <p className="muted-text" style={{ margin: 0 }}>Signed up before, maybe with Google?</p>
+          <p className="muted-text" style={{ margin: 0 }}>
+            Already confirmed your email and chosen a password, or signed up with Google?
+          </p>
           <Link to="/login" className="button button--secondary">Go to sign in</Link>
           <Link to="/forgot-password" style={{ textDecoration: 'underline' }}>Forgot your password?</Link>
         </div>

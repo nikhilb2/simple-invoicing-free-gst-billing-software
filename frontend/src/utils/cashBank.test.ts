@@ -1,9 +1,19 @@
 import { expect, test } from 'vitest';
-import { buildCashBankEditPayload, defaultPaymentAccountId, openingBalanceAt } from './cashBank';
+import { buildCashBankEditPayload, defaultPaymentAccountId, inRegisterPeriod, openingBalanceAt } from './cashBank';
 
 const account = { id: 3, account_type: 'bank' };
 const form = { entryType: 'credit' as const, amount: 500, date: '2026-10-29', description: 'Fixed date' };
 const periodStart = new Date('2026-04-01T00:00:00').getTime();
+
+test('the register includes the whole final second and counts midnight in the next period', () => {
+  const receipt = { voucher_type: 'receipt' as const, account_id: 3, amount: 100, date: '2026-03-31T23:59:59.500000' };
+  const midnight = { ...receipt, amount: 35, date: '2026-04-01T00:00:00' };
+  const payments = [receipt, midnight];
+
+  expect(payments.filter(inRegisterPeriod('2026-03-01', '2026-03-31'))).toEqual([receipt]);
+  expect(payments.filter(inRegisterPeriod('2026-04-01', '2026-04-30'))).toEqual([midnight]);
+  expect(openingBalanceAt(0, payments, 3, periodStart)).toBe(100);
+});
 
 test('opening balance carries earlier receipts and payments into the next financial year', () => {
   expect(openingBalanceAt(10000, [

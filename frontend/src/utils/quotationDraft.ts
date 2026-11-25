@@ -128,17 +128,19 @@ export function conversionLineShortfalls(
   quoted: Pick<InvoiceItemInput, 'product_id' | 'quantity'>[],
   onInvoice: { productId: number; quantity: number }[],
 ): { productId: number; quoted: number; onInvoice: number }[] {
+  // Quantities are stored to three decimals; compare integer thousandths so
+  // regrouping fractional lines cannot produce a false reduction warning.
   const totals = new Map<number, number>();
   for (const line of quoted) {
-    totals.set(line.product_id, (totals.get(line.product_id) ?? 0) + line.quantity);
+    totals.set(line.product_id, (totals.get(line.product_id) ?? 0) + Math.round(line.quantity * 1000));
   }
   const shortfalls: { productId: number; quoted: number; onInvoice: number }[] = [];
   for (const [productId, wanted] of totals) {
     const actual = onInvoice
       .filter((line) => line.productId === productId)
-      .reduce((sum, line) => sum + (Number.isNaN(line.quantity) ? 0 : line.quantity), 0);
+      .reduce((sum, line) => sum + (Number.isNaN(line.quantity) ? 0 : Math.round(line.quantity * 1000)), 0);
     if (actual < wanted) {
-      shortfalls.push({ productId, quoted: wanted, onInvoice: actual });
+      shortfalls.push({ productId, quoted: wanted / 1000, onInvoice: actual / 1000 });
     }
   }
   return shortfalls;

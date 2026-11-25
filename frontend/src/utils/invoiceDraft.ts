@@ -1,3 +1,5 @@
+import type { TcsFormState } from '../pages/invoices/tcsForm';
+
 /**
  * What the create-invoice modal would throw away if it closed now.
  *
@@ -29,6 +31,8 @@ export type InvoiceDraft = {
   referenceNotes: string;
   /** The user's own pick only; the default that follows the ledger is not an edit. */
   placeOfSupplyChoice: string;
+  /** Keep the user's TCS choices, not the automatically calculated rate or amount. */
+  tcsForm: TcsFormState;
   items: InvoiceDraftItem[];
 };
 

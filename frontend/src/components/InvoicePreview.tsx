@@ -6,6 +6,7 @@ import api, { getApiErrorMessage } from '../api/client';
 import type { CompanyAccount, EwayBillSettings, Invoice } from '../types/api';
 import { formatInvoiceDateLabel } from '../utils/invoiceDueDate.ts';
 import { copyTextToClipboard } from '../utils/clipboard';
+import { printPdf } from '../utils/printPdf';
 import formatCurrency from '../utils/formatting';
 import SendEmailModal from './SendEmailModal';
 import EwayBillModal from './EwayBillModal';
@@ -159,8 +160,7 @@ export default function InvoicePreview({ invoice, onClose, onError, onPaymentRec
   };
 
   const handlePrintPdf = () => {
-    iframeRef.current?.contentWindow?.focus();
-    iframeRef.current?.contentWindow?.print();
+    printPdf(iframeRef.current, pdfUrl);
   };
 
   const handleOpenInNewTab = () => {

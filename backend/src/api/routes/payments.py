@@ -1,3 +1,4 @@
+from decimal import Decimal
 from html import escape
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -7,7 +8,7 @@ from sqlalchemy.orm import Session, joinedload
 from src.api.deps import get_active_company, get_current_user, require_company_role
 from src.core.analytics import distinct_id_for, track
 from src.db.session import get_db
-from src.services.gst_tax_service import india_now
+from src.services.gst_tax_service import india_now, money
 from src.models.buyer import Buyer as Ledger
 from src.models.company_account import CompanyAccount
 from src.models.company import CompanyProfile
@@ -307,8 +308,11 @@ def update_payment(
                 status_code=400,
                 detail="Changing the voucher type would invalidate the existing invoice allocations",
             )
-        kept_total = sum(float(allocation.allocated_amount or 0) for allocation in kept_allocations)
-        if kept_total > float(payload.amount or 0):
+        kept_total = sum(
+            (Decimal(str(allocation.allocated_amount or 0)) for allocation in kept_allocations),
+            Decimal("0.00"),
+        )
+        if kept_total > money(Decimal(str(payload.amount or 0))):
             raise HTTPException(
                 status_code=400,
                 detail="Allocated total cannot exceed the receipt/payment amount",

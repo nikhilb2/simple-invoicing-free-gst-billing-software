@@ -8,6 +8,7 @@ import { usePaperChoice } from '../hooks/usePaperChoice';
 import PreviewToolbar, { type PreviewAction } from './PreviewToolbar';
 import type { DeliveryChallan } from '../types/api';
 import { MAX_CHALLAN_COPIES, challanPdfFileName } from '../utils/deliveryChallan';
+import { printPdf } from '../utils/printPdf';
 
 type DeliveryChallanPreviewProps = {
   challan: DeliveryChallan;
@@ -108,8 +109,7 @@ export default function DeliveryChallanPreview({ challan, menuActions = [], meta
               label: 'Print',
               icon: <Printer size={16} aria-hidden="true" />,
               onClick: () => {
-                iframeRef.current?.contentWindow?.focus();
-                iframeRef.current?.contentWindow?.print();
+                printPdf(iframeRef.current, pdfUrl);
               },
               disabled: !pdfUrl || loadingPdf || previewFailed,
               title: 'Print delivery challan',

@@ -1,5 +1,6 @@
 from contextlib import contextmanager
 from datetime import date, datetime
+from decimal import Decimal
 from io import BytesIO
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -350,6 +351,43 @@ def test_update_payment_without_allocations_keeps_allocations_when_amount_still_
 
     sync_mock.assert_not_called()
     assert existing_payment.amount == 150
+
+
+@pytest.mark.parametrize("voucher_type", ["receipt", "payment"])
+@pytest.mark.parametrize("amount", [3.30, 3.295])
+def test_update_payment_keeps_fractional_allocations_equal_to_payment(voucher_type, amount):
+    existing_payment = _allocated_payment(amount=3.30)
+    existing_payment.voucher_type = voucher_type
+    existing_payment.invoice_allocations[0].allocated_amount = Decimal("1.10")
+    existing_payment.invoice_allocations[1].allocated_amount = Decimal("2.20")
+    payload = PaymentUpdate(voucher_type=voucher_type, amount=amount, notes="Corrected note")
+
+    db, sync_mock, _ = _run_update(existing_payment, payload)
+
+    db.commit.assert_called_once()
+    sync_mock.assert_not_called()
+    assert existing_payment.notes == "Corrected note"
+    assert existing_payment.amount == amount
+
+
+@pytest.mark.parametrize("voucher_type", ["receipt", "payment"])
+@pytest.mark.parametrize("amount", [3.29, 3.294])
+def test_update_payment_rejects_fractional_allocations_above_payment(voucher_type, amount):
+    existing_payment = _allocated_payment(amount=3.30)
+    existing_payment.voucher_type = voucher_type
+    existing_payment.invoice_allocations[0].allocated_amount = Decimal("1.10")
+    existing_payment.invoice_allocations[1].allocated_amount = Decimal("2.20")
+    db = _update_payment_db(existing_payment)
+    payload = PaymentUpdate(voucher_type=voucher_type, amount=amount, notes="Changed")
+
+    with pytest.raises(HTTPException) as exc:
+        update_payment(12, payload, db=db, _=SimpleNamespace(id=1))
+
+    assert exc.value.status_code == 400
+    assert "Allocated total" in exc.value.detail
+    db.commit.assert_not_called()
+    assert existing_payment.amount == 3.30
+    assert existing_payment.notes is None
 
 
 def test_update_payment_with_empty_allocations_still_clears_them():

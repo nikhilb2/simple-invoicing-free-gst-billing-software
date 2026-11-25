@@ -26,6 +26,7 @@ function draft(overrides: Partial<InvoiceDraft> = {}): InvoiceDraft {
     dueDateDays: '',
     referenceNotes: '',
     placeOfSupplyChoice: '',
+    tcsForm: { sectionId: '', rateText: null, amountText: null },
     items: [item()],
     ...overrides,
   };
@@ -64,6 +65,26 @@ describe('invoiceDraftSnapshot', () => {
 
   test('ignores line ids, so adding a line and removing the original loses nothing', () => {
     expect(invoiceDraftSnapshot(draft({ items: [item({ id: 2 })] }))).toBe(invoiceDraftSnapshot(draft()));
+  });
+
+  test('detects choosing a TCS section without changing another invoice field', () => {
+    const selected = draft({ tcsForm: { sectionId: '7', rateText: null, amountText: null } });
+    expect(invoiceDraftSnapshot(selected)).not.toBe(invoiceDraftSnapshot(draft()));
+  });
+
+  test.each([
+    { sectionId: '7', rateText: '3.5', amountText: null },
+    { sectionId: '7', rateText: null, amountText: '12.34' },
+    { sectionId: '7', rateText: null, amountText: '0' },
+  ])('detects a TCS override independently of its section', (tcsForm) => {
+    const suggested = draft({ tcsForm: { sectionId: '7', rateText: null, amountText: null } });
+    expect(invoiceDraftSnapshot(draft({ tcsForm }))).not.toBe(invoiceDraftSnapshot(suggested));
+  });
+
+  test('returning to No TCS restores the original snapshot', () => {
+    const edited = draft({ tcsForm: { sectionId: '7', rateText: '3.5', amountText: '12.34' } });
+    edited.tcsForm = { sectionId: '', rateText: null, amountText: null };
+    expect(invoiceDraftSnapshot(edited)).toBe(invoiceDraftSnapshot(draft()));
   });
 
   test('keeps line order', () => {

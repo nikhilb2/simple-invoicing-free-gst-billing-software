@@ -1,7 +1,6 @@
 import { FormEvent, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { resendVerification } from '../api/auth';
-import { getApiErrorCode } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useAuthConfig } from '../hooks/useAuthConfig';
 import { authErrorMessage, loginErrorMessage } from '../utils/authFlow';
@@ -18,7 +17,7 @@ export default function LoginPage() {
   // The OAuth callback redirects here with ?error=<code>.
   const [error, setError] = useState(() => loginErrorMessage(searchParams.get('error')));
   const [success, setSuccess] = useState('');
-  const [needsVerification, setNeedsVerification] = useState(
+  const [showVerificationHelp, setShowVerificationHelp] = useState(
     () => searchParams.get('error') === 'email_not_verified',
   );
   const [submitting, setSubmitting] = useState(false);
@@ -38,11 +37,14 @@ export default function LoginPage() {
       setSubmitting(true);
       setError('');
       setSuccess('');
-      setNeedsVerification(false);
+      setShowVerificationHelp(false);
       await login(email, password);
       navigate(next, { replace: true });
     } catch (err) {
-      setNeedsVerification(getApiErrorCode(err) === 'email_not_verified');
+      // A new account has no password until its email link is opened. The API
+      // deliberately returns the same error as a wrong password, so offer
+      // generic guidance without inferring whether this address has an account.
+      setShowVerificationHelp(true);
       setError(authErrorMessage(err, 'Unable to sign in'));
     } finally {
       setSubmitting(false);
@@ -104,15 +106,20 @@ export default function LoginPage() {
 
         <StatusToasts error={error} success={success} onClearError={() => setError('')} onClearSuccess={() => setSuccess('')} />
 
-        {needsVerification ? (
-          <button
-            type="button"
-            className="button button--ghost"
-            onClick={() => void onResend()}
-            disabled={resending}
-          >
-            {resending ? 'Sending...' : 'Resend verification email'}
-          </button>
+        {showVerificationHelp ? (
+          <div className="stack" style={{ gap: '8px' }}>
+            <p className="muted-text" style={{ margin: 0 }}>
+              Just signed up? Open the email we sent you to confirm your address and choose your password.
+            </p>
+            <button
+              type="button"
+              className="button button--ghost"
+              onClick={() => void onResend()}
+              disabled={resending}
+            >
+              {resending ? 'Sending...' : 'Resend verification email'}
+            </button>
+          </div>
         ) : null}
 
         <button className="button button--primary" disabled={submitting} title="Sign in" aria-label="Sign in">

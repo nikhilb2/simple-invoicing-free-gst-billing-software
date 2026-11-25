@@ -1,5 +1,6 @@
 import { MutableRefObject, useCallback, useEffect, useRef, useState } from 'react';
 import api, { getApiErrorMessage } from '../api/client';
+import { printPdf } from '../utils/printPdf';
 
 export type PdfPreviewParams = Record<string, string | number | boolean | undefined>;
 
@@ -105,9 +106,8 @@ export function usePdfPreview({ path, params, errorMessage, onError }: UsePdfPre
   }, [path, paramsKey, errorMessage]);
 
   const print = useCallback(() => {
-    iframeRef.current?.contentWindow?.focus();
-    iframeRef.current?.contentWindow?.print();
-  }, []);
+    printPdf(iframeRef.current, pdfUrl);
+  }, [pdfUrl]);
 
   const openInNewTab = useCallback(() => {
     if (!pdfUrl) return;

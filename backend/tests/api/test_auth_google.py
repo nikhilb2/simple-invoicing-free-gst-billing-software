@@ -261,14 +261,16 @@ def test_existing_password_user_is_linked_by_verified_email(client, db_session, 
     assert _find(events, "user_signed_up") == []
 
 
-def test_linking_an_unverified_account_ends_the_squatters_sessions(client, db_session, monkeypatch, google):
+def test_linking_an_unverified_account_ends_the_squatters_sessions(
+    client, db_session, monkeypatch, google, tokens_issued_earlier,
+):
     from src.core.security import create_refresh_token
 
     # Single tenant lets the unverified squatter sign in; shared hosting drops
     # the password on link, and must end that session too.
     squatter = _user(db_session, email="person@gmail.com", password="Squatter@123", verified=False)
-    held = create_refresh_token(squatter.email)
-    time.sleep(1.1)
+    with tokens_issued_earlier():  # whole-second iat: issue it before the link's cutoff second
+        held = create_refresh_token(squatter.email)
     monkeypatch.setattr(settings, "DEPLOYMENT_MODE", "shared_hosting")
 
     _sign_in(client)

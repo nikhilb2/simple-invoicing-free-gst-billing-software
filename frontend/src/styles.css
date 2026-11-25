@@ -402,6 +402,26 @@ textarea {
   font: inherit;
 }
 
+/* Keep native check/radio appearance and keyboard behaviour, with room to tap. */
+input[type='checkbox'],
+input[type='radio'] {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+
+:where(
+  label:has(> input[type='checkbox']),
+  label:has(> input[type='radio']),
+  input[type='checkbox'] + label,
+  input[type='radio'] + label
+) {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+
 .app-shell {
   display: grid;
   grid-template-columns: var(--sidebar-width) 1fr;
@@ -9377,5 +9397,33 @@ a.ledger-chip:focus-visible {
   .ledger-delete__actions .button {
     flex: 1 1 100%;
     min-height: 48px;
+  }
+}
+
+/* Credit / Debit Notes: the form is a wide dialog; the list is a table on
+   desktop and cards on a phone. Chips keep one wrapping row (a .button-row
+   would stack them full width under 720px). */
+.modal-panel--credit-note-form {
+  width: min(860px, 100%);
+}
+
+.chip-row {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.credit-notes-cards {
+  display: none;
+}
+
+@media (max-width: 720px) {
+  .credit-notes-table {
+    display: none;
+  }
+
+  .credit-notes-cards {
+    display: grid;
   }
 }

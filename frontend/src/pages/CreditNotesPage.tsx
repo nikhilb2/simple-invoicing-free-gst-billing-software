@@ -1,22 +1,27 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FilePlus2, FileText, RefreshCw, Search, XCircle } from 'lucide-react';
+import { FilePlus2, Plus } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { cancelCreditNote, createCreditNote, listCreditNotes } from '../api/creditNotes';
 import api, { getApiErrorMessage } from '../api/client';
 import CreditNotePreview from '../components/CreditNotePreview';
 import ConfirmDialog from '../components/ConfirmDialog';
-import { noteDocumentLabel, noteViewButtonLabel } from '../utils/noteDocument';
+import { noteDocumentLabel } from '../utils/noteDocument';
 import LedgerCombobox from '../components/LedgerCombobox';
 import StatusToasts from '../components/StatusToasts';
 import EmptyState from '../components/EmptyState';
 import LoadingState from '../components/LoadingState';
+import ModalCloseButton from '../components/ModalCloseButton';
+import SearchInput from '../components/SearchInput';
+import { useEscapeClose } from '../hooks/useEscapeClose';
+import useDebouncedValue from '../hooks/useDebouncedValue';
+import { focusAfterCancelDialog } from '../utils/creditNoteCancelFocus';
+import CreditNotesList from './credit-notes/CreditNotesList';
 import { invoiceCreditStatusMeta } from '../common/invoiceCreditStatus';
 import type {
   CompanyProfile,
   CreditNote,
   CreditNoteCreate,
   CreditNoteDirection,
-  CreditNoteType,
   Invoice,
   PaginatedInvoices,
   PaginatedLedgers,
@@ -32,7 +37,7 @@ import { creditNoteCancelMessage } from '../utils/creditNoteCancelMessage';
 import { billedLineAmounts, returnPreviewTotal } from '../utils/creditNoteAmounts';
 import { toIsoDate } from '../utils/dateRanges';
 import { exportCreditNotesCsv } from './credit-notes/exports';
-import { deepLinkClass, numericParam, useDeepLinkScroll } from '../utils/deepLink';
+import { numericParam, useDeepLinkScroll } from '../utils/deepLink';
 
 type SelectedLineItem = {
   invoice: Invoice;
@@ -40,12 +45,6 @@ type SelectedLineItem = {
   productName: string;
   wholeQuantity: boolean;
   quantityKey: string;
-};
-
-const creditNoteTypeLabels: Record<CreditNoteType, string> = {
-  return: 'Return',
-  discount: 'Discount',
-  adjustment: 'Adjustment',
 };
 
 const createCreditNoteTypeLabels: Record<'return' | 'discount', string> = {
@@ -92,13 +91,20 @@ export default function CreditNotesPage() {
   const [cancellingId, setCancellingId] = useState<number | null>(null);
   const [cancelTarget, setCancelTarget] = useState<CreditNote | null>(null);
   const cancelInFlight = useRef(false);
-  const cancelTrigger = useRef<HTMLButtonElement | null>(null);
   const [previewCreditNote, setPreviewCreditNote] = useState<CreditNote | null>(null);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [gstWarnings, setGstWarnings] = useState<string[]>([]);
 
+  // The create form is a dialog. A deep link (?invoice= / ?ledger=) opens it at once.
+  const [formOpen, setFormOpen] = useState(Boolean(queryLedgerId || queryInvoiceId));
+  const hadDeepLink = useRef(Boolean(queryLedgerId || queryInvoiceId));
+  const [showMoreFilters, setShowMoreFilters] = useState(false);
+  const [counts, setCounts] = useState({ active: 0, cancelled: 0 });
+
   const [search, setSearch] = useState('');
+  // The list and the status counts follow the debounced text, not each keystroke.
+  const debouncedSearch = useDebouncedValue(search, 300);
   const [statusFilter, setStatusFilter] = useState('');
   const [directionFilter, setDirectionFilter] = useState('');
   const [dateFrom, setDateFrom] = useState('');
@@ -128,16 +134,65 @@ export default function CreditNotesPage() {
   }, []);
 
   const currencyCode = company?.currency_code || 'INR';
+  const hasFilters = Boolean(search || statusFilter || directionFilter || dateFrom || dateTo);
+
+  // A link to the form from another page while this one is open.
+  useEffect(() => {
+    if (queryLedgerId || queryInvoiceId) setFormOpen(true);
+  }, [queryLedgerId, queryInvoiceId]);
+
+  function openForm() {
+    setFormOpen(true);
+  }
+
+  function closeForm() {
+    if (submitting) return;
+    setFormOpen(false);
+    if (searchParams.has('ledger') || searchParams.has('invoice')) {
+      const next = new URLSearchParams(searchParams);
+      next.delete('ledger');
+      next.delete('invoice');
+      setSearchParams(next, { replace: true });
+    }
+  }
+
+  // Read through a ref so the listener keeps one identity and never sees a stale closure.
+  const escapeHandler = useRef(() => {});
+  useEffect(() => {
+    escapeHandler.current = () => {
+      if (formOpen && !previewCreditNote) closeForm();
+    };
+  });
+  useEscapeClose(useCallback(() => escapeHandler.current(), []));
+
+  // Status chip counts follow the other filters but not the status itself.
+  useEffect(() => {
+    let cancelled = false;
+    const base = {
+      page_size: 1,
+      search: debouncedSearch,
+      direction: (directionFilter || undefined) as CreditNoteDirection | undefined,
+      date_from: dateFrom || undefined,
+      date_to: dateTo || undefined,
+    };
+    (async () => {
+      try {
+        const [active, cancelledRes] = await Promise.all([
+          listCreditNotes({ ...base, status: 'active' }),
+          listCreditNotes({ ...base, status: 'cancelled' }),
+        ]);
+        if (!cancelled) setCounts({ active: active.data.total, cancelled: cancelledRes.data.total });
+      } catch {
+        // The chips just keep their last numbers; the list reports its own errors.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [dateFrom, dateTo, directionFilter, refreshKey, debouncedSearch]);
 
   useEffect(() => {
     if (!cancelTarget) return;
-    const trigger = cancelTrigger.current;
     document.querySelector<HTMLButtonElement>('[aria-labelledby="confirm-dialog-title"] button')?.focus();
-    return () => {
-      // After a successful cancellation its cancel button no longer exists.
-      const next = trigger?.isConnected ? trigger : document.querySelector<HTMLButtonElement>(`#credit-note-${cancelTarget.id} button`);
-      next?.focus();
-    };
+    return () => focusAfterCancelDialog(document, cancelTarget.id);
   }, [cancelTarget]);
 
   // A note only ever covers one voucher type, so the picker only ever offers
@@ -172,8 +227,11 @@ export default function CreditNotesPage() {
         setProducts(productsRes.data.items);
         setAllInvoices(invoicesRes.data.items);
 
-        if (!queryLedgerId && !queryInvoiceId && ledgersRes.data.items[0]) {
-          setSelectedLedgerId(String(ledgersRes.data.items[0].id));
+        // This load runs again when the voucher type changes; keep the ledger
+        // the user already picked and only default to the first one.
+        const firstLedger = ledgersRes.data.items[0];
+        if (!hadDeepLink.current && firstLedger) {
+          setSelectedLedgerId((current) => current || String(firstLedger.id));
         }
       } catch (err) {
         if (!cancelled) {
@@ -189,7 +247,7 @@ export default function CreditNotesPage() {
     return () => {
       cancelled = true;
     };
-  }, [fetchInvoices, queryInvoiceId, queryLedgerId]);
+  }, [fetchInvoices]);
 
   useEffect(() => {
     if (!queryInvoiceId) return;
@@ -228,7 +286,7 @@ export default function CreditNotesPage() {
         const response = await listCreditNotes({
           page: listPage,
           page_size: pageSize,
-          search,
+          search: debouncedSearch,
           status: statusFilter || undefined,
           direction: (directionFilter || undefined) as CreditNoteDirection | undefined,
           date_from: dateFrom || undefined,
@@ -254,7 +312,7 @@ export default function CreditNotesPage() {
     return () => {
       cancelled = true;
     };
-  }, [dateFrom, dateTo, directionFilter, listPage, refreshKey, search, statusFilter]);
+  }, [dateFrom, dateTo, directionFilter, listPage, refreshKey, debouncedSearch, statusFilter]);
 
   useEffect(() => {
     if (deepLinkCreditNoteId === null) return undefined;
@@ -281,8 +339,13 @@ export default function CreditNotesPage() {
     return () => { cancelled = true; };
   }, [deepLinkCreditNoteId]);
 
+  // The table shows on desktop and the cards on a phone; the hidden one is a no-op.
   useDeepLinkScroll(
     highlightCreditNoteId === null ? null : `credit-note-${highlightCreditNoteId}`,
+    !loadingCreditNotes,
+  );
+  useDeepLinkScroll(
+    highlightCreditNoteId === null ? null : `credit-note-${highlightCreditNoteId}-card`,
     !loadingCreditNotes,
   );
 
@@ -299,7 +362,9 @@ export default function CreditNotesPage() {
   }, [allInvoices, expectedVoucherType, selectedLedgerId]);
 
   useEffect(() => {
-    if (!selectedLedgerId) return;
+    // Until the invoices have loaded every selection would look stale, which
+    // dropped the invoice a deep link had just picked.
+    if (!selectedLedgerId || loadingBootstrap) return;
 
     setSelectedInvoiceIds((current) => current.filter((invoiceId) =>
       filteredInvoices.some((invoice) => invoice.id === invoiceId)
@@ -316,10 +381,10 @@ export default function CreditNotesPage() {
       );
       return Object.fromEntries(Object.entries(current).filter(([key]) => allowedKeys.has(key)));
     });
-  }, [filteredInvoices, selectedLedgerId]);
+  }, [filteredInvoices, loadingBootstrap, selectedLedgerId]);
 
   useEffect(() => {
-    if (!selectedLedgerId) return;
+    if (!selectedLedgerId || !formOpen) return;
     const currentLedgerId = searchParams.get('ledger') || '';
     const currentInvoiceId = searchParams.get('invoice') || '';
     const nextInvoiceId = selectedInvoiceIds.length === 1 ? String(selectedInvoiceIds[0]) : '';
@@ -336,7 +401,7 @@ export default function CreditNotesPage() {
       nextParams.delete('invoice');
     }
     setSearchParams(nextParams, { replace: true });
-  }, [searchParams, selectedInvoiceIds, selectedLedgerId, setSearchParams]);
+  }, [formOpen, searchParams, selectedInvoiceIds, selectedLedgerId, setSearchParams]);
 
   const selectedInvoiceMap = useMemo(() => new Set(selectedInvoiceIds), [selectedInvoiceIds]);
 
@@ -516,24 +581,12 @@ export default function CreditNotesPage() {
       setSupplierNoteDate('');
       setCreditNoteDateChoice(null);
       setRefreshKey((value) => value + 1);
-
-      const [creditNotesRes, invoicesRes] = await Promise.all([
-        listCreditNotes({
-          page: listPage,
-          page_size: pageSize,
-          search,
-          status: statusFilter || undefined,
-          direction: (directionFilter || undefined) as CreditNoteDirection | undefined,
-          date_from: dateFrom || undefined,
-          date_to: dateTo || undefined,
-        }),
-        fetchInvoices(),
-      ]);
-
-      setCreditNotes(creditNotesRes.data.items);
-      setListTotal(creditNotesRes.data.total);
-      setListTotalPages(creditNotesRes.data.total_pages);
-      setAllInvoices(invoicesRes.data.items);
+      setFormOpen(false);
+      const next = new URLSearchParams(searchParams);
+      next.delete('ledger');
+      next.delete('invoice');
+      setSearchParams(next, { replace: true });
+      setAllInvoices((await fetchInvoices()).data.items);
     } catch (err) {
       setError(getApiErrorMessage(err, 'Unable to create credit note'));
     } finally {
@@ -552,24 +605,8 @@ export default function CreditNotesPage() {
       setCancelTarget(null);
       setSuccess('Credit note cancelled.');
       setRefreshKey((value) => value + 1);
-
-      const [creditNotesRes, invoicesRes] = await Promise.all([
-        listCreditNotes({
-          page: listPage,
-          page_size: pageSize,
-          search,
-          status: statusFilter || undefined,
-          direction: (directionFilter || undefined) as CreditNoteDirection | undefined,
-          date_from: dateFrom || undefined,
-          date_to: dateTo || undefined,
-        }),
-        fetchInvoices(),
-      ]);
-
-      setCreditNotes(creditNotesRes.data.items);
-      setListTotal(creditNotesRes.data.total);
-      setListTotalPages(creditNotesRes.data.total_pages);
-      setAllInvoices(invoicesRes.data.items);
+      setPreviewCreditNote(null);
+      setAllInvoices((await fetchInvoices()).data.items);
     } catch (err) {
       setError(getApiErrorMessage(err, 'Unable to cancel credit note'));
     } finally {
@@ -617,18 +654,139 @@ export default function CreditNotesPage() {
         </div>
       ) : null}
 
-      <section className="content-grid">
-        <article className="panel stack">
-          <div className="panel__header">
-            <div>
-              <p className="eyebrow">Credit notes</p>
-              <h2 className="nav-panel__title">Ledger-first credit workflow</h2>
-            </div>
-            <div style={{ textAlign: 'right' }}>
-              <p className="eyebrow">Preview total</p>
-              <strong style={{ fontSize: '1.1rem' }}>{formatCurrency(previewTotal, currencyCode)}</strong>
-            </div>
+      <div className="page-grid">
+        <section className="page-hero">
+          <div>
+            <p className="eyebrow">Sales</p>
+            <h1 className="page-title">Credit / Debit Notes</h1>
+            <p className="section-copy">
+              Money you give back to a customer when goods come back or you allow a discount after billing. Open a note to print or share it.
+            </p>
           </div>
+          <div className="button-row">
+            <button type="button" className="button button--primary" onClick={openForm}>
+              <Plus size={14} aria-hidden="true" /> New credit note
+            </button>
+            <button
+              type="button"
+              className="button button--secondary"
+              disabled={loadingCreditNotes || exporting || creditNotes.length === 0}
+              onClick={() => void handleExportCreditNotesCsv()}
+            >
+              {exporting ? 'Exporting...' : 'Export CSV'}
+            </button>
+          </div>
+        </section>
+
+        <section className="content-grid content-grid--single">
+          <article className="panel stack">
+            <div className="chip-row" role="group" aria-label="Filter by status">
+              {([['', 'All', counts.active + counts.cancelled], ['active', 'Active', counts.active], ['cancelled', 'Cancelled', counts.cancelled]] as const).map(([value, label, count]) => (
+                <button
+                  key={value}
+                  type="button"
+                  className={`button ${statusFilter === value ? 'button--secondary' : 'button--ghost'}`}
+                  aria-pressed={statusFilter === value}
+                  onClick={() => { setStatusFilter(value); setListPage(1); }}
+                >
+                  {label} ({count})
+                </button>
+              ))}
+            </div>
+
+            <div className="field-grid">
+              <div className="field">
+                <SearchInput
+                  id="credit-note-search"
+                  label="Search credit notes"
+                  wrapperClassName="ledger-search"
+                  inputClassName="input ledger-search__input"
+                  iconClassName="ledger-search__icon"
+                  clearClassName="ledger-search__clear"
+                  value={search}
+                  onChange={(value) => { setSearch(value); setListPage(1); }}
+                  placeholder="Number or customer"
+                />
+              </div>
+            </div>
+
+            <div>
+              <button
+                type="button"
+                className="button button--ghost button--small"
+                aria-expanded={showMoreFilters}
+                onClick={() => setShowMoreFilters((open) => !open)}
+              >
+                More filters
+              </button>
+            </div>
+
+            {showMoreFilters ? (
+              <div className="field-grid">
+                <label>
+                  <span>Voucher</span>
+                  <select
+                    className="select"
+                    value={directionFilter}
+                    onChange={(event) => { setDirectionFilter(event.target.value); setListPage(1); }}
+                  >
+                    <option value="">All</option>
+                    <option value="outward">Sales</option>
+                    <option value="inward">Purchase</option>
+                  </select>
+                </label>
+                <label>
+                  <span>From</span>
+                  <input className="input" type="date" value={dateFrom} onChange={(event) => { setDateFrom(event.target.value); setListPage(1); }} />
+                </label>
+                <label>
+                  <span>To</span>
+                  <input className="input" type="date" value={dateTo} onChange={(event) => { setDateTo(event.target.value); setListPage(1); }} />
+                </label>
+              </div>
+            ) : null}
+
+            <CreditNotesList
+              notes={creditNotes}
+              ledgers={ledgers}
+              invoices={allInvoices}
+              currencyCode={currencyCode}
+              highlightId={highlightCreditNoteId}
+              loading={loadingCreditNotes}
+              hasFilters={hasFilters}
+              page={listPage}
+              totalPages={listTotalPages}
+              total={listTotal}
+              pageSize={pageSize}
+              onPageChange={setListPage}
+              onView={setPreviewCreditNote}
+              onNew={openForm}
+            />
+          </article>
+        </section>
+      </div>
+
+      {formOpen ? (
+        <div className="modal-overlay">
+          <div
+            className="modal-panel modal-panel--credit-note-form"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="credit-note-form-title"
+          >
+            <div className="panel__header">
+              <div>
+                <p className="eyebrow">New</p>
+                <h2 className="nav-panel__title" id="credit-note-form-title">New credit note</h2>
+              </div>
+              <div className="panel__header-actions">
+                <div style={{ textAlign: 'right' }}>
+                  <p className="eyebrow">Preview total</p>
+                  <strong>{formatCurrency(previewTotal, currencyCode)}</strong>
+                </div>
+                <ModalCloseButton onClick={closeForm} label="Close credit note form" disabled={submitting} />
+              </div>
+            </div>
 
           {loadingBootstrap ? <LoadingState message="Loading ledgers, invoices, and products..." /> : null}
 
@@ -923,196 +1081,25 @@ export default function CreditNotesPage() {
               </div>
             </form>
           ) : null}
-        </article>
-
-        <article className="panel stack">
-          <div className="panel__header">
-            <div>
-              <p className="eyebrow">Registry</p>
-              <h2 className="nav-panel__title">Credit note feed</h2>
-            </div>
-            <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
-              <div>
-                <p className="eyebrow">Listed total</p>
-                <strong style={{ fontSize: '1.1rem' }}>{listTotal}</strong>
-              </div>
-              <button
-                type="button"
-                className="button button--secondary button--small"
-                disabled={loadingCreditNotes || exporting || creditNotes.length === 0}
-                onClick={() => void handleExportCreditNotesCsv()}
-              >
-                {exporting ? 'Exporting...' : 'Export CSV'}
-              </button>
-            </div>
           </div>
+        </div>
+      ) : null}
 
-          <div className="field-grid">
-            <label>
-              <span>Search</span>
-              <div style={{ position: 'relative' }}>
-                <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-                <input
-                  className="input"
-                  style={{ paddingLeft: '36px' }}
-                  value={search}
-                  onChange={(event) => { setSearch(event.target.value); setListPage(1); }}
-                  placeholder="Search our number, the supplier's, or a ledger"
-                />
-              </div>
-            </label>
-            <label>
-              <span>Status</span>
-              <select
-                className="select"
-                value={statusFilter}
-                onChange={(event) => { setStatusFilter(event.target.value); setListPage(1); }}
-              >
-                <option value="">All</option>
-                <option value="active">Active</option>
-                <option value="cancelled">Cancelled</option>
-              </select>
-            </label>
-            <label>
-              <span>Voucher</span>
-              <select
-                className="select"
-                value={directionFilter}
-                onChange={(event) => { setDirectionFilter(event.target.value); setListPage(1); }}
-              >
-                <option value="">All</option>
-                <option value="outward">Sales</option>
-                <option value="inward">Purchase</option>
-              </select>
-            </label>
-            <label>
-              <span>From</span>
-              <input className="input" type="date" value={dateFrom} onChange={(event) => { setDateFrom(event.target.value); setListPage(1); }} />
-            </label>
-            <label>
-              <span>To</span>
-              <input className="input" type="date" value={dateTo} onChange={(event) => { setDateTo(event.target.value); setListPage(1); }} />
-            </label>
-          </div>
-
-          <div className="button-row">
-            <button type="button" className="button button--ghost" onClick={() => {
-              setSearch('');
-              setStatusFilter('');
-              setDirectionFilter('');
-              setDateFrom('');
-              setDateTo('');
-              setListPage(1);
-            }}>
-              <XCircle size={16} />
-              Clear filters
-            </button>
-            <button type="button" className="button button--secondary" onClick={() => setRefreshKey((value) => value + 1)}>
-              <RefreshCw size={16} />
-              Refresh
-            </button>
-          </div>
-
-          {loadingCreditNotes ? <LoadingState message="Loading credit notes..." /> : null}
-          {!loadingCreditNotes && creditNotes.length === 0 ? <EmptyState message="No credit notes match the current filters." /> : null}
-
-          <div className="stack" style={{ gap: '12px' }}>
-            {creditNotes.map((creditNote) => {
-              const ledger = ledgers.find((entry) => entry.id === creditNote.ledger_id);
-              return (
-                <div
-                  key={creditNote.id}
-                  id={`credit-note-${creditNote.id}`}
-                  className={deepLinkClass(highlightCreditNoteId === creditNote.id, 'panel')}
-                  style={{ padding: '16px' }}
-                >
-                  <div className="panel__header">
-                    <div>
-                      <p className="eyebrow">
-                        {creditNote.direction === 'inward' ? 'Purchase' : 'Sales'}
-                        {' · '}
-                        {creditNoteTypeLabels[creditNote.credit_note_type]}
-                      </p>
-                      <h3 className="nav-panel__title" style={{ fontSize: '1rem' }}>{creditNote.credit_note_number}</h3>
-                    </div>
-                    <span style={{
-                      padding: '4px 10px',
-                      borderRadius: '999px',
-                      background: creditNote.status === 'cancelled' ? '#fee2e2' : '#dcfce7',
-                      color: creditNote.status === 'cancelled' ? '#b91c1c' : '#166534',
-                      fontSize: '0.8rem',
-                      fontWeight: 600,
-                    }}>
-                      {creditNote.status === 'cancelled' ? 'Cancelled' : 'Active'}
-                    </span>
-                  </div>
-
-                  <p style={{ margin: '0 0 10px', color: 'var(--text-muted)' }}>
-                    {ledger?.name || `Ledger #${creditNote.ledger_id}`} • Dated {formatDate(creditNote.credit_note_date ?? creditNote.created_at)} • Invoices {creditNoteInvoiceLabels(creditNote.invoice_ids, allInvoices)}
-                  </p>
-
-                  {creditNote.direction === 'inward' && creditNote.supplier_credit_note_number ? (
-                    // The number the user reconciles against GSTR-2B, so it
-                    // belongs on the card rather than one click away.
-                    <p style={{ margin: '0 0 10px', color: 'var(--text-muted)' }}>
-                      Supplier CN {creditNote.supplier_credit_note_number}
-                      {creditNote.supplier_credit_note_date
-                        ? ` dated ${formatDate(creditNote.supplier_credit_note_date)}`
-                        : ''}
-                    </p>
-                  ) : null}
-
-                  {creditNote.reason ? <p style={{ margin: '0 0 10px' }}>{creditNote.reason}</p> : null}
-
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
-                    <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', color: 'var(--text-muted)' }}>
-                      <span>Taxable {formatCurrency(creditNote.taxable_amount, currencyCode)}</span>
-                      <span>Tax {formatCurrency(creditNote.cgst_amount + creditNote.sgst_amount + creditNote.igst_amount, currencyCode)}</span>
-                      <strong style={{ color: 'var(--text)' }}>Total {formatCurrency(creditNote.total_amount, currencyCode)}</strong>
-                    </div>
-                    <div className="button-row">
-                    {/* An inward note opens as our Debit Note, addressed to the supplier. */}
-                    <button
-                      type="button"
-                      className="button button--secondary"
-                      onClick={() => setPreviewCreditNote(creditNote)}
-                    >
-                      <FileText size={16} />
-                      {noteViewButtonLabel(creditNote.status)}
-                    </button>
-                    {creditNote.status === 'active' ? (
-                      <button
-                        type="button"
-                        className="button button--danger"
-                        disabled={cancellingId === creditNote.id}
-                        onClick={(event) => {
-                          cancelTrigger.current = event.currentTarget;
-                          setCancelTarget(creditNote);
-                        }}
-                      >
-                        {cancellingId === creditNote.id ? 'Cancelling...' : 'Cancel credit note'}
-                      </button>
-                    ) : null}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          {listTotalPages > 1 ? (
-            <div className="button-row" style={{ justifyContent: 'center' }}>
-              <button type="button" className="button button--ghost" disabled={listPage <= 1} onClick={() => setListPage((page) => page - 1)}>
-                Previous
-              </button>
-              <span style={{ alignSelf: 'center', color: 'var(--text-muted)' }}>Page {listPage} of {listTotalPages}</span>
-              <button type="button" className="button button--ghost" disabled={listPage >= listTotalPages} onClick={() => setListPage((page) => page + 1)}>
-                Next
-              </button>
-            </div>
-          ) : null}
-        </article>
-      </section>
+      {/* After the preview in the DOM, so the confirmation stacks above it. */}
+      {previewCreditNote ? (
+        <CreditNotePreview
+          creditNoteId={previewCreditNote.id}
+          creditNoteNumber={previewCreditNote.credit_note_number}
+          documentLabel={noteDocumentLabel(previewCreditNote.direction)}
+          canShare={previewCreditNote.status === 'active'}
+          ledgerPhone={ledgers.find((entry) => entry.id === previewCreditNote.ledger_id)?.phone_number}
+          companyName={company?.name}
+          onClose={() => { if (!cancelTarget) setPreviewCreditNote(null); }}
+          onError={(message) => setError(message)}
+          onCancelNote={previewCreditNote.status === 'active' ? () => setCancelTarget(previewCreditNote) : undefined}
+          cancelling={cancellingId === previewCreditNote.id}
+        />
+      ) : null}
 
       {cancelTarget ? (
         <ConfirmDialog
@@ -1129,19 +1116,6 @@ export default function CreditNotesPage() {
           confirmDisabled={cancellingId !== null}
           onConfirm={() => void handleCancelCreditNote(cancelTarget.id)}
           onCancel={() => { if (!cancelInFlight.current) setCancelTarget(null); }}
-        />
-      ) : null}
-
-      {previewCreditNote ? (
-        <CreditNotePreview
-          creditNoteId={previewCreditNote.id}
-          creditNoteNumber={previewCreditNote.credit_note_number}
-          documentLabel={noteDocumentLabel(previewCreditNote.direction)}
-          canShare={previewCreditNote.status === 'active'}
-          ledgerPhone={ledgers.find((entry) => entry.id === previewCreditNote.ledger_id)?.phone_number}
-          companyName={company?.name}
-          onClose={() => setPreviewCreditNote(null)}
-          onError={(message) => setError(message)}
         />
       ) : null}
     </>

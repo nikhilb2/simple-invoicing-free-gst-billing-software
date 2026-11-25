@@ -107,6 +107,24 @@ describe('conversionLineShortfalls', () => {
       { productId: 5, quoted: 1, onInvoice: 0 },
     ]);
   });
+
+  it.each([
+    { quoted: [0.1, 0.2], invoiced: [0.3] },
+    { quoted: [0.8], invoiced: [0.1, 0.7] },
+    { quoted: [0.001, 0.009], invoiced: [0.01] },
+  ])('does not warn when fractional lines add up to the same quantity: %j', ({ quoted, invoiced }) => {
+    expect(conversionLineShortfalls(
+      quoted.map((quantity) => ({ product_id: 5, quantity })),
+      invoiced.map((quantity) => ({ productId: 5, quantity })),
+    )).toEqual([]);
+  });
+
+  it('reports a real one-thousandth shortfall without floating-point noise', () => {
+    expect(conversionLineShortfalls(
+      [{ product_id: 5, quantity: 0.301 }],
+      [{ productId: 5, quantity: 0.1 }, { productId: 5, quantity: 0.2 }],
+    )).toEqual([{ productId: 5, quoted: 0.301, onInvoice: 0.3 }]);
+  });
 });
 
 describe('form items', () => {

@@ -972,13 +972,13 @@ def test_unknown_address_still_costs_a_bcrypt_round(client, monkeypatch):
     assert calls, "an unknown address must not skip the password check"
 
 
-def test_reset_password_ends_existing_sessions(client, db_session, shared, outbox):
+def test_reset_password_ends_existing_sessions(client, db_session, shared, outbox, tokens_issued_earlier):
     _user(db_session, email="owner@example.com", password="OldPass@123")
-    hijacked = client.post("/api/auth/login", json={"email": "owner@example.com", "password": "OldPass@123"}).json()
-    # Refresh tokens carry whole-second iat; step past the second they were issued in.
-    import time as _time
-
-    _time.sleep(1.1)
+    # Refresh tokens carry whole-second iat; issue this one in an earlier second than the reset.
+    with tokens_issued_earlier():
+        hijacked = client.post(
+            "/api/auth/login", json={"email": "owner@example.com", "password": "OldPass@123"}
+        ).json()
     client.post("/api/auth/forgot-password", json={"email": "owner@example.com"})
     token = _link_token(outbox[0], "/reset-password")
     client.post("/api/auth/reset-password", json={"token": token, "new_password": "NewPass@456"})
@@ -1183,15 +1183,15 @@ def test_oauth_exchange_is_rate_limited_per_ip(client, frozen_clock):
     assert statuses[20] == 429
 
 
-def test_changing_a_password_ends_other_sessions_and_keeps_this_one(client, db_session, real_auth):
-    import time as _time
-
+def test_changing_a_password_ends_other_sessions_and_keeps_this_one(
+    client, db_session, real_auth, tokens_issued_earlier,
+):
     _user(db_session, email="owner@example.com", password="OldPass@123")
     login = {"email": "owner@example.com", "password": "OldPass@123"}
-    elsewhere = client.post("/api/auth/login", json=login).json()
-    here = client.post("/api/auth/login", json=login).json()
-    # Tokens carry whole-second iat; step past the second they were issued in.
-    _time.sleep(1.1)
+    # Tokens carry whole-second iat; issue both sessions in an earlier second than the change.
+    with tokens_issued_earlier():
+        elsewhere = client.post("/api/auth/login", json=login).json()
+        here = client.post("/api/auth/login", json=login).json()
 
     response = client.post(
         "/api/auth/change-password",

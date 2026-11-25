@@ -276,6 +276,15 @@ export async function clickNavLink(page: Page, href: string) {
 }
 
 /**
+ * Helper: go to Credit / Debit Notes and open the create dialog. The form is
+ * not on the page until "New credit note" is pressed.
+ */
+export async function openNewCreditNote(page: Page) {
+  await clickNavLink(page, '/credit-notes');
+  await page.getByRole('button', { name: 'New credit note' }).first().click();
+}
+
+/**
  * Helper: tick "Search all FY" on the invoice feed.
  *
  * The checkbox lives in the Filters panel, which is collapsed until the

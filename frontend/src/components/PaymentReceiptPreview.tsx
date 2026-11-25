@@ -6,6 +6,7 @@ import ShareModal from './ShareModal';
 import PreviewToolbar from './PreviewToolbar';
 import PaperSizePicker from './PaperSizePicker';
 import { usePaperChoice } from '../hooks/usePaperChoice';
+import { printPdf } from '../utils/printPdf';
 
 type PaymentReceiptPreviewProps = {
   paymentId: number;
@@ -105,8 +106,7 @@ export default function PaymentReceiptPreview({
   };
 
   const handlePrintPdf = () => {
-    iframeRef.current?.contentWindow?.focus();
-    iframeRef.current?.contentWindow?.print();
+    printPdf(iframeRef.current, pdfUrl);
   };
 
   const handleOpenInNewTab = () => {
