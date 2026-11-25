@@ -731,13 +731,23 @@ def cancel_credit_note(cn_id: int, db: Session, company_id: int | None = None) -
                 if not product:
                     raise HTTPException(status_code=404, detail=f"Product {item.product_id} not found")
 
-                if getattr(product, "track_serials", False):
+                note = (
+                    _supplier_return_note(cn.credit_note_number)
+                    if direction == "inward"
+                    else _return_note(cn.credit_note_number)
+                )
+                # The units this return moved carry its note, so they go back even
+                # if tracking was switched off since (#1068). A return with none
+                # follows the product: a tracked one needs units to reverse.
+                if getattr(product, "track_serials", False) or serials.has_marked_units(
+                    product_id=product.id, company_id=company_id, note=note
+                ):
                     if direction == "inward":
                         serials.reverse_credit_note_supplier_return(
                             product_id=product.id,
                             company_id=company_id,
                             invoice_id=item.invoice_id,
-                            note=_supplier_return_note(cn.credit_note_number),
+                            note=note,
                             quantity=int(item.quantity),
                         )
                     else:
@@ -745,7 +755,7 @@ def cancel_credit_note(cn_id: int, db: Session, company_id: int | None = None) -
                             product_id=product.id,
                             company_id=company_id,
                             invoice_id=item.invoice_id,
-                            note=_return_note(cn.credit_note_number),
+                            note=note,
                             quantity=int(item.quantity),
                         )
 

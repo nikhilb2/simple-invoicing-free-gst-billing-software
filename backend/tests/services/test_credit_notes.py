@@ -574,6 +574,7 @@ class TestCancelCreditNote:
         _mock_locked_note(db, cn)
 
         with patch("src.services.credit_note._recompute_credit_status") as mock_recompute, \
+             patch("src.services.credit_note.SerialManager.has_marked_units", return_value=False), \
              patch("src.services.credit_note._change_inventory_quantity"):
             out = cancel_credit_note(1, db)
 
@@ -614,6 +615,7 @@ class TestCancelCreditNote:
         _mock_locked_note(db, cn)
 
         with patch("src.services.credit_note._recompute_credit_status"), \
+             patch("src.services.credit_note.SerialManager.has_marked_units", return_value=False), \
              patch("src.services.credit_note._change_inventory_quantity") as mock_change_inventory:
             cancel_credit_note(1, db)
 
@@ -801,6 +803,7 @@ class TestInwardCreditNotes:
         _mock_locked_note(db, cn)
 
         with patch("src.services.credit_note._recompute_credit_status"), \
+             patch("src.services.credit_note.SerialManager.has_marked_units", return_value=False), \
              patch("src.services.credit_note._change_inventory_quantity") as mock_change_inventory:
             cancel_credit_note(1, db)
 

@@ -441,14 +441,17 @@ class SerialManager:
             for code in self._codes_for(item):
                 incoming.setdefault(item.product_id, {})[code.upper()] = code
 
+        billed = {item.product_id for item in payload.items}
         diffs: list[tuple[int, list[ProductSerial], list[str]]] = []
         for product_id in set(existing) | set(incoming):
             product = self._get_product(
                 product_id, company_id, f"editing invoice {invoice.id}"
             )
-            # A product whose flag was switched off keeps its rows untouched —
-            # the history of what already shipped stays readable.
-            if not product.track_serials:
+            # A product whose flag was switched off can carry no serials on the
+            # edit, so the units its line went out with stay put while the
+            # invoice still bills it — the history of what shipped stays
+            # readable. Once the edit drops it, they go back (#1068).
+            if not product.track_serials and product_id in billed:
                 continue
             current = existing.get(product_id, {})
             wanted = incoming.get(product_id, {})
@@ -567,9 +570,15 @@ class SerialManager:
             product = self._get_product(
                 item.product_id, company_id, f"restoring invoice {invoice.id}"
             )
-            if not product.track_serials:
-                continue
             rows = available.get(item.product_id, [])
+            if not product.track_serials:
+                # Tracking was switched off since. The units cancel left linked are
+                # what the invoice sold, so they go out again (#1068); while
+                # untracked no sale can take them, so nothing more is required.
+                for row in rows:
+                    row.status = STATUS_SOLD
+                    row.sales_invoice_id = invoice.id
+                continue
             required = int(Decimal(str(item.quantity)))
             if len(rows) < required:
                 raise HTTPException(
@@ -627,6 +636,14 @@ class SerialManager:
                     row.product_id, []
                 ).append(row.serial_number)
         return result
+
+    def has_marked_units(self, *, product_id: int, company_id: int | None, note: str) -> bool:
+        """Whether any unit of *product_id* carries *note*, the mark a return stamps."""
+        query = self.db.query(ProductSerial.id).filter(
+            ProductSerial.product_id == product_id,
+            ProductSerial.note == note,
+        )
+        return self._scoped(query, company_id).first() is not None
 
     def serials_for_invoice(self, invoice: Invoice) -> dict[int, list[str]]:
         """``{product_id: [serial_number]}`` for a single invoice."""
