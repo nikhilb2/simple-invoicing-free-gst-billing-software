@@ -1055,6 +1055,33 @@ def _import_csv_from_content(
             "errors": [{"row": 0, "message": str(e)}],
         }, []
 
+    # Skip blank lines before the header row: a sheet copied from
+    # elsewhere often starts with one, and the blank line used to be
+    # read as the header, failing the whole import as empty.
+    lines = text.splitlines()
+    first_line = 0
+    while first_line < len(lines) and not lines[first_line].strip():
+        first_line += 1
+    if first_line == len(lines):
+        return {
+            "created": 0,
+            "updated": 0,
+            "errors": [{"row": 0, "message": "CSV file appears to be empty"}],
+        }, []
+    if first_line:
+        text = "\n".join(lines[first_line:])
+
+    # The decoder only tells tabs from commas, and only from the first
+    # line. Sniff the header and first rows so files separated by ";"
+    # are read correctly too; fall back to the decoded delimiter.
+    try:
+        sample = "\n".join(lines[first_line:first_line + 5])[:4096]
+        sniffed = csv.Sniffer().sniff(sample, delimiters=",;\t")
+        if sniffed.delimiter in (",", ";", "\t"):
+            delimiter = sniffed.delimiter
+    except csv.Error:
+        pass
+
     reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
     if not reader.fieldnames:
         return {
@@ -1066,6 +1093,40 @@ def _import_csv_from_content(
     # Normalise column names
     normalised = [h.strip().lower().replace(" ", "_") for h in reader.fieldnames]
     headers = set(normalised)
+    has_code_column = not headers.isdisjoint({"item_code", "sku"})
+    has_name_column = not headers.isdisjoint({"item_name", "name"})
+    if not has_code_column or not has_name_column:
+        # The header is the problem, not the rows: one error naming the
+        # missing columns and the headers found, instead of the same
+        # "Missing Item Code / SKU" error on every row.
+        if has_code_column:
+            missing_text = "the Item Name column"
+        elif has_name_column:
+            missing_text = "the Item Code column"
+        else:
+            missing_text = "the Item Name and Item Code columns"
+        found = [h.strip() for h in reader.fieldnames if h and h.strip()]
+        shown = found[:8]
+        found_text = ", ".join(shown)
+        if len(found) > len(shown):
+            found_text += ", ..."
+        if not found_text:
+            found_text = "none"
+        return {
+            "created": 0,
+            "updated": 0,
+            "errors": [
+                {
+                    "row": 0,
+                    "message": (
+                        f"We couldn't find {missing_text}. "
+                        "The first row must be the header. "
+                        f"Found: {found_text}. "
+                        "Download the template to see the expected headers."
+                    ),
+                }
+            ],
+        }, []
     tax_headers = ("tax", "gst", "gst_rate", "tax_rate")
     stock_headers = ("current_stock", "stock")
     has_tax_column = not headers.isdisjoint(tax_headers)
@@ -1296,4 +1357,3 @@ def get_product(
     if not product:
         raise HTTPException(status_code=404, detail=f"Product {product_id} not found")
     return product
-

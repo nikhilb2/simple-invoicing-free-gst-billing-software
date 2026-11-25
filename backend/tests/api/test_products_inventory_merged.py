@@ -460,6 +460,113 @@ class TestCSVImport:
         assert data["created"] == 0
         assert len(data["errors"]) > 0
 
+    def test_import_csv_blank_lines_before_header_creates_products(self, client):
+        """A blank first line, then a valid header and rows: 2 created (Issue #1084)."""
+        csv_content = (
+            "\n"
+            "\n"
+            "Item Name,Item Code,Selling Price,Current Stock\n"
+            "Blank A,BLK001,10,2\n"
+            "Blank B,BLK002,20,3\n"
+        )
+
+        res = client.post(
+            "/api/products/import-csv",
+            files={"file": ("test.csv", csv_content.encode("utf-8"), "text/csv")},
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert data["created"] == 2
+        assert data["errors"] == []
+
+    def test_import_csv_unknown_headers_gives_one_error_naming_missing_columns(self, client):
+        """No recognisable Item Code or Item Name column: exactly one error,
+        naming the missing columns and listing the headers found (Issue #1084)."""
+        csv_content = (
+            "Product Name,HSN,GST %,Price\n"
+            "Widget,8471,18,100\n"
+            "Gadget,9983,0,50\n"
+        )
+
+        res = client.post(
+            "/api/products/import-csv",
+            files={"file": ("test.csv", csv_content.encode("utf-8"), "text/csv")},
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert data["created"] == 0
+        assert data["updated"] == 0
+        assert len(data["errors"]) == 1
+        message = data["errors"][0]["message"]
+        assert "Item Name" in message
+        assert "Item Code" in message
+        assert "Found: Product Name, HSN, GST %, Price" in message
+        assert "first row must be the header" in message
+
+    def test_import_csv_title_row_above_header_gives_one_error(self, client):
+        """A title row above the header is a header problem, not a row
+        problem: one error, not one per row (Issue #1084)."""
+        csv_content = (
+            "Product List,,,,\n"
+            "Widget,8471,18,100\n"
+            "Gadget,9983,0,50\n"
+        )
+
+        res = client.post(
+            "/api/products/import-csv",
+            files={"file": ("test.csv", csv_content.encode("utf-8"), "text/csv")},
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert data["created"] == 0
+        assert len(data["errors"]) == 1
+        assert "Item Name" in data["errors"][0]["message"]
+        assert "Item Code" in data["errors"][0]["message"]
+
+    def test_import_csv_missing_only_one_required_column_gives_one_error(self, client):
+        """Only one of the two required columns missing: the single error
+        names just that column (Issue #1084)."""
+        for csv_content, missing in (
+            (
+                "Item Name,Selling Price\n"
+                "Widget,10\n",
+                "the Item Code column",
+            ),
+            (
+                "Item Code,Selling Price\n"
+                "W-1,10\n",
+                "the Item Name column",
+            ),
+        ):
+            res = client.post(
+                "/api/products/import-csv",
+                files={"file": ("test.csv", csv_content.encode("utf-8"), "text/csv")},
+            )
+            assert res.status_code == 200
+            data = res.json()
+            assert data["created"] == 0
+            assert len(data["errors"]) == 1
+            assert data["errors"][0]["message"].startswith(
+                f"We couldn't find {missing}."
+            )
+
+    def test_import_csv_semicolon_separated_creates_products(self, client):
+        """A file separated by ';' instead of ',' reads correctly (Issue #1084)."""
+        csv_content = (
+            "Item Name;Item Code;Selling Price\n"
+            "Semi A;SEM001;10\n"
+            "Semi B;SEM002;20\n"
+        )
+
+        res = client.post(
+            "/api/products/import-csv",
+            files={"file": ("test.csv", csv_content.encode("utf-8"), "text/csv")},
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert data["created"] == 2
+        assert data["errors"] == []
+
     def test_import_csv_bad_stock_cell_errors_and_keeps_stock(self, client):
         """An unreadable stock cell must error, not silently zero the inventory (Issue #556)."""
         _create_product(client, "IMP010", "Stock Keeper", price=10, initial_quantity=7)
