@@ -1,5 +1,15 @@
 import type { CompanyAccount, Payment, PaymentUpdate } from '../types/api';
 
+export function inRegisterPeriod(fromDate: string, toDate: string) {
+  const fromMs = new Date(`${fromDate}T00:00:00`).getTime();
+  const endDate = new Date(`${toDate}T00:00:00`);
+  const nextMidnightMs = endDate.setHours(24, 0, 0, 0);
+  return (payment: Pick<Payment, 'date'>) => {
+    const paymentMs = new Date(payment.date).getTime();
+    return paymentMs >= fromMs && paymentMs < nextMidnightMs;
+  };
+}
+
 /** Carry earlier register movements into the opening balance for this period. */
 export function openingBalanceAt(
   accountOpening: number,

@@ -9,7 +9,7 @@ import DateRangePresets from '../components/DateRangePresets';
 import type { CompanyAccount, CompanyProfile, Ledger, Payment, PaymentCreate, PaymentUpdate } from '../types/api';
 import formatCurrency, { formatDate, plural } from '../utils/formatting';
 import { toIsoDate } from '../utils/dateRanges';
-import { buildCashBankEditPayload, openingBalanceAt } from '../utils/cashBank';
+import { buildCashBankEditPayload, inRegisterPeriod, openingBalanceAt } from '../utils/cashBank';
 import { useFY } from '../context/FYContext';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import { deepLinkClass, numericParam, useDeepLinkScroll } from '../utils/deepLink';
@@ -164,15 +164,9 @@ export default function CashBankPage() {
   }, [ledgers]);
 
   const accountEntries = useMemo(() => {
-    const fromMs = new Date(`${period.fromDate}T00:00:00`).getTime();
-    const toMs = new Date(`${period.toDate}T23:59:59`).getTime();
-
     return payments
       .filter((payment) => payment.voucher_type === 'receipt' || payment.voucher_type === 'payment')
-      .filter((payment) => {
-        const paymentMs = new Date(payment.date).getTime();
-        return paymentMs >= fromMs && paymentMs <= toMs;
-      })
+      .filter(inRegisterPeriod(period.fromDate, period.toDate))
       .filter((payment) => {
         if (selectedAccountId === '') {
           return payment.account_id == null;
