@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Any
 
 from pydantic import AfterValidator, BaseModel, EmailStr, Field, StringConstraints
 
@@ -84,6 +84,10 @@ class RegisterRequest(BaseModel):
     # be a stranger's. It is chosen on the page the verification link opens.
     email: EmailStr
     full_name: str = Field(min_length=1, max_length=120)
+    # The UTM tags the visitor arrived with, kept by the browser since landing.
+    # Unvalidated here on purpose: the route cleans them (src/core/utm.py) and a
+    # stray value must never be a reason to refuse a registration.
+    utm: dict[str, Any] = Field(default_factory=dict)
 
 
 class EmailRequest(BaseModel):

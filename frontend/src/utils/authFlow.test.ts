@@ -35,6 +35,23 @@ describe('oauthLoginUrl', () => {
   it('replaces an unsafe next with /', () => {
     expect(oauthLoginUrl('google', '//evil.example')).toBe('/api/auth/oauth/google/login?next=%2F');
   });
+
+  it('appends the visitor\'s UTM tags so a first Google sign-in can be attributed', () => {
+    const url = new URL(
+      oauthLoginUrl('google', '/invoices', { utm_source: 'youtube', utm_campaign: 'bye tally' }),
+      'https://app.example',
+    );
+    expect(url.pathname).toBe('/api/auth/oauth/google/login');
+    expect(Object.fromEntries(url.searchParams)).toEqual({
+      next: '/invoices',
+      utm_source: 'youtube',
+      utm_campaign: 'bye tally',
+    });
+  });
+
+  it('adds nothing when there are no tags', () => {
+    expect(oauthLoginUrl('google', '/', {})).toBe('/api/auth/oauth/google/login?next=%2F');
+  });
 });
 
 describe('loginErrorMessage', () => {

@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { apiBaseURL, getApiErrorMessage } from '../api/client';
+import { getStoredUtm, type UtmParams } from '../lib/utm';
 import { sanitizeNextPath } from './nextPath';
 
 /**
@@ -8,10 +9,19 @@ import { sanitizeNextPath } from './nextPath';
  * A full-page navigation, never an XHR: the backend answers with a 302 to the
  * provider, and the provider's consent screen has to own the tab. `next` goes
  * through the same validator as every other return path.
+ *
+ * The visitor's UTM tags ride along as query parameters: there is no request
+ * body to put them in, and the backend carries them to the callback so a
+ * first-time Google sign-in is attributed like a password sign-up.
  */
-export function oauthLoginUrl(providerId: string, next: string | null | undefined): string {
+export function oauthLoginUrl(
+  providerId: string,
+  next: string | null | undefined,
+  utm: UtmParams = getStoredUtm(),
+): string {
   const base = apiBaseURL.replace(/\/+$/, '');
-  return `${base}/auth/oauth/${encodeURIComponent(providerId)}/login?next=${encodeURIComponent(sanitizeNextPath(next))}`;
+  const params = new URLSearchParams({ next: sanitizeNextPath(next), ...utm });
+  return `${base}/auth/oauth/${encodeURIComponent(providerId)}/login?${params.toString()}`;
 }
 
 /** Messages for the `?error=` codes the OAuth callback redirects to /login with. */

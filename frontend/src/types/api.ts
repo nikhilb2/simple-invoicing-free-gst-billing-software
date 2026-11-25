@@ -1140,6 +1140,8 @@ export type AuthConfig = {
 export type RegisterRequest = {
   email: string;
   full_name: string;
+  // The UTM tags the visitor arrived with, for attributing the sign-up.
+  utm?: Record<string, string>;
 };
 
 export type DetailResponse = {

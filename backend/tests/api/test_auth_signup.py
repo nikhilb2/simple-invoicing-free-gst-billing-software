@@ -276,6 +276,66 @@ def test_register_creates_unverified_staff_user_and_mails_link(client, db_sessio
     assert props["method"] == "password"
 
 
+def test_register_attributes_the_signup_to_the_utm_tags(client, shared, outbox, events):
+    response = client.post("/api/auth/register", json={
+        "email": "new@example.com",
+        "full_name": "New Person",
+        "utm": {"utm_source": " YouTube ", "UTM_Medium": "video", "utm_campaign": "bye_bye_tally"},
+    })
+
+    assert response.status_code == 202
+    (_, _, props), = _find(events, "user_signed_up")
+    assert props["utm_source"] == "YouTube"
+    assert props["utm_medium"] == "video"
+    assert props["utm_campaign"] == "bye_bye_tally"
+    assert props["$set_once"] == {
+        "$initial_utm_source": "YouTube",
+        "$initial_utm_medium": "video",
+        "$initial_utm_campaign": "bye_bye_tally",
+    }
+    # Person fields still go out as before.
+    assert props["$set"]["email"] == "new@example.com"
+
+
+def test_register_drops_junk_utm_keys_and_caps_values(client, shared, outbox, events):
+    response = client.post("/api/auth/register", json={
+        "email": "new@example.com",
+        "full_name": "New Person",
+        "utm": {
+            "utm_source": "x" * 500,
+            "gclid": "abc",
+            "email": "someone@example.com",
+            "utm_": "bad",
+            "utm_Bad Key": "bad",
+            "utm_blank": "   ",
+            "utm_number": 5,
+        },
+    })
+
+    assert response.status_code == 202
+    (_, _, props), = _find(events, "user_signed_up")
+    assert props["utm_source"] == "x" * 200
+    assert props["$set_once"] == {"$initial_utm_source": "x" * 200}
+    for junk in ("gclid", "email", "utm_", "utm_bad key", "utm_blank", "utm_number"):
+        assert junk not in props
+
+
+def test_register_without_utm_has_no_attribution_properties(client, shared, outbox, events):
+    assert _register(client).status_code == 202
+
+    (_, _, props), = _find(events, "user_signed_up")
+    assert "$set_once" not in props
+    assert not [key for key in props if key.startswith("utm_")]
+
+
+def test_register_with_a_non_object_utm_is_refused_not_a_crash(client, shared, outbox, events):
+    response = client.post("/api/auth/register", json={
+        "email": "new@example.com", "full_name": "New", "utm": "utm_source=x",
+    })
+
+    assert response.status_code == 422
+
+
 def test_register_existing_verified_address_answers_the_same_and_changes_nothing(client, db_session, shared, outbox):
     _user(db_session, email="owner@example.com")
     fresh = _register(client, email="fresh@example.com")

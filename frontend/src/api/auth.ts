@@ -1,4 +1,5 @@
 import api from './client';
+import { getStoredUtm } from '../lib/utm';
 import type {
   AuthConfig,
   AuthToken,
@@ -19,7 +20,9 @@ export async function fetchAuthConfig(): Promise<AuthConfig> {
 // marked. Same-origin /api sends it anyway; a cross-origin VITE_API_BASE_URL only
 // does with this set.
 export async function registerAccount(payload: RegisterRequest): Promise<DetailResponse> {
-  const res = await api.post<DetailResponse>('/auth/register', payload, { withCredentials: true });
+  // The tags the visitor landed with (kept by captureUtm), so the sign-up event is attributed.
+  const body: RegisterRequest = { utm: getStoredUtm(), ...payload };
+  const res = await api.post<DetailResponse>('/auth/register', body, { withCredentials: true });
   return res.data;
 }
 

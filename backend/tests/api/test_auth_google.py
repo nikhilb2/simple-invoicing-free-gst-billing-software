@@ -126,9 +126,9 @@ def _user(db, email="person@gmail.com", password="GoodPass@123", verified=True, 
     return user
 
 
-def _sign_in(client, next_path="/invoices"):
+def _sign_in(client, next_path="/invoices", **utm):
     """login then callback, as the browser would. Returns the callback's Location."""
-    start = client.get("/api/auth/oauth/google/login", params={"next": next_path}, follow_redirects=False)
+    start = client.get("/api/auth/oauth/google/login", params={"next": next_path, **utm}, follow_redirects=False)
     assert start.status_code == 302
     done = client.get("/api/auth/oauth/google/callback?code=x&state=fake", follow_redirects=False)
     assert done.status_code == 302
@@ -243,6 +243,43 @@ def test_new_user_is_created_verified_without_password(client, db_session, share
     tokens = client.post("/api/auth/oauth/exchange", json={"code": query["code"]})
     assert tokens.status_code == 200
     assert set(tokens.json()) == {"access_token", "refresh_token", "token_type"}
+
+
+def test_new_google_user_is_attributed_to_the_utm_tags_on_the_login_url(client, db_session, shared, google, events):
+    _sign_in(client, utm_source="google", utm_campaign="gst", gclid="abc", junk="x")
+
+    (_, _, props), = _find(events, "user_signed_up")
+    assert props["utm_source"] == "google"
+    assert props["utm_campaign"] == "gst"
+    assert props["$set_once"] == {"$initial_utm_source": "google", "$initial_utm_campaign": "gst"}
+    assert "gclid" not in props and "junk" not in props
+
+
+def test_google_signup_without_utm_has_no_attribution(client, db_session, shared, google, events):
+    _sign_in(client)
+
+    (_, _, props), = _find(events, "user_signed_up")
+    assert "$set_once" not in props
+
+
+def test_a_returning_google_login_carries_no_utm(client, db_session, shared, google, events):
+    _user(db_session)
+
+    _sign_in(client, utm_source="google")
+
+    (_, _, props), = _find(events, "user_logged_in")
+    assert "utm_source" not in props and "$set_once" not in props
+
+
+def test_utm_from_one_login_attempt_does_not_leak_into_the_next(client, db_session, shared, google, events):
+    _sign_in(client, utm_source="google")
+    events.captured.clear()
+    google.userinfo = {**google.userinfo, "sub": "google-sub-2", "email": "second@gmail.com"}
+
+    _sign_in(client)
+
+    (_, _, props), = _find(events, "user_signed_up")
+    assert "utm_source" not in props
 
 
 def test_existing_password_user_is_linked_by_verified_email(client, db_session, shared, google, events):

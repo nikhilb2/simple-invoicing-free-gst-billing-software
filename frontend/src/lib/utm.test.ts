@@ -60,6 +60,14 @@ describe('captureUtm / getStoredUtm', () => {
     expect(getStoredUtm()).toEqual({ utm_source: 'google' });
   });
 
+  it('survives the logged-out redirect that drops the query string', () => {
+    // main.tsx runs captureUtm() before the router mounts, so a link such as
+    // /invoices?utm_source=x is saved before <Protected> redirects to /login.
+    captureUtm('?utm_source=x');
+    captureUtm('');
+    expect(getStoredUtm()).toEqual({ utm_source: 'x' });
+  });
+
   it('returns nothing for a corrupt stored value', () => {
     localStorage.setItem('si_utm', 'not json');
     expect(getStoredUtm()).toEqual({});

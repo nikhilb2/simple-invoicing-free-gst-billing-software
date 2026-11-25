@@ -14,6 +14,7 @@ from sqlalchemy import func, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from src.core.utm import clean_utm, utm_event_properties
 from src.db.session import get_db
 from src.models.oauth_login_code import OAuthLoginCode
 from src.models.user import User, UserRole
@@ -373,7 +374,11 @@ def register(
     track(
         "user_signed_up",
         distinct_id_for(user),
-        {"method": "password", "$set": {"email": user.email, "role": UserRole.staff.value}},
+        {
+            "method": "password",
+            "$set": {"email": user.email, "role": UserRole.staff.value},
+            **utm_event_properties(clean_utm(payload.utm)),
+        },
     )
     background_tasks.add_task(platform_mail.send_verification_email, user.email, _verify_token_for(user))
     return accepted
@@ -638,6 +643,11 @@ def change_password(
 #   4. The SPA POSTs the code to /oauth/exchange and gets the usual Token.
 
 _OAUTH_NEXT_SESSION_KEY = "oauth_next"
+# The UTM tags the browser appended to the login URL, carried across the provider
+# round trip in the same session cookie so a first-time sign-in can be attributed.
+# The session is a 4 KB cookie, so only a handful of tags are kept.
+_OAUTH_UTM_SESSION_KEY = "oauth_utm"
+_OAUTH_MAX_UTM_KEYS = 5
 # sha256 of the one-time code, kept in the same browser's session cookie, so the
 # code can only be exchanged by the browser that went through the flow. Without
 # it an attacker could finish a sign-in to THEIR account, stop at the redirect,
@@ -691,6 +701,11 @@ async def oauth_login(provider: str, request: Request, next: str | None = None):
         raise HTTPException(status_code=404, detail="Not Found")
 
     request.session[_OAUTH_NEXT_SESSION_KEY] = safe_next_path(next)
+    utm = clean_utm(dict(request.query_params), max_keys=_OAUTH_MAX_UTM_KEYS)
+    if utm:
+        request.session[_OAUTH_UTM_SESSION_KEY] = utm
+    else:
+        request.session.pop(_OAUTH_UTM_SESSION_KEY, None)
     try:
         return await client.authorize_redirect(request, auth_providers.redirect_uri(provider))
     except Exception:
@@ -805,7 +820,9 @@ def _mint_login_code(db: Session, user: User) -> str:
     return code
 
 
-def _complete_oauth(db: Session, provider: str, userinfo: dict) -> tuple[str | None, str | None]:
+def _complete_oauth(
+    db: Session, provider: str, userinfo: dict, utm: dict[str, str] | None = None
+) -> tuple[str | None, str | None]:
     """Resolve the user and mint a login code. Returns (code, None) or (None, error_code)."""
     try:
         user, created = _resolve_oauth_user(db, provider, userinfo)
@@ -826,6 +843,9 @@ def _complete_oauth(db: Session, provider: str, userinfo: dict) -> tuple[str | N
             "active_company_id": user.active_company_id,
         },
     }
+    if created:
+        # Attribution is for the sign-up only; a returning login is not a new touch.
+        properties.update(utm_event_properties(clean_utm(utm)))
     track("user_signed_up" if created else "user_logged_in", distinct_id_for(user), properties)
     return _mint_login_code(db, user), None
 
@@ -838,6 +858,7 @@ async def oauth_callback(provider: str, request: Request, db: Session = Depends(
         raise HTTPException(status_code=404, detail="Not Found")
 
     next_path = safe_next_path(request.session.pop(_OAUTH_NEXT_SESSION_KEY, "/"))
+    utm = clean_utm(request.session.pop(_OAUTH_UTM_SESSION_KEY, None), max_keys=_OAUTH_MAX_UTM_KEYS)
     try:
         # Raises on a missing or mismatched state (CSRF / replay), on the user
         # declining consent (?error=...), on a failed code exchange, and on an ID
@@ -855,7 +876,7 @@ async def oauth_callback(provider: str, request: Request, db: Session = Depends(
         logger.warning("OAuth callback for provider %s returned no ID token", provider)
         return _login_error("oauth_failed")
 
-    code, error = await run_in_threadpool(_complete_oauth, db, provider, dict(userinfo))
+    code, error = await run_in_threadpool(_complete_oauth, db, provider, dict(userinfo), utm)
     if error:
         return _login_error(error)
     request.session[_OAUTH_CODE_SESSION_KEY] = _hash_code(code)
