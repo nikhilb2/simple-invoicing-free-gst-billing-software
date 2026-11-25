@@ -20,6 +20,7 @@ the same precision, so the shared totals, PDF and e-way bill helpers work on eit
 from datetime import datetime
 
 from sqlalchemy import (
+    Boolean,
     Column,
     Date,
     DateTime,
@@ -167,5 +168,10 @@ class DeliveryChallanItem(Base):
     igst_amount = Column(Numeric(10, 2), nullable=False, default=0)
     line_total = Column(Numeric(10, 2), nullable=False)
     description = Column(Text, nullable=True)
+    # Whether this line holds its goods out of stock, fixed when the challan takes
+    # them out. Releasing it (cancel, edit, invoicing) puts back only what it took,
+    # even if "Maintain inventory" was switched since (#1067). NULL means unknown
+    # and falls back to the product's current setting.
+    stock_applied = Column(Boolean, nullable=True)
 
     challan = relationship("DeliveryChallan", back_populates="items")

@@ -6,7 +6,9 @@ a cancelled challan holds nothing. So for every product that keeps inventory:
 
     stock == opening + purchases - sales - (quantities on open challans)
 
-with every movement below keeping that true:
+with every movement below keeping that true. Each line records whether it holds its
+goods (``stock_applied``), and a release puts back only what the lines hold, so
+switching "Maintain inventory" while a challan is open moves nothing (#1067):
 
     Challan saved                   -C
     Challan edited (open)           -(C_new - C_old)
@@ -141,6 +143,37 @@ def challan_quantities(challan: DeliveryChallan) -> dict[int, Decimal]:
     return totals
 
 
+def _product(db: Session, company_id: int, product_id: int) -> Product:
+    product = (
+        db.query(Product)
+        .filter(Product.id == product_id, company_scope(Product.company_id, company_id))
+        .first()
+    )
+    if product is None:
+        raise HTTPException(status_code=404, detail=f"Product {product_id} not found")
+    return product
+
+
+def _line_holds_stock(item: DeliveryChallanItem, product: Product) -> bool:
+    """Whether *item* took its goods out of stock (#1067).
+
+    Read from the line, not the product: "Maintain inventory" may have been
+    switched since. A line with no record follows the product's setting now.
+    """
+    if item.stock_applied is None:
+        return bool(product.maintain_inventory)
+    return bool(item.stock_applied)
+
+
+def _held_quantities(db: Session, challan: DeliveryChallan) -> dict[int, Decimal]:
+    """product_id -> the quantity the challan's lines hold out of stock."""
+    held: dict[int, Decimal] = {}
+    for item in challan.items:
+        if _line_holds_stock(item, _product(db, challan.company_id, item.product_id)):
+            held[item.product_id] = held.get(item.product_id, Decimal("0")) + Decimal(str(item.quantity))
+    return held
+
+
 def _move_challan_stock(
     db: Session,
     company_id: int,
@@ -148,29 +181,18 @@ def _move_challan_stock(
     *,
     document: str,
     context: str,
-    stock_policy: dict[int, bool] | None = None,
 ) -> None:
-    """Apply signed stock changes (negative = goods out) for the products that keep stock.
+    """Apply signed stock changes (negative = goods out).
 
-    Every shortfall is checked before anything moves, so a refusal is a clean
-    ``insufficient_stock`` 400 rather than a half-applied change. Whether a product
-    keeps stock comes from *stock_policy* (product_id -> moves stock) when given,
-    else from its flag now: a product that stopped keeping stock is left alone.
+    The callers pass only what the challan's lines hold or take, so every delta
+    moves. Every shortfall is checked before anything moves, so a refusal is a
+    clean ``insufficient_stock`` 400 rather than a half-applied change.
     """
     moves: list[tuple[Product, Decimal]] = []
     for product_id, delta in deltas.items():
         if delta == 0:
             continue
-        product = (
-            db.query(Product)
-            .filter(Product.id == product_id, company_scope(Product.company_id, company_id))
-            .first()
-        )
-        if product is None:
-            raise HTTPException(status_code=404, detail=f"Product {product_id} not found")
-        keeps_stock = (stock_policy or {}).get(product_id, bool(product.maintain_inventory))
-        if not keeps_stock:
-            continue
+        product = _product(db, company_id, product_id)
         if product.track_serials:
             # Challan stock has no serial rows, so moving it would break "stock equals
             # the serials in stock". Product updates refuse to turn tracking on while
@@ -213,30 +235,33 @@ def _take_out(
     context: str,
     stock_policy: dict[int, bool] | None = None,
 ) -> None:
+    """Take the challan's goods out of stock, recording on each line whether it did.
+
+    A product in *stock_policy* (product_id -> moves stock) follows it; any other
+    line keeps what it recorded, and a line with no record follows the product.
+    """
+    for item in challan.items:
+        if stock_policy is not None and item.product_id in stock_policy:
+            item.stock_applied = stock_policy[item.product_id]
+        else:
+            item.stock_applied = _line_holds_stock(item, _product(db, challan.company_id, item.product_id))
     _move_challan_stock(
         db,
         challan.company_id,
-        {product_id: -quantity for product_id, quantity in challan_quantities(challan).items()},
+        {product_id: -quantity for product_id, quantity in _held_quantities(db, challan).items()},
         document=document,
         context=context,
-        stock_policy=stock_policy,
     )
 
 
-def _release(
-    db: Session,
-    challan: DeliveryChallan,
-    *,
-    context: str,
-    stock_policy: dict[int, bool] | None = None,
-) -> None:
+def _release(db: Session, challan: DeliveryChallan, *, context: str) -> None:
+    """Put back what the challan's lines hold: only what they took out."""
     _move_challan_stock(
         db,
         challan.company_id,
-        challan_quantities(challan),
+        _held_quantities(db, challan),
         document=CHALLAN_DOCUMENT,
         context=context,
-        stock_policy=stock_policy,
     )
 
 
@@ -351,6 +376,7 @@ def _apply_payload(
                 tax_amount=float(result["tax_amount"]),
                 line_total=float(result["line_total"]),
                 description=result["item_schema"].description,
+                stock_applied=bool(result["product"].maintain_inventory),
             )
         )
     challan.items = items
@@ -453,7 +479,8 @@ def update_challan(
             )
     challan.challan_date = challan_date
 
-    old = challan_quantities(challan)
+    # What the old lines hold, read before they are replaced (#1067).
+    old = _held_quantities(db, challan)
     kept_snapshot = _orphaned_snapshot(challan)
     # Clear first: a delete-orphan replacement would otherwise flush inserts and
     # deletes in whichever order suits the unit of work.
@@ -463,7 +490,7 @@ def update_challan(
     challan.updated_at = datetime.utcnow()
     db.flush()
 
-    new = challan_quantities(challan)
+    new = _held_quantities(db, challan)
     deltas = {
         product_id: old.get(product_id, Decimal("0")) - new.get(product_id, Decimal("0"))
         for product_id in set(old) | set(new)
@@ -757,7 +784,9 @@ def reopen_challan_after_invoice_cancelled(
     Runs after the invoice's own stock has come back (+I), so the shortfall it can
     raise is only when that stock has since been sold elsewhere. A product moves
     only if the invoice's lines for it moved stock, so the two still cancel out
-    after "Maintain inventory" was switched (#905).
+    after "Maintain inventory" was switched (#905); a product the invoice dropped
+    follows what its challan line recorded. Each line records what it took, which
+    is what a later cancel, edit or restore puts back (#1067).
     """
     if challan is None or challan.status != STATUS_INVOICED:
         return
@@ -800,16 +829,11 @@ def close_challan_after_invoice_restored(
 
     Runs before the invoice's own stock is taken. A challan cancelled in the meantime
     stays cancelled and holds nothing; the restored invoice then stands on its own.
-    Like re-opening, a product moves only if the invoice's lines for it moved stock.
+    Only what the lines hold comes back, as re-opening (or an edit since) recorded it.
     """
     if challan is None or challan.status != STATUS_OPEN:
         return
-    _release(
-        db,
-        challan,
-        context=f"invoicing delivery challan {challan.challan_number}",
-        stock_policy=InventoryManager(db).stock_policy(invoice),
-    )
+    _release(db, challan, context=f"invoicing delivery challan {challan.challan_number}")
     challan.status = STATUS_INVOICED
     challan.invoiced_at = datetime.utcnow()
     challan.updated_at = challan.invoiced_at

@@ -430,15 +430,15 @@ def test_products_without_inventory_never_move(setup, db_session):
     assert stock(client, a) == OPENING
 
 
-def test_a_product_that_stops_keeping_stock_is_left_alone(setup, db_session):
-    """The flag is read at the time of each movement, as invoice reversal does."""
+def test_a_product_that_stops_keeping_stock_still_gets_its_goods_back(setup, db_session):
+    """The line records what it took, as an invoice line does (#1067, #905)."""
     client, ledger, a, _ = setup
     challan = create_challan(client, ledger, [(a, 10)])
     assert stock(client, a) == OPENING - 10
     db_session.execute(text("UPDATE products SET maintain_inventory = 0 WHERE id = :p"), {"p": a})
     db_session.commit()
     ok(client.post(f"/api/delivery-challans/{challan['id']}/cancel"))
-    assert _raw_quantity(db_session, a) == OPENING - 10
+    assert _raw_quantity(db_session, a) == OPENING
 
 
 # ---------------------------------------------------------------------------

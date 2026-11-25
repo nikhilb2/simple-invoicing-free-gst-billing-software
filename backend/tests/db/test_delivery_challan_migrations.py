@@ -23,6 +23,7 @@ MIGRATIONS = [
     "20261115000001_create_delivery_challans_tables",
     "20261115000002_seed_delivery_challan_series",
     "20261115000003_add_source_challan_id_to_invoices",
+    "20261125000001_record_challan_line_stock_effect",
 ]
 TABLES = ("delivery_challans", "delivery_challan_items")
 
