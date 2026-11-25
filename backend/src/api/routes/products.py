@@ -1296,3 +1296,4 @@ def get_product(
     if not product:
         raise HTTPException(status_code=404, detail=f"Product {product_id} not found")
     return product
+
