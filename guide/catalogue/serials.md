@@ -22,6 +22,8 @@ Once a product is serial-tracked:
 
 Turning tracking off is allowed, and the serial records stay for your history.
 
+If you sell or remove units while tracking is off, the serial records may outnumber the stock when you turn it on again. **Choose the serials still in stock** lists those records. Tick only the units still on your shelf; you can search and move between pages without losing your selection. The selected count must match your stock before you can save. The other serials are written off, with their history kept. If no stock remains, saving writes off all the remaining serial records.
+
 ## Scan on an invoice
 
 The scan bar appears on the invoice form once you have at least one serial-tracked product.

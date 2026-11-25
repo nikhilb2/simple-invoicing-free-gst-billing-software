@@ -3,6 +3,7 @@ import api, { getApiErrorMessage } from '../api/client';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import ModalCloseButton from './ModalCloseButton';
 import SerialChips from '../pages/invoices/components/SerialChips';
+import SerialKeepSelection from './SerialKeepSelection';
 import { fetchAvailableSerials } from '../features/serials/api';
 import type { ProductCreate } from '../types/api';
 
@@ -37,6 +38,7 @@ export default function SerialBackfillModal({
   const [pasted, setPasted] = useState('');
   const [required, setRequired] = useState<number | null>(null);
   const [onHand, setOnHand] = useState(0);
+  const [covered, setCovered] = useState(0);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -64,7 +66,8 @@ export default function SerialBackfillModal({
         const row = stockRes.data.items.find((item) => item.id === productId);
         const stock = Math.max(Math.trunc(row?.current_stock ?? 0), 0);
         setOnHand(stock);
-        setRequired(Math.max(stock - covered.total, 0));
+        setCovered(covered.total);
+        setRequired(covered.total > stock ? stock : stock - covered.total);
       } catch (err) {
         if (cancelled) return;
         setError(getApiErrorMessage(err, 'Unable to read the current stock for this product.'));
@@ -120,7 +123,7 @@ export default function SerialBackfillModal({
       /* The backend owns the count — a product whose tracking was switched off
          and on again already covers some of its units. If it says a different
          number, its answer wins and the counter retargets. */
-      const owed = message.match(/provide (\d+) serial number/);
+      const owed = message.match(/provide (?:the )?(\d+) serial number/i);
       if (owed) {
         setRequired(Number(owed[1]));
       }
@@ -131,6 +134,7 @@ export default function SerialBackfillModal({
   }
 
   const complete = required !== null && serials.length === required;
+  const keeping = covered > onHand;
 
   return (
     <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="serial-backfill-title">
@@ -138,7 +142,9 @@ export default function SerialBackfillModal({
         <div className="panel__header">
           <div>
             <p className="eyebrow">Serial tracking</p>
-            <h2 id="serial-backfill-title" className="nav-panel__title">Enter the serials already in stock</h2>
+            <h2 id="serial-backfill-title" className="nav-panel__title">
+              {keeping ? 'Choose the serials still in stock' : 'Enter the serials already in stock'}
+            </h2>
           </div>
           <ModalCloseButton onClick={onCancel} label="Close serial entry" />
         </div>
@@ -148,7 +154,9 @@ export default function SerialBackfillModal({
 
           {!loading && required !== null ? (
             <p className="serial-backfill__intro">
-              {required === 0
+              {keeping
+                ? `${productName} has ${onHand} unit${onHand === 1 ? '' : 's'} in stock, but ${covered} serial records. Select the ${required} still on the shelf to keep. The other ${covered - required} will be written off when you turn tracking on; their history is kept.`
+                : required === 0
                 ? `${productName} has ${onHand} unit${onHand === 1 ? '' : 's'} in stock and every one of them already has a serial. Nothing to enter.`
                 : onHand > required
                   ? `${productName} has ${onHand} units in stock and ${onHand - required} already carry a serial. Enter the IMEI for the remaining ${required} so nothing goes untracked.`
@@ -156,7 +164,25 @@ export default function SerialBackfillModal({
             </p>
           ) : null}
 
-          {!loading && required !== null && required > 0 ? (
+          {!loading && required !== null && keeping ? (
+            <>
+              <p
+                className={`serial-backfill__counter${complete ? ' serial-backfill__counter--complete' : ''}`}
+                aria-live="polite"
+              >
+                {serials.length}
+                <span className="serial-backfill__counter-total">/ {required} selected to keep</span>
+              </p>
+              <SerialKeepSelection
+                productId={productId}
+                selected={serials}
+                onChange={(next) => { setSerials(next); setError(''); }}
+                disabled={saving}
+              />
+            </>
+          ) : null}
+
+          {!loading && required !== null && required > 0 && !keeping ? (
             <>
               <p
                 className={`serial-backfill__counter${complete ? ' serial-backfill__counter--complete' : ''}`}
