@@ -513,9 +513,10 @@ test.describe('Invoices', () => {
     const checkbox = page.locator('#invoice-tax-inclusive');
     await expect(checkbox).toBeVisible();
     await expect(checkbox).not.toBeChecked();
+    await expect(page.getByLabel('Price already includes GST')).toBeVisible();
   });
 
-  test('checking tax-inclusive relabels price column to "Amount (incl. GST)"', async ({ authedPage: page }) => {
+  test('checking tax-inclusive relabels price column to "Price (incl. GST)"', async ({ authedPage: page }) => {
     await clickNavLink(page, '/invoices');
     await page.waitForTimeout(500);
 
@@ -524,7 +525,7 @@ test.describe('Invoices', () => {
 
     // Check the box
     await page.check('#invoice-tax-inclusive');
-    await expect(page.locator('label[for^="invoice-price-"]').first()).toContainText('Amount (incl. GST)');
+    await expect(page.locator('label[for^="invoice-price-"]').first()).toContainText('Price (incl. GST)');
 
     // Uncheck
     await page.uncheck('#invoice-tax-inclusive');

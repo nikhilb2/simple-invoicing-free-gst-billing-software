@@ -10,8 +10,9 @@ import ScanBar, { type ScanOutcome, type ScanResolution } from '../../components
 import StatusToasts from '../../components/StatusToasts';
 import ProductCombobox from '../../components/ProductCombobox';
 import LedgerCombobox from '../../components/LedgerCombobox';
+import TaxInclusiveToggle from '../../components/TaxInclusiveToggle';
 import formatCurrency, { plural } from '../../utils/formatting';
-import { computeInvoiceTotals, computeLineTotal, type InvoiceTotalLine } from '../../utils/invoiceTotals';
+import { computeInvoiceTotals, computeLineTotal, priceColumnLabel, priceIncludesGstExample, type InvoiceTotalLine } from '../../utils/invoiceTotals';
 import { toIsoDate } from '../../utils/dateRanges';
 import { formatInvoiceTaxBreakdown, isInterstateSupply } from '../../utils/invoiceTax';
 import { isInterstatePlaceOfSupply, resolvePlaceOfSupply, stalePlaceOfSupplyWarning, type PlaceOfSupplyChoice } from '../../utils/gstStates';
@@ -387,6 +388,16 @@ export default function InvoicesPage() {
   const composerInterstateSupply = voucherType === 'sales' && placeOfSupply
     ? isInterstatePlaceOfSupply(placeOfSupply, company?.gst)
     : isInterstateSupply(company?.gst, selectedLedger?.gst);
+
+  const firstItem = items[0];
+  const firstProduct = products.find((p) => p.id === Number(firstItem?.productId));
+  const firstLineGstExample = priceIncludesGstExample({
+    unitPrice: firstItem?.unit_price ? Number(firstItem.unit_price) : (firstProduct?.price || 0),
+    gstRate: firstProduct?.gst_rate || 0,
+    taxInclusive,
+    interstateSupply: composerInterstateSupply,
+    format: (value) => formatCurrency(value, activeCurrencyCode),
+  });
 
   const totalLines = items.flatMap((item): InvoiceTotalLine[] => {
     const product = products.find((entry) => entry.id === Number(item.productId));
@@ -2002,24 +2013,15 @@ export default function InvoicesPage() {
                 <div className="line-items__header">
                   <p className="eyebrow" style={{ margin: 0 }}>Line items</p>
                   <div className="line-items__tools">
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                      <label className="inline-check" htmlFor="invoice-tax-inclusive">
-                        <input
-                          id="invoice-tax-inclusive"
-                          type="checkbox"
-                          checked={taxInclusive}
-                          aria-describedby="invoice-tax-inclusive-hint"
-                          onChange={(event) => {
-                            setTaxInclusive(event.target.checked);
-                            updateInvoiceComposerPrefs({ taxInclusive: event.target.checked });
-                          }}
-                        />
-                        Prices include GST
-                      </label>
-                      <small id="invoice-tax-inclusive-hint" className="field-hint">
-                        Tick this if the prices you type already include GST. The app takes the GST out of each price instead of adding it on top.
-                      </small>
-                    </div>
+                    <TaxInclusiveToggle
+                      id="invoice-tax-inclusive"
+                      checked={taxInclusive}
+                      onChange={(checked) => {
+                        setTaxInclusive(checked);
+                        updateInvoiceComposerPrefs({ taxInclusive: checked });
+                      }}
+                      example={firstLineGstExample}
+                    />
                     <button type="button" className="link-button" onClick={openProductCreateModal}>
                       <Plus size={13} />
                       New product
@@ -2105,7 +2107,7 @@ export default function InvoicesPage() {
                       </div>
 
                       <div className="field">
-                        <label htmlFor={`invoice-price-${item.id}`}>{taxInclusive ? 'Amount (incl. GST)' : 'Price'}</label>
+                        <label htmlFor={`invoice-price-${item.id}`}>{priceColumnLabel(taxInclusive)}</label>
                         <input
                           id={`invoice-price-${item.id}`}
                           className="input"

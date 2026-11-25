@@ -7,8 +7,9 @@ import { FieldError, LineFieldErrors, useFormFieldErrors } from '../hooks/useFor
 import api, { getApiErrorMessage } from '../api/client';
 import type { InvoiceCreate, Invoice, Ledger, Product, TaxWithholdingSection } from '../types/api';
 import { useFY } from '../context/FYContext';
+import TaxInclusiveToggle from './TaxInclusiveToggle';
 import formatCurrency from '../utils/formatting';
-import { computeInvoiceTotals, computeLineTotal, type InvoiceTotalLine } from '../utils/invoiceTotals';
+import { computeInvoiceTotals, computeLineTotal, priceColumnLabel, priceIncludesGstExample, type InvoiceTotalLine } from '../utils/invoiceTotals';
 import { toIsoDate } from '../utils/dateRanges';
 import { formatInvoiceDateLabel, resolveDueDate, type DueDateMode } from '../utils/invoiceDueDate.ts';
 import { formatInvoiceTaxBreakdown, isInterstateSupply } from '../utils/invoiceTax';
@@ -116,6 +117,16 @@ export default function CreateInvoiceModal({
   const composerInterstateSupply = voucherType === 'sales' && placeOfSupply
     ? isInterstatePlaceOfSupply(placeOfSupply, companyGst)
     : isInterstateSupply(companyGst, selectedLedger?.gst);
+
+  const firstItem = items[0];
+  const firstProduct = products.find((p) => p.id === Number(firstItem?.productId));
+  const firstLineGstExample = priceIncludesGstExample({
+    unitPrice: firstItem?.unit_price ? Number(firstItem.unit_price) : (firstProduct?.price || 0),
+    gstRate: firstProduct?.gst_rate || 0,
+    taxInclusive,
+    interstateSupply: composerInterstateSupply,
+    format: (value) => formatCurrency(value, currencyCode),
+  });
 
   const totalLines = items.flatMap((item): InvoiceTotalLine[] => {
     const product = products.find((p) => p.id === Number(item.productId));
@@ -429,23 +440,12 @@ export default function CreateInvoiceModal({
                 </p>
               ) : null}
 
-              <div className="field" style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: 0 }}>
-                <input
-                  id="modal-inv-tax-inclusive"
-                  type="checkbox"
-                  checked={taxInclusive}
-                  aria-describedby="modal-inv-tax-inclusive-hint"
-                  onChange={(e) => setTaxInclusive(e.target.checked)}
-                />
-                <div>
-                  <label htmlFor="modal-inv-tax-inclusive" style={{ marginBottom: 0, cursor: 'pointer' }}>
-                    Prices include GST
-                  </label>
-                  <small id="modal-inv-tax-inclusive-hint" className="field-hint" style={{ display: 'block' }}>
-                    Tick this if the prices you type already include GST. The app takes the GST out of each price instead of adding it on top.
-                  </small>
-                </div>
-              </div>
+              <TaxInclusiveToggle
+                id="modal-inv-tax-inclusive"
+                checked={taxInclusive}
+                onChange={setTaxInclusive}
+                example={firstLineGstExample}
+              />
 
               <div className="stack">
                 {items.map((item, index) => {
@@ -502,7 +502,7 @@ export default function CreateInvoiceModal({
                       </div>
 
                       <div className="field">
-                        <label htmlFor={`modal-inv-price-${item.id}`}>{taxInclusive ? 'Amount (incl. GST)' : 'Price'}</label>
+                        <label htmlFor={`modal-inv-price-${item.id}`}>{priceColumnLabel(taxInclusive)}</label>
                         <input
                           id={`modal-inv-price-${item.id}`}
                           className="input"

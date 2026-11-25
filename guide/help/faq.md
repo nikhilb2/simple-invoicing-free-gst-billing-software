@@ -28,7 +28,7 @@ Your role does not allow that page. See [Roles](../getting-started/team#roles). 
 ## Invoices
 
 **The total or tax split looks wrong.**
-Check the [Place of supply](../sales/invoices#how-gst-is-split). An unregistered customer defaults to your own state. Also check **Prices include GST**, which your browser remembers from the last invoice.
+Check the [Place of supply](../sales/invoices#how-gst-is-split). An unregistered customer defaults to your own state. Also check **Price already includes GST**, which your browser remembers from the last invoice.
 
 **"Only 0 of *your product* in stock, and this invoice needs 3".**
 You have less stock than the invoice needs. Click **Add stock for** *your product* below the message, which keeps the invoice filled in. Or record the purchase or [adjust the stock](../catalogue/products#adjust-stock).

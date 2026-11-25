@@ -109,3 +109,31 @@ export function computeInvoiceTotals(lines: InvoiceTotalLine[], {
     roundOffAmount: roundMoney(total - beforeRoundOff), total,
   };
 }
+
+export const PRICE_INCLUDES_GST_LABEL = 'Price already includes GST';
+
+/** Column label for the unit price input on an invoice line. */
+export function priceColumnLabel(taxInclusive: boolean): string {
+  return taxInclusive ? 'Price (incl. GST)' : 'Price';
+}
+
+/**
+ * One-line example of what the "Price already includes GST" choice does, using the first
+ * line's unit price and the product's GST rate. Quantity and line discount are left out on
+ * purpose: the sentence describes the price itself, so it stays true whatever the discount.
+ * Returns null until there is both a price and a GST rate. Uses `computeLineTotal` for the split.
+ */
+export function priceIncludesGstExample({
+  unitPrice, gstRate, taxInclusive, interstateSupply = true, format,
+}: {
+  unitPrice: number; gstRate: number; taxInclusive: boolean; interstateSupply?: boolean;
+  format: (value: number) => string;
+}): string | null {
+  if (!Number.isFinite(unitPrice) || !Number.isFinite(gstRate) || unitPrice <= 0 || gstRate <= 0) return null;
+  const { taxableAmount, taxAmount, lineTotal } = computeLineTotal({
+    unitPrice, quantity: 1, gstRate, taxInclusive, interstateSupply,
+  });
+  return taxInclusive
+    ? `Price ${format(lineTotal)} with ${gstRate}% GST = ${format(taxableAmount)} taxable value + ${format(taxAmount)} GST`
+    : `Price ${format(taxableAmount)} + ${format(taxAmount)} GST = ${format(lineTotal)} total`;
+}

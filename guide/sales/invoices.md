@@ -39,7 +39,7 @@ If you do not have enough stock, the sale is refused with a message such as "Onl
 - **Description (optional)**: extra detail for this line.
 - **Add line item** adds another line, and the bin icon removes one.
 
-The **Prices include GST** checkbox changes what you type to the amount including tax. The app works backwards to the taxable value.
+The **Price already includes GST** checkbox means the price you type already has the tax in it, and the app works backwards to the taxable value. The line under the checkbox shows the split for your first item, for example "Price ₹1,180.00 with 18% GST = ₹1,000.00 taxable value + ₹180.00 GST".
 
 The GST rate and HSN come from the product and cannot be changed on the line. To change them, edit the product.
 
@@ -64,7 +64,7 @@ Tick **Advanced options** to see these extra fields. The app remembers whether i
 Choosing **No due date** saves the invoice date as the due date. An unpaid invoice then shows as overdue from the next day. If you give credit, use **Set days from invoice date**, for example 30 days.
 :::
 
-Your browser remembers these for the next invoice: **Prices include GST**, **Apply round off**, your due-date choice and days, and the discount type.
+Your browser remembers these for the next invoice: **Price already includes GST**, **Apply round off**, your due-date choice and days, and the discount type.
 
 ## How GST is split
 
@@ -87,8 +87,8 @@ For purchases, and for companies without a GSTIN, the app compares the two GSTIN
 
 ## How totals are worked out
 
-1. **Without "Prices include GST":** taxable value = price × quantity, and tax is added on top.
-2. **With "Prices include GST":** price × quantity is the total, and the tax is worked out from it.
+1. **Without "Price already includes GST":** taxable value = price × quantity, and tax is added on top.
+2. **With "Price already includes GST":** price × quantity is the total, and the tax is worked out from it.
 3. **Line discounts** come off the taxable value, and tax is calculated on what remains.
 4. **Invoice discount** comes off the grand total. The tax breakup is not reduced, so check with your accountant if you use this on GST invoices.
 5. **Round off** is applied last.
