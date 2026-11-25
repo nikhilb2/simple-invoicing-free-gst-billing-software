@@ -25,11 +25,15 @@ from test_tenant_isolation import (  # noqa: F401 -- fixtures
 
 from src.core.config import settings
 from src.models.buyer import Buyer
+from src.models.payment import PaymentInvoiceAllocation
 from src.models.product import Product
 from src.models.product_serial import STATUS_IN_STOCK, STATUS_SOLD, ProductSerial
 from src.models.share_link import ShareLink
 from src.models.user import UserRole
 from src.services.gst_tax_service import india_today
+from tests.api.tds_helpers import add_sections, post_voucher, set_company_pan
+from tests.api.tds_helpers import create_invoice as tds_invoice
+from tests.api.tds_helpers import create_ledger as tds_ledger
 
 
 @pytest.fixture(autouse=True)
@@ -355,3 +359,208 @@ def test_reports_show_the_cancelled_invoices_like_any_cancelled_invoice(client):
     summary = ok(client.get("/api/ledgers/tax-ledger/gstr1/summary", params=period))
     # Only the live invoice is reported as a supply.
     assert summary["b2cs"]["taxable_value"] == pytest.approx(100.0)
+
+
+# --- #1080: a return whose goods were sold again --------------------------------
+
+def _return_note(client, ledger_id: int, invoice: dict, quantity, serials=None) -> dict:
+    item = {"invoice_id": invoice["id"], "invoice_item_id": invoice["items"][0]["id"], "quantity": quantity}
+    if serials is not None:
+        item["serial_numbers"] = serials
+    return ok(client.post("/api/credit-notes/", json={
+        "ledger_id": ledger_id,
+        "invoice_ids": [invoice["id"]],
+        "credit_note_type": "return",
+        "direction": "outward",
+        "items": [item],
+    }), 201)
+
+
+@pytest.fixture
+def resold_return(client):
+    """Party A bought 10 widgets and returned them; the same 10 then went to party B."""
+    seed_company(client)
+    widget = create_product(client, "WID-1", initial_quantity=10)["id"]
+    party_a = _ledger(client, "Party A")
+    party_b = _ledger(client, "Party B")
+    sale = _invoice(client, party_a, widget, 10)
+    note = _return_note(client, party_a, sale, 10)
+    resale = _invoice(client, party_b, widget, 10)
+    assert stock(client, widget) == 0
+    return SimpleNamespace(widget=widget, party_a=party_a, party_b=party_b, sale=sale, note=note, resale=resale)
+
+
+def test_a_return_whose_goods_were_sold_again_no_longer_blocks_the_delete(client, resold_return):
+    """Cancelling the note takes the 10 out again before cancelling the sale puts them
+    back: stock dips below zero on the way and ends where it started."""
+    response = _delete(client, resold_return.party_a)
+
+    assert response.status_code == 200, response.text
+    assert response.json()["cancelled"]["credit_notes"] == 1
+    assert response.json()["cancelled"]["sales_invoices"] == 1
+    assert resold_return.party_a not in _listed(client)
+    assert ok(client.get(f"/api/credit-notes/{resold_return.note['id']}"))["status"] == "cancelled"
+    assert ok(client.get(f"/api/invoices/{resold_return.sale['id']}"))["status"] == "cancelled"
+    assert ok(client.get(f"/api/invoices/{resold_return.resale['id']}"))["status"] == "active"
+    assert stock(client, resold_return.widget) == 0
+
+
+def test_cancelling_that_return_by_hand_still_refuses_to_go_below_zero(client, resold_return):
+    """Only the ledger delete waits for the end: the cancel button keeps its check."""
+    response = client.post(f"/api/credit-notes/{resold_return.note['id']}/cancel")
+
+    assert response.status_code == 400, response.text
+    assert response.json()["detail"] == (
+        f"Insufficient inventory while cancelling return credit note {resold_return.note['credit_note_number']}"
+    )
+    assert ok(client.get(f"/api/credit-notes/{resold_return.note['id']}"))["status"] == "active"
+    assert stock(client, resold_return.widget) == 0
+
+
+def test_stock_still_short_at_the_end_refuses_the_delete_and_changes_nothing(client, db_session):
+    """Party A sold us the widgets, bought them back, returned them, and they went to
+    party B. Cancelling A's purchase takes out 10 that are no longer here."""
+    seed_company(client)
+    widget = create_product(client, "WID-1", initial_quantity=0)["id"]
+    party_a = _ledger(client, "Party A")
+    party_b = _ledger(client, "Party B")
+    purchase = _invoice(client, party_a, widget, 10, voucher_type="purchase")
+    sale = _invoice(client, party_a, widget, 10)
+    note = _return_note(client, party_a, sale, 10)
+    _invoice(client, party_b, widget, 10)
+    assert stock(client, widget) == 0
+
+    response = _delete(client, party_a)
+
+    assert response.status_code == 409, response.text
+    detail = response.json()["detail"]
+    assert detail["code"] == "ledger_delete_blocked"
+    assert detail["document_type"] == "invoice"
+    assert detail["document_id"] == purchase["id"]
+    assert detail["message"] == (
+        f"Purchase invoice {purchase['invoice_number']} cannot be cancelled: Not enough stock of Widget WID-1. "
+        "Cancelling everything on this ledger would leave it 10 short. Nothing was changed."
+    )
+    assert ok(client.get(f"/api/credit-notes/{note['id']}"))["status"] == "active"
+    assert ok(client.get(f"/api/invoices/{sale['id']}"))["status"] == "active"
+    assert ok(client.get(f"/api/invoices/{purchase['id']}"))["status"] == "active"
+    assert stock(client, widget) == 0
+    assert party_a in _listed(client)
+    db_session.expire_all()
+    assert db_session.get(Buyer, party_a).deleted_at is None
+
+
+def test_a_return_on_a_challan_invoice_sold_again_no_longer_blocks_the_delete(client):
+    """Cancelling the invoice re-opens its challan, which takes the goods out again
+    before step 4 cancels the challan and puts them back."""
+    seed_company(client)
+    widget = create_product(client, "WID-1", initial_quantity=10)["id"]
+    party_a = _ledger(client, "Party A")
+    party_b = _ledger(client, "Party B")
+    challan = create_challan(client, party_a, [(widget, 10)])
+    sale = ok(convert_challan(client, challan["id"]))
+    note = _return_note(client, party_a, sale, 10)
+    _invoice(client, party_b, widget, 10)
+    assert stock(client, widget) == 0
+
+    response = _delete(client, party_a)
+
+    assert response.status_code == 200, response.text
+    assert ok(client.get(f"/api/credit-notes/{note['id']}"))["status"] == "cancelled"
+    assert ok(client.get(f"/api/invoices/{sale['id']}"))["status"] == "cancelled"
+    assert ok(client.get(f"/api/delivery-challans/{challan['id']}"))["status"] == "cancelled"
+    assert stock(client, widget) == 0
+
+
+def test_goods_bought_from_the_party_and_sent_back_on_a_challan_no_longer_block_the_delete(client):
+    seed_company(client)
+    widget = create_product(client, "WID-1", initial_quantity=0)["id"]
+    party = _ledger(client, "Supplier On Approval")
+    purchase = _invoice(client, party, widget, 10, voucher_type="purchase")
+    challan = create_challan(client, party, [(widget, 10)])
+    assert stock(client, widget) == 0
+
+    response = _delete(client, party)
+
+    assert response.status_code == 200, response.text
+    assert ok(client.get(f"/api/invoices/{purchase['id']}"))["status"] == "cancelled"
+    assert ok(client.get(f"/api/delivery-challans/{challan['id']}"))["status"] == "cancelled"
+    assert stock(client, widget) == 0
+
+
+def test_returned_serials_sold_again_block_the_delete_until_that_sale_is_cancelled(client, db_session):
+    seed_company(client)
+    phone = _serial_product(client, db_session, "PHONE-1")
+    supplier = _ledger(client, "Phone Supplier")
+    party_a = _ledger(client, "Party A")
+    party_b = _ledger(client, "Party B")
+    _invoice(client, supplier, phone, 1, voucher_type="purchase", serials=["SN-0001"])
+    sale = _invoice(client, party_a, phone, 1, serials=["SN-0001"])
+    note = _return_note(client, party_a, sale, 1, serials=["SN-0001"])
+    resale = _invoice(client, party_b, phone, 1, serials=["SN-0001"])
+
+    response = _delete(client, party_a)
+
+    # Those exact units are with party B: a real conflict, so it is still refused.
+    assert response.status_code == 409, response.text
+    detail = response.json()["detail"]
+    assert detail["document_type"] == "credit_note"
+    assert detail["document_id"] == note["id"]
+    assert detail["message"] == (
+        f"Credit note {note['credit_note_number']} cannot be cancelled: The Widget PHONE-1 returned on this "
+        f"credit note was sold again on invoice {resale['invoice_number']}. "
+        f"Cancel invoice {resale['invoice_number']} first. Nothing was changed."
+    )
+    assert ok(client.get(f"/api/credit-notes/{note['id']}"))["status"] == "active"
+    assert ok(client.get(f"/api/invoices/{sale['id']}"))["status"] == "active"
+    assert _serial_status(db_session, "SN-0001") == STATUS_SOLD
+    assert party_a in _listed(client)
+
+    # Doing what the message says clears the way.
+    ok(client.delete(f"/api/invoices/{resale['id']}"))
+    response = _delete(client, party_a)
+    assert response.status_code == 200, response.text
+    assert ok(client.get(f"/api/credit-notes/{note['id']}"))["status"] == "cancelled"
+    assert ok(client.get(f"/api/invoices/{sale['id']}"))["status"] == "cancelled"
+    assert _serial_status(db_session, "SN-0001") == STATUS_IN_STOCK
+    assert stock(client, phone) == 1
+
+
+# --- #1054 follow-up: TDS on a receipt allocation ---------------------------------
+
+def test_a_receipt_with_tds_is_cancelled_before_its_invoice(client, db_session):
+    """An invoice with TDS settled on it refuses to cancel while the receipt is live.
+    The delete cancels the receipt first, which takes its TDS out of every count,
+    exactly as cancelling the receipt by hand does; the allocation row stays on the
+    cancelled receipt, like every cancelled voucher's."""
+    sections = add_sections(db_session)
+    set_company_pan(client, db_session, "AAACM1234M")
+    customer = tds_ledger(client, "TDS Customer", pan="AAACA1234A", party_type="company")
+    invoice = tds_invoice(client, customer, 100000, "2026-05-10")
+    response = post_voucher(client, customer, 108000, [{
+        "invoice_id": invoice["id"],
+        "allocated_amount": 108000,
+        "tds_amount": 10000,
+        "tds_section_id": sections["prof"].id,
+    }], "2026-05-20T10:00:00")
+    assert response.status_code == 200, response.text
+    receipt = response.json()
+    receivable = lambda: ok(client.get("/api/tds/receivable", params={"tax_year": 2026}))["rows"]  # noqa: E731
+    assert len(receivable()) == 1
+    # By hand, the invoice cannot go first.
+    response = client.delete(f"/api/invoices/{invoice['id']}")
+    assert response.status_code == 400
+    assert "Remove the TDS from the receipt first" in response.json()["detail"]
+
+    response = _delete(client, customer)
+
+    assert response.status_code == 200, response.text
+    assert response.json()["cancelled"]["receipts"] == 1
+    assert response.json()["cancelled"]["sales_invoices"] == 1
+    assert ok(client.get(f"/api/payments/{receipt['id']}"))["status"] == "cancelled"
+    assert ok(client.get(f"/api/invoices/{invoice['id']}"))["status"] == "cancelled"
+    assert receivable() == []
+    db_session.expire_all()
+    allocation = db_session.query(PaymentInvoiceAllocation).filter_by(payment_id=receipt["id"]).one()
+    assert allocation.invoice_id == invoice["id"]
+    assert float(allocation.tds_amount) == 10000

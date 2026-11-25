@@ -9,6 +9,9 @@ InventoryManager service — centralizes all inventory quantity operations:
 
 import logging
 from collections import defaultdict
+from collections.abc import Iterator
+from contextlib import contextmanager
+from dataclasses import dataclass, field
 from decimal import Decimal
 
 from fastapi import HTTPException
@@ -28,6 +31,50 @@ logger = logging.getLogger(__name__)
 def _plain_quantity(value: Decimal) -> str:
     """3 rather than 3.000, so a shop owner reads the number they typed."""
     return format(value.normalize(), "f")
+
+
+_DEFERRED_STOCK_CHECK = "deferred_stock_check"
+
+
+@dataclass
+class DeferredStockCheck:
+    """Products whose stock went below zero while the check was deferred.
+
+    ``document`` is what the caller is cancelling right now; each product keeps the
+    last one that took or kept it below zero, so a refusal at the end names the
+    document that left it short rather than one a later cancel made good.
+    """
+
+    document: object = None
+    short: dict[int, object] = field(default_factory=dict)
+
+
+@contextmanager
+def deferred_stock_check(db: Session) -> Iterator[DeferredStockCheck]:
+    """Let stock go below zero inside the block; the caller checks it at the end.
+
+    Deleting a ledger (#1080) cancels a party's documents one at a time, and an
+    order that refuses no document cannot always be found: cancelling a return
+    takes its goods out of stock again before cancelling the sale puts them back.
+    The net change is what matters, so the shortfalls are recorded here instead
+    of refused, and the caller refuses the whole change if any is left at the end.
+    Nothing else turns this on, so every other stock check is unchanged.
+    """
+    check = DeferredStockCheck()
+    db.info[_DEFERRED_STOCK_CHECK] = check
+    try:
+        yield check
+    finally:
+        db.info.pop(_DEFERRED_STOCK_CHECK, None)
+
+
+def defer_shortfall(db: Session, product_id: int) -> bool:
+    """Record a shortfall for the end, if the check is deferred. False means refuse now."""
+    check = db.info.get(_DEFERRED_STOCK_CHECK)
+    if check is None:
+        return False
+    check.short[product_id] = check.document
+    return True
 
 
 class InsufficientStockError(HTTPException):
@@ -137,7 +184,7 @@ class InventoryManager:
             )
 
         new_quantity = Decimal(str(inventory.quantity or 0)) + quantity_delta
-        if new_quantity < 0:
+        if new_quantity < 0 and not defer_shortfall(self.db, product_id):
             logger.warning(
                 "inventory: quantity would go negative for product_id=%s "
                 "(current=%s delta=%s context=%s)",
@@ -203,7 +250,7 @@ class InventoryManager:
             )
         inventory = inventory_query.first()
         on_hand = Decimal(str(inventory.quantity or 0)) if inventory else Decimal("0")
-        if on_hand < quantity:
+        if on_hand < quantity and not defer_shortfall(self.db, product_id):
             logger.warning(
                 "inventory: insufficient stock for product_id=%s "
                 "(available=%s required=%s)",

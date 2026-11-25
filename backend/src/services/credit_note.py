@@ -24,7 +24,7 @@ from src.services.gst_tax_service import (
     invoice_is_interstate,
     money as _money,
 )
-from src.services.inventory_service import InventoryManager
+from src.services.inventory_service import InventoryManager, defer_shortfall
 from src.services.company_access import company_scope
 from src.services.invoice_discounts import DiscountedLine, discounted_line_amounts
 
@@ -81,7 +81,7 @@ def _change_inventory_quantity(
         db.flush()
 
     new_quantity = Decimal(str(inventory.quantity)) + quantity_delta
-    if new_quantity < 0:
+    if new_quantity < 0 and not defer_shortfall(db, product_id):
         raise HTTPException(status_code=400, detail=f"Insufficient inventory while {context}")
     if new_quantity >= Decimal(str(QUANTITY_STORAGE_CUTOFF)):
         raise HTTPException(
@@ -782,7 +782,7 @@ def cancel_credit_note(
                     db,
                     item.product_id,
                     InventoryManager.effect_for_voucher_type(item.quantity, source_voucher_type),
-                    context=f"cancelling return credit note {cn.id}",
+                    context=f"cancelling return credit note {cn.credit_note_number}",
                     **kwargs,
                 )
 

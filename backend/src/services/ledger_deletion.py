@@ -14,6 +14,11 @@ the reports that list them keep the party's name. In order:
 5. the live public links to its statement and documents;
 6. the ledger itself: ``deleted_at`` and ``deleted_by``.
 
+Steps 1-4 may take stock below zero on the way, and only the end result is checked
+(#1080): cancelling a return takes its goods out again before cancelling the sale
+puts them back, and a purchase from the party can be cancelled before the challan
+that sent the same goods back to it. Stock still short at the end refuses it all.
+
 Nothing here commits. The route commits once at the end, or rolls everything back
 when a step refuses: :class:`LedgerDeletionBlocked` names the document and the reason.
 """
@@ -22,6 +27,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from datetime import datetime
+from decimal import Decimal
 
 from fastapi import HTTPException
 from sqlalchemy import and_, or_
@@ -30,14 +36,17 @@ from sqlalchemy.orm import Session
 from src.models.buyer import Buyer as Ledger
 from src.models.credit_note import CreditNote
 from src.models.delivery_challan import STATUS_INVOICED, STATUS_OPEN as CHALLAN_OPEN, DeliveryChallan
+from src.models.inventory import Inventory
 from src.models.invoice import Invoice
 from src.models.payment import Payment
+from src.models.product import Product
 from src.models.quotation import STATUS_CONVERTED, Quotation
 from src.models.share_link import ShareLink
 from src.services.company_access import company_scope
 from src.services.credit_note import cancel_credit_note
 from src.services.delivery_challan import cancel_challan
 from src.services.gst_tax_service import india_today
+from src.services.inventory_service import DeferredStockCheck, deferred_stock_check
 from src.services.invoice_cancellation import cancel_invoice_record
 from src.services.quotation import CANCELLABLE_STATUSES, cancel_quotation, document_label
 from src.services.share_documents import (
@@ -70,7 +79,9 @@ class LedgerEntryCounts:
 class LedgerDeletionBlocked(HTTPException):
     def __init__(self, document_type: str, document_id: int, label: str, reason: HTTPException):
         detail = reason.detail
-        why = detail.get("message") if isinstance(detail, dict) else detail
+        why = str(detail.get("message") if isinstance(detail, dict) else detail).rstrip()
+        if not why.endswith((".", "!", "?")):
+            why += "."
         super().__init__(
             status_code=409,
             detail={
@@ -197,8 +208,60 @@ def preview_ledger_deletion(db: Session, ledger: Ledger, company_id: int | None)
     return counts, earlier_months
 
 
+def _plain(quantity) -> str:
+    return format(Decimal(str(quantity)).normalize(), "f")
+
+
+def _require_stock_left(db: Session, company_id: int | None, stock_check: DeferredStockCheck) -> None:
+    """Refuse if a product the cancels took below zero is still below zero (#1080)."""
+    if not stock_check.short:
+        return
+    db.flush()
+    query = (
+        db.query(Inventory, Product.name)
+        .join(Product, Product.id == Inventory.product_id)
+        .filter(Inventory.product_id.in_(stock_check.short), Inventory.quantity < 0)
+    )
+    if company_id is not None:
+        query = query.filter(company_scope(Inventory.company_id, company_id))
+    row = query.order_by(Product.name, Product.id).first()
+    if row is None:
+        return
+    inventory, name = row
+    document_type, document_id, label = stock_check.short[inventory.product_id]
+    reason = HTTPException(
+        status_code=400,
+        detail=(
+            f"Not enough stock of {name}. Cancelling everything on this ledger would leave it "
+            f"{_plain(-inventory.quantity)} short."
+        ),
+    )
+    raise LedgerDeletionBlocked(document_type, document_id, label, reason)
+
+
 def delete_ledger_with_entries(db: Session, ledger: Ledger, company_id: int | None, user_id: int) -> LedgerEntryCounts:
     """Cancel everything live on ``ledger`` and soft-delete it. Flushes, never commits."""
+    with deferred_stock_check(db) as stock_check:
+        counts = _cancel_documents(db, ledger, company_id, stock_check)
+        _require_stock_left(db, company_id, stock_check)
+
+    # 5. Public links: revoked, never deleted, like the Revoke button.
+    now = datetime.utcnow()
+    for link in _live_share_links(db, ledger.id, company_id).all():
+        link.revoked_at = now
+        counts.share_links += 1
+
+    # 6. The ledger.
+    ledger.deleted_at = now
+    ledger.deleted_by = user_id
+    db.flush()
+    return counts
+
+
+def _cancel_documents(
+    db: Session, ledger: Ledger, company_id: int | None, stock_check: DeferredStockCheck
+) -> LedgerEntryCounts:
+    """Steps 1-4. Shortfalls in stock are left for :func:`_require_stock_left`."""
     counts = LedgerEntryCounts()
 
     # Lock the documents before any stock row, in the order the cancel paths take
@@ -210,10 +273,12 @@ def delete_ledger_with_entries(db: Session, ledger: Ledger, company_id: int | No
 
     # 1. Credit notes.
     for note in _active_credit_notes(db, ledger.id, company_id).order_by(CreditNote.id).all():
+        label = f"Credit note {note.credit_note_number}"
+        stock_check.document = ("credit_note", note.id, label)
         try:
             cancel_credit_note(note.id, db, company_id=company_id, commit=False)
         except HTTPException as exc:
-            raise LedgerDeletionBlocked("credit_note", note.id, f"Credit note {note.credit_note_number}", exc) from exc
+            raise LedgerDeletionBlocked("credit_note", note.id, label, exc) from exc
         counts.credit_notes += 1
 
     # 2. Receipts and payments: the same status change as cancelling one by hand.
@@ -233,6 +298,7 @@ def delete_ledger_with_entries(db: Session, ledger: Ledger, company_id: int | No
     for invoice in invoices:
         is_purchase = invoice.voucher_type == "purchase"
         label = f"{'Purchase' if is_purchase else 'Sales'} invoice {invoice.invoice_number or invoice.id}"
+        stock_check.document = ("invoice", invoice.id, label)
         try:
             cancel_invoice_record(db, invoice)
         except HTTPException as exc:
@@ -245,12 +311,12 @@ def delete_ledger_with_entries(db: Session, ledger: Ledger, company_id: int | No
 
     # 4. Challans and quotations still open, the reopened ones included.
     for challan in _open_challans(db, ledger.id, company_id, after_invoices=False).order_by(DeliveryChallan.id).all():
+        label = f"Delivery challan {challan.challan_number}"
+        stock_check.document = ("delivery_challan", challan.id, label)
         try:
             cancel_challan(db, challan)
         except HTTPException as exc:
-            raise LedgerDeletionBlocked(
-                "delivery_challan", challan.id, f"Delivery challan {challan.challan_number}", exc
-            ) from exc
+            raise LedgerDeletionBlocked("delivery_challan", challan.id, label, exc) from exc
         counts.delivery_challans += 1
     for quotation in _open_quotations(db, ledger.id, company_id, after_invoices=False).order_by(Quotation.id).all():
         label = f"{document_label(quotation.document_type)} {quotation.quotation_number}"
@@ -259,15 +325,4 @@ def delete_ledger_with_entries(db: Session, ledger: Ledger, company_id: int | No
         except HTTPException as exc:
             raise LedgerDeletionBlocked("quotation", quotation.id, label, exc) from exc
         counts.quotations += 1
-
-    # 5. Public links: revoked, never deleted, like the Revoke button.
-    now = datetime.utcnow()
-    for link in _live_share_links(db, ledger.id, company_id).all():
-        link.revoked_at = now
-        counts.share_links += 1
-
-    # 6. The ledger.
-    ledger.deleted_at = now
-    ledger.deleted_by = user_id
-    db.flush()
     return counts

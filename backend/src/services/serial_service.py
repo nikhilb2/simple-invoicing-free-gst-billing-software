@@ -1017,6 +1017,32 @@ class SerialManager:
             invoice_id,
         )
 
+    def _resold_detail(self, product_id: int, company_id: int | None, note: str, quantity: int) -> str:
+        """Why a return's units cannot go back out: name the sale that took them since."""
+        name = self._product_name(product_id)
+        query = self.db.query(ProductSerial.sales_invoice_id).filter(
+            ProductSerial.product_id == product_id,
+            ProductSerial.status == STATUS_SOLD,
+            ProductSerial.note == note,
+        )
+        invoice_ids = sorted({invoice_id for (invoice_id,) in self._scoped(query, company_id).all() if invoice_id})
+        numbers = [self._invoice_number(invoice_id) or str(invoice_id) for invoice_id in invoice_ids]
+        if not numbers:
+            return (
+                f"{name} no longer has the {quantity} returned "
+                f"unit{'' if quantity == 1 else 's'} this credit note took back — "
+                "they have gone out on another invoice"
+            )
+        if len(numbers) == 1:
+            return (
+                f"The {name} returned on this credit note was sold again on invoice {numbers[0]}. "
+                f"Cancel invoice {numbers[0]} first."
+            )
+        return (
+            f"The {name} returned on this credit note was sold again on invoices {', '.join(numbers)}. "
+            "Cancel those invoices first."
+        )
+
     def reverse_credit_note_return(
         self,
         *,
@@ -1031,13 +1057,14 @@ class SerialManager:
         The rows are found by the *note* the return stamped on them rather than
         by product alone, so cancelling one of several returns against the same
         invoice sends back exactly the units that return carried — serials are
-        not fungible.
+        not fungible. A unit sold again keeps the note, so once that later sale
+        is cancelled (or the unit taken off it) the unit is back in stock with
+        the note and this return can be cancelled (#1080).
         """
         if quantity <= 0:
             return
         query = self.db.query(ProductSerial).filter(
             ProductSerial.product_id == product_id,
-            ProductSerial.sales_invoice_id == invoice_id,
             ProductSerial.status == STATUS_IN_STOCK,
             ProductSerial.note == note,
         )
@@ -1048,16 +1075,10 @@ class SerialManager:
             .all()
         )
         if len(rows) < quantity:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    f"{self._product_name(product_id)} no longer has the {quantity} "
-                    f"returned unit{'' if quantity == 1 else 's'} this credit note "
-                    "took back — they have gone out on another invoice"
-                ),
-            )
+            raise HTTPException(status_code=400, detail=self._resold_detail(product_id, company_id, note, quantity))
         for row in rows:
             row.status = STATUS_SOLD
+            row.sales_invoice_id = invoice_id
             row.note = None
         self.db.flush()
         logger.info(
