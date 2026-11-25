@@ -678,6 +678,79 @@ class TestCSVImport:
         assert items["IMP032"]["gst_rate"] == 18
         assert items["IMP033"]["gst_rate"] == 18
 
+    # --- File encodings written by Excel (Issue #1083) ---
+
+    TEMPLATE_HEADER = (
+        "Item Name,Item Code,Category,Purchase Price,Selling Price,Current Stock,"
+        "Reorder Level,Description,HSN Code,Unit,Tax"
+    )
+    TEMPLATE_ROW = "Border Cloth,ENC001,Textile,10,20,5,1,Handloom ½ metre border,8471,Pieces,18"
+
+    def _import_bytes(self, client, data: bytes, name="products.csv"):
+        res = client.post("/api/products/import-csv", files={"file": (name, data, "text/csv")})
+        assert res.status_code == 200
+        return res.json()
+
+    def _assert_enc001_saved(self, client):
+        items = client.get("/api/products/with-inventory?search=Border").json()["items"]
+        assert [i["sku"] for i in items] == ["ENC001"]
+        assert items[0]["description"] == "Handloom ½ metre border"
+        assert items[0]["selling_price"] == 20
+
+    def test_import_csv_cp1252_from_excel_windows(self, client):
+        text = f"{self.TEMPLATE_HEADER}\n{self.TEMPLATE_ROW}\n"
+        data = self._import_bytes(client, text.encode("cp1252"))
+        assert data["errors"] == []
+        assert data["created"] == 1
+        self._assert_enc001_saved(client)
+
+    def test_import_csv_cp1252_undefined_byte_does_not_refuse_file(self, client):
+        # 0x81 is undefined in cp1252; only that character is replaced.
+        raw = f"{self.TEMPLATE_HEADER}\n{self.TEMPLATE_ROW}\n".encode("cp1252").replace(b"Border Cloth", b"Border\x81Cloth")
+        data = self._import_bytes(client, raw)
+        assert data["errors"] == []
+        assert data["created"] == 1
+
+    @pytest.mark.parametrize("bom, codec", [(b"\xff\xfe", "utf-16-le"), (b"\xfe\xff", "utf-16-be")])
+    def test_import_csv_utf16_tab_separated_unicode_text(self, client, bom, codec):
+        header = self.TEMPLATE_HEADER.replace(",", "\t")
+        row = self.TEMPLATE_ROW.replace(",", "\t")
+        raw = bom + f"{header}\r\n{row}\r\n".encode(codec)
+        data = self._import_bytes(client, raw)
+        assert data["errors"] == []
+        assert data["created"] == 1
+        self._assert_enc001_saved(client)
+
+    def test_import_csv_cp1252_tab_separated(self, client):
+        text = f"{self.TEMPLATE_HEADER}\n{self.TEMPLATE_ROW}\n".replace(",", "\t")
+        data = self._import_bytes(client, text.encode("cp1252"))
+        assert data["errors"] == []
+        assert data["created"] == 1
+
+    @pytest.mark.parametrize("signature", [b"PK\x03\x04", b"\xd0\xcf\x11\xe0"])
+    def test_import_csv_excel_file_gets_one_plain_error(self, client, signature):
+        data = self._import_bytes(client, signature + b"\xea\x00\x01binary", "products.xlsx")
+        assert data["created"] == 0
+        assert len(data["errors"]) == 1
+        error = data["errors"][0]
+        assert error["row"] == 0
+        assert "Save As" in error["message"] and "CSV UTF-8" in error["message"]
+        assert "codec" not in error["message"].lower()
+
+    def test_import_csv_truncated_utf16_is_plain_error(self, client):
+        data = self._import_bytes(client, b"\xff\xfeI\x00t\x00e")  # odd length
+        assert data["created"] == 0
+        assert len(data["errors"]) == 1
+        assert "codec" not in data["errors"][0]["message"].lower()
+
+    @pytest.mark.parametrize("bom", [b"", b"\xef\xbb\xbf"])
+    def test_import_csv_utf8_with_and_without_bom(self, client, bom):
+        text = f"{self.TEMPLATE_HEADER}\n{self.TEMPLATE_ROW}\n"
+        data = self._import_bytes(client, bom + text.encode("utf-8"))
+        assert data["errors"] == []
+        assert data["created"] == 1
+        self._assert_enc001_saved(client)
+
     def test_import_csv_mixed_rows_partial_failure(self, client):
         """Rows without errors in the same file still import (Issue #556)."""
         _create_product(client, "IMP020", "Mixed Keeper", price=10, initial_quantity=4)

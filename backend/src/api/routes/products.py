@@ -44,6 +44,7 @@ from src.api.deps import get_active_company, get_current_user, require_company_r
 from src.api.pagination import MAX_PAGE
 from src.api.search import contains_pattern
 from src.core.analytics import distinct_id_for, track
+from src.core.csv_decoding import CsvDecodeError, decode_csv_upload
 from src.core.document_limits import MONEY_STORAGE_CUTOFF, QUANTITY_STORAGE_CUTOFF
 from src.core.validation import hsn_sac_warning, normalize_hsn_sac
 from src.services.marketplace.listings import (
@@ -1046,15 +1047,15 @@ def _import_csv_from_content(
     changed_ids: list[int] = []
 
     try:
-        text = content.decode("utf-8-sig")
-    except UnicodeDecodeError as e:
+        text, delimiter = decode_csv_upload(content)
+    except CsvDecodeError as e:
         return {
             "created": 0,
             "updated": 0,
-            "errors": [{"row": 0, "message": f"Invalid file encoding: {e}"}],
+            "errors": [{"row": 0, "message": str(e)}],
         }, []
 
-    reader = csv.DictReader(io.StringIO(text))
+    reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
     if not reader.fieldnames:
         return {
             "created": 0,

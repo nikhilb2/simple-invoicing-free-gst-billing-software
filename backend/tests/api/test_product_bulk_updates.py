@@ -227,3 +227,31 @@ def test_confirm_tracks_counts_only(client, monkeypatch):
     assert [(event, props) for event, _, props in sent] == [
         ("products_bulk_updated", {"product_count": 2, "stock_count": 1})
     ]
+
+
+def _encoded_preview(client, raw, name="changes.csv"):
+    return client.post(f"{BASE}/preview", files={"file": (name, raw, "text/csv")})
+
+
+def test_preview_reads_excel_windows_encodings(client):
+    product_id = create_product(client, name="Border ½ cloth")
+    text = f"Product ID,Product Name,Selling Price,Selling Price GST\n{product_id},Border ½ cloth,150,Exclusive\n"
+    for raw in (
+        text.encode("cp1252"),
+        b"\xff\xfe" + text.replace(",", "\t").encode("utf-16-le"),
+        b"\xef\xbb\xbf" + text.encode("utf-8"),
+        text.encode("utf-8"),
+    ):
+        response = _encoded_preview(client, raw)
+        assert response.status_code == 200, response.text
+        data = response.json()
+        assert data["errors"] == []
+        assert data["changes"][0]["fields"]["price"]["new"] == "150.00"
+
+
+def test_preview_excel_file_gets_plain_error(client):
+    response = _encoded_preview(client, b"PK\x03\x04\xea\x00binary", "changes.xlsx")
+    assert response.status_code == 400
+    detail = response.json()["detail"]
+    assert "Save As" in detail and "CSV UTF-8" in detail
+    assert "codec" not in detail.lower()

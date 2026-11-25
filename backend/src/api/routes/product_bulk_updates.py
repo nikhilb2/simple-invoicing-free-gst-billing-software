@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from src.api.deps import get_active_company, require_company_role
 from src.core.analytics import distinct_id_for, track
 from src.core.config import settings
+from src.core.csv_decoding import decode_csv_upload
 from src.core.document_limits import MONEY_LIMIT, QUANTITY_LIMIT
 from src.core.validation import hsn_sac_warning, normalize_hsn_sac
 from src.db.session import get_db
@@ -171,7 +172,8 @@ def preview_bulk_update(
     inventory = stock_rows(db, company.id, [product.id for product in products])
     errors, changes, seen = [], [], set()
     try:
-        reader = csv.DictReader(io.StringIO(content.decode("utf-8-sig"), newline=""), strict=True)
+        text, delimiter = decode_csv_upload(content)
+        reader = csv.DictReader(io.StringIO(text, newline=""), delimiter=delimiter, strict=True)
         if not reader.fieldnames or len(reader.fieldnames) != len(set(reader.fieldnames)):
             raise ValueError("CSV needs a header with unique column names")
         if set(reader.fieldnames) - set(COLUMNS) or not set(reader.fieldnames) & {"Product ID", "Product Name"}:
