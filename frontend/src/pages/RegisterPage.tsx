@@ -1,10 +1,11 @@
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { registerAccount, resendVerification } from '../api/auth';
 import { useAuthConfig } from '../hooks/useAuthConfig';
 import { authErrorMessage } from '../utils/authFlow';
 import AuthLayout from '../components/AuthLayout';
 import OAuthButtons from '../components/OAuthButtons';
+import CheckEmailNotice from '../components/CheckEmailNotice';
 import StatusToasts from '../components/StatusToasts';
 
 export default function RegisterPage() {
@@ -14,7 +15,25 @@ export default function RegisterPage() {
   const [success, setSuccess] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [submittedEmail, setSubmittedEmail] = useState<string | null>(null);
+  const emailInputRef = useRef<HTMLInputElement>(null);
+  const [focusEmail, setFocusEmail] = useState(false);
   const config = useAuthConfig();
+
+  // The form is only back in the DOM after submittedEmail clears, so focus
+  // the address once it has rendered.
+  useEffect(() => {
+    if (focusEmail && !submittedEmail) {
+      emailInputRef.current?.focus();
+      setFocusEmail(false);
+    }
+  }, [focusEmail, submittedEmail]);
+
+  function onChangeAddress() {
+    setError('');
+    setSuccess('');
+    setSubmittedEmail(null);
+    setFocusEmail(true);
+  }
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
@@ -50,28 +69,12 @@ export default function RegisterPage() {
   if (submittedEmail) {
     return (
       <AuthLayout title="Check your email">
-        <div>
-          <p className="eyebrow">Almost there</p>
-          <h2 className="page-title">Check your email</h2>
-          <p className="section-copy">
-            We have sent an email to {submittedEmail}. Open its link to confirm your address and choose your
-            password. If you already have an account with this address, the email tells you how to sign in
-            instead.
-          </p>
-        </div>
-        {toasts}
-        <button type="button" className="button button--ghost" onClick={() => void onResend()}>
-          Resend verification email
-        </button>
-        {/* People who signed up before, often with Google, land here and wait for a
-            link; the way back in has to be a button, not a footnote. */}
-        <div className="stack" style={{ gap: '8px' }}>
-          <p className="muted-text" style={{ margin: 0 }}>
-            Already confirmed your email and chosen a password, or signed up with Google?
-          </p>
-          <Link to="/login" className="button button--secondary">Go to sign in</Link>
-          <Link to="/forgot-password" style={{ textDecoration: 'underline' }}>Forgot your password?</Link>
-        </div>
+        <CheckEmailNotice
+          email={submittedEmail}
+          onChangeAddress={onChangeAddress}
+          onResend={() => void onResend()}
+          toasts={toasts}
+        />
       </AuthLayout>
     );
   }
@@ -120,6 +123,7 @@ export default function RegisterPage() {
             <label htmlFor="email">Email</label>
             <input
               id="email"
+              ref={emailInputRef}
               className="input"
               type="email"
               placeholder="you@example.com"

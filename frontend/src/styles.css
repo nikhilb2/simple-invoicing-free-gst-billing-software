@@ -1716,6 +1716,21 @@ input[type='radio'] {
   cursor: pointer;
 }
 
+/* Phone-sized tap target for a link-button that stands alone on its own line. */
+.link-button--tap {
+  min-height: 44px;
+  font-size: 0.95rem;
+}
+
+/* An address the person has to check by eye, on a line of its own. */
+.sent-address {
+  margin: 4px 0 0;
+  font-size: 1.05rem;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 .link-button > svg {
   flex-shrink: 0;
 }
