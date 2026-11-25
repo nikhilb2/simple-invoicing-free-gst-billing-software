@@ -18,6 +18,7 @@ from src.schemas.smtp_config import (
     SmtpConfigTestTemplate,
     SmtpConfigUpdate,
 )
+from src.services.pdf_templates.builders import _fmt_currency
 
 _TEMPLATE_DIR = Path(__file__).parent.parent.parent / "services" / "email_templates"
 _jinja_env = Environment(
@@ -34,7 +35,7 @@ _TEMPLATE_MOCK_DATA: dict[str, dict] = {
         "invoice_date": "01 Apr 2026",
         "due_date": "15 Apr 2026",
         "buyer_name": "Test Buyer",
-        "total_amount": "12,500.00",
+        "total_amount": _fmt_currency(125000.0, "INR"),
         "items_count": 3,
         "currency": "\u20b9",
     },
@@ -42,12 +43,12 @@ _TEMPLATE_MOCK_DATA: dict[str, dict] = {
         "company_name": "Acme Corp",
         "company_email": "billing@acme.com",
         "buyer_name": "Test Buyer",
-        "outstanding_balance": "8,750.00",
+        "outstanding_balance": _fmt_currency(125000.0, "INR"),
         "last_payment_date": "20 Mar 2026",
         "currency": "\u20b9",
         "unpaid_invoices": [
-            {"invoice_number": "INV-2026-001", "invoice_date": "01 Mar 2026", "due_date": "15 Mar 2026", "amount": "5,000.00"},
-            {"invoice_number": "INV-2026-002", "invoice_date": "10 Mar 2026", "due_date": None, "amount": "3,750.00"},
+            {"invoice_number": "INV-2026-001", "invoice_date": "01 Mar 2026", "due_date": "15 Mar 2026", "amount": _fmt_currency(75000.0, "INR")},
+            {"invoice_number": "INV-2026-002", "invoice_date": "10 Mar 2026", "due_date": None, "amount": _fmt_currency(50000.0, "INR")},
         ],
     },
     "ledger_statement": {
@@ -56,9 +57,9 @@ _TEMPLATE_MOCK_DATA: dict[str, dict] = {
         "ledger_name": "Test Buyer",
         "date_from": "01 Jan 2026",
         "date_to": "31 Mar 2026",
-        "total_invoices": "50,000.00",
-        "total_payments": "42,500.00",
-        "balance": "7,500.00",
+        "total_invoices": _fmt_currency(125000.0, "INR"),
+        "total_payments": _fmt_currency(112500.0, "INR"),
+        "balance": _fmt_currency(12500.0, "INR"),
         "currency": "\u20b9",
     },
 }
