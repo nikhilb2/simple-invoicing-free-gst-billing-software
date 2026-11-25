@@ -23,7 +23,7 @@ Each company keeps its own invoices, ledgers, products, numbering, financial yea
 | View lists, reports, ledgers and products | ✓ | ✓ | ✓ |
 | Create, edit and cancel invoices, quotations and credit notes | ✓ | ✓ | ✓ |
 | Change your own password, shortcuts and theme | ✓ | ✓ | ✓ |
-| Create, edit and delete ledgers | ✓ | ✓ | |
+| Create, edit and delete ledgers. Deleting a ledger that has entries is admin only. | ✓ | ✓ (not a ledger with entries) | |
 | Create, edit, import and delete products, and adjust stock | ✓ | ✓ | |
 | Record production and edit bills of materials | ✓ | ✓ | |
 | Record, edit and cancel payments | ✓ | ✓ | |

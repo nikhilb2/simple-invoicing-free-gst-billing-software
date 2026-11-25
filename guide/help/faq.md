@@ -73,8 +73,11 @@ No. It prepares the GSTR-1 file and the GSTR-3B estimate. You file on the GST po
 **I cannot change a stock figure.**
 Click the stock number and make an [adjustment](../catalogue/products#adjust-stock). Stock is not edited directly.
 
-**I cannot delete a product or ledger.**
-It has history. See [products](../catalogue/products#delete-a-product) and [ledgers](../ledgers/#delete-a-ledger).
+**I cannot delete a product.**
+It has history. See [products](../catalogue/products#delete-a-product).
+
+**Can I delete a ledger that has invoices or payments?**
+Yes, if you are an admin. Deleting it cancels its entries first. See [Delete a ledger](../ledgers/#delete-a-ledger).
 
 ## Email
 

@@ -106,4 +106,31 @@ Phone chips call the number on your phone. WhatsApp links open a chat with the n
 
 ## Delete a ledger
 
-A ledger cannot be deleted once it is linked to an invoice, quotation or payment. Ledgers with only an opening balance can be deleted.
+Click the bin icon on the ledger's row.
+
+**A ledger with no entries** is deleted after a simple confirmation. Admins and managers can do this.
+
+**A ledger with entries** can be deleted too, but only by an admin. An opening balance counts as an entry. Deleting it cancels everything on the ledger, so the app first shows a preview of what will be cancelled:
+
+- invoices (sales and purchase)
+- credit and debit notes
+- receipts and payments
+- delivery challans
+- quotations
+- public share links
+
+What happens:
+
+- Stock and serial numbers go back, the same as when you cancel an invoice yourself.
+- The entries stay in your books and reports, marked as cancelled.
+- Share links to the ledger's statement and documents stop working.
+- The ledger disappears from your lists and pickers. Its GSTIN can be used again on a new ledger.
+- If any invoice is from a past month, a warning says it may already be in a GSTR-1 you filed. You may need to amend that return.
+
+To go ahead, type the ledger name and click **Delete ledger and cancel entries**. Click **Keep ledger** to stop.
+
+If a document cannot be cancelled, the delete is refused. The message names that document and says nothing was changed. Fix or cancel that document first, then try again.
+
+::: warning You cannot undo this
+Cancelled entries cannot be brought back, and the ledger cannot be restored.
+:::
