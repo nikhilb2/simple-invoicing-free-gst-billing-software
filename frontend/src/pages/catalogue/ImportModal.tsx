@@ -291,9 +291,27 @@ export default function ImportModal({ onClose, onImported }: ImportModalProps) {
   );
 }
 
-function ImportSummary({ result, resultRef }: { result: ImportResult; resultRef: React.RefObject<HTMLDivElement> }) {
+export function ImportSummary({ result, resultRef }: { result: ImportResult; resultRef: React.RefObject<HTMLDivElement> }) {
   const changed = result.created + result.updated;
   const hasErrors = result.errors.length > 0;
+  // Row 0 means the whole file was refused (wrong format, empty file), not one row.
+  const fileError = changed === 0 && result.errors.length === 1 && result.errors[0].row === 0 ? result.errors[0] : null;
+
+  if (fileError) {
+    return (
+      <div className="catalogue-import__result" ref={resultRef} tabIndex={-1}>
+        <div className="catalogue-import__summary">
+          <span className="status-chip status-chip--error">
+            <TriangleAlert size={14} aria-hidden="true" />
+            File not imported
+          </span>
+        </div>
+        <p className="field-hint" role="alert">
+          {fileError.message}
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="catalogue-import__result" ref={resultRef} tabIndex={-1}>
