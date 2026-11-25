@@ -1,5 +1,5 @@
 ---
-title: "GSTR-1 JSON file: how to prepare and upload it"
+title: "GSTR-1 JSON file: prepare and upload it"
 description: "Check your sales for a period, fix errors, and export the GSTR-1 JSON file to upload on the GST portal. Covers B2B, B2CL, B2CS and HSN summary."
 ---
 

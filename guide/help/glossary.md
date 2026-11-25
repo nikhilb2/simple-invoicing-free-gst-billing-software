@@ -1,5 +1,5 @@
 ---
-title: "GST glossary: B2B, B2CL, B2CS, HSN and more"
+title: "GST glossary: B2B, B2CL, B2CS, HSN"
 description: "Plain-English meanings of GST and accounting terms used in Simple Invoicing: B2B, B2CL, B2CS, HSN, SAC, ITC, place of supply and more."
 ---
 

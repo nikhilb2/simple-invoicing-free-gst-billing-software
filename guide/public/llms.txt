@@ -1,0 +1,30 @@
+# Simple Invoicing Guide
+
+> User guide for Simple Invoicing: free, open-source (MIT) GST billing, invoicing and accounting software for Indian small businesses. Use the hosted app free at https://app.gstbill.in, or self-host it from GitHub.
+
+Simple Invoicing makes GST invoices, quotations and proforma invoices, credit and debit notes, delivery challans and e-way bill JSON files. It prints A4, A5 and 80/58 mm thermal rolls, exports the GSTR-1 JSON file for the GST portal (it does not file returns for you), and keeps stock, party ledgers, a day book and cash and bank. It has a built-in MCP server so AI assistants can read and work with your books.
+
+## Start here
+
+- [Quick start: create your first GST invoice](https://guide.gstbill.in/getting-started/)
+- [Company setup](https://guide.gstbill.in/getting-started/company-setup)
+- [Invoices](https://guide.gstbill.in/sales/invoices)
+- [Send and share an invoice, UPI QR, e-way bill JSON](https://guide.gstbill.in/sales/sending)
+- [GSTR-1 JSON file](https://guide.gstbill.in/reports/gstr1)
+- [Credit and debit notes](https://guide.gstbill.in/sales/credit-notes)
+- [Products and stock](https://guide.gstbill.in/catalogue/products)
+- [Customers and suppliers (ledgers)](https://guide.gstbill.in/ledgers/)
+
+## Compare and run it yourself
+
+- [Free GST billing software compared](https://guide.gstbill.in/help/free-billing-software-comparison)
+- [Free Tally alternative for small business](https://guide.gstbill.in/help/tally-alternative)
+- [Run your own copy (self-hosting)](https://guide.gstbill.in/integrations/self-hosting)
+- [Connect an AI assistant (MCP)](https://guide.gstbill.in/integrations/ai-assistants)
+- [Troubleshooting](https://guide.gstbill.in/help/faq)
+
+## Links
+
+- Website: https://gstbill.in
+- Hosted app (free sign-up): https://app.gstbill.in/register
+- Source code: https://github.com/nikhilb2/simple-invoicing-free-gst-billing-software

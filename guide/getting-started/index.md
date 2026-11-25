@@ -1,5 +1,5 @@
 ---
-title: "Quick start: create your first GST invoice"
+title: "How to create a GST bill: quick start"
 description: "Set up Simple Invoicing, the free GST billing software, and send your first GST invoice in about ten minutes: account, company, customer, product, invoice."
 ---
 

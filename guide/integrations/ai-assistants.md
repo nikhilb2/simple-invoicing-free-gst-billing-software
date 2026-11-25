@@ -1,5 +1,5 @@
 ---
-title: "Connect Claude or ChatGPT to your invoices (MCP)"
+title: "Connect ChatGPT or Claude to your books"
 description: "Connect Claude, ChatGPT or another MCP client to Simple Invoicing and ask about unpaid invoices, profit, stock and GST in plain English."
 ---
 

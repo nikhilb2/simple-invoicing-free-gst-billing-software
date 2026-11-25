@@ -1,5 +1,5 @@
 ---
-title: "Free Tally alternative for small business in India: TallyPrime vs Simple Invoicing"
+title: "Free Tally alternative for small business"
 description: "A free TallyPrime alternative for small Indian businesses that mostly need GST invoices, GSTR-1 and payments. Compare price, features and how to move."
 ---
 

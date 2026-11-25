@@ -27,6 +27,8 @@ const SOFTWARE_JSON_LD = JSON.stringify({
 
 export default defineConfig({
   title: SITE_NAME,
+  // Short suffix so page titles stay under ~60 characters in search results.
+  titleTemplate: ':title | Simple Invoicing',
   description: 'How to use Simple Invoicing, free and open-source GST billing software for India: GST invoices, GSTR-1, stock, ledgers and payments.',
   lang: 'en-IN',
   cleanUrls: true,

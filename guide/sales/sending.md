@@ -1,5 +1,5 @@
 ---
-title: "Send an invoice, take UPI payments and make e-way bills"
+title: "Send invoices, UPI QR and e-way bills"
 description: "Share a GST invoice PDF on WhatsApp or by email, add a pay-by-UPI QR code, and build the e-way bill JSON file for the government portal."
 ---
 

@@ -1,5 +1,5 @@
 ---
-title: "Free GST billing software: Simple Invoicing vs Vyapar, myBillBook, Zoho and Tally"
+title: "Free GST billing software compared"
 description: "Compare free GST billing software for India: Simple Invoicing, Vyapar, myBillBook, Zoho and TallyPrime on price, GSTR-1, e-way bills, apps and users."
 ---
 
