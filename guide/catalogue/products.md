@@ -99,7 +99,7 @@ There is no archive option. If a product you no longer sell has history, leave i
 Use this to load a catalogue from another system or to update prices in bulk.
 
 1. Click **Import**, then **Download template**. The template is an export of your current catalogue, so it has the right columns.
-2. Edit the file and save it as CSV in UTF-8.
+2. Edit the file and save it as CSV. In Excel, **CSV UTF-8 (Comma delimited)** is best. Excel's plain **CSV (Comma delimited)** and **Unicode Text** also work. An .xlsx file does not: save it as CSV first.
 3. Choose the file and click **Import and update items**. Nothing uploads until you click this.
 
 **Item Name** and **Item Code** (or Name and SKU) are required. The other columns are Purchase Price, Selling Price, Current Stock, Reorder Level, Description, HSN Code, Unit and Tax. Tax can also be headed **GST**, **GST Rate** or **Tax Rate**. Headings ignore case and spacing, and any extra columns are ignored.
