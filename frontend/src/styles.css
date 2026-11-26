@@ -2018,6 +2018,9 @@ input[type='radio'] {
 }
 
 .button:disabled.is-busy {
+  /* Busy is not dead: a button waiting on the server keeps its colour (#963). */
+  opacity: 1;
+  filter: none;
   cursor: wait;
 }
 
@@ -9286,6 +9289,21 @@ a.ledger-chip:focus-visible {
 .company-setup-first .form-save-bar > .button {
   width: 100%;
   min-height: 48px;
+}
+
+/* Fields that are made read-only together while a save is on its way, without
+   a box of their own between the form's grid and its fields. */
+.fieldset-contents {
+  display: contents;
+}
+
+/* "Couldn’t save. Check your internet and try again." under a Save button (#963). */
+.save-failed {
+  margin: 0;
+}
+
+.panel__header + .save-failed {
+  margin: -8px 0 16px;
 }
 
 /* E-way bill dialog: the company has no address yet. The way out is a real

@@ -5,6 +5,7 @@ import { fetchVerifyEmailDetails, resendVerification, verifyEmail } from '../api
 import { getApiErrorCode } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { authErrorMessage } from '../utils/authFlow';
+import { busyClass, createSubmitGuard, isConnectionOrServerError, SAVE_FAILED_MESSAGE } from '../utils/saveFeedback';
 import {
   isDeadVerificationLink,
   MIN_PASSWORD_LENGTH,
@@ -31,7 +32,12 @@ export default function VerifyEmailPage() {
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  // Claimed before the first await, so a second tap cannot send the one-time
+  // link twice. Left claimed on success: the form is gone and the app is opening.
+  const [confirmGuard] = useState(createSubmitGuard);
   const [formError, setFormError] = useState('');
+  // A network failure or a 5xx, shown under the button with the typed values kept.
+  const [saveFailed, setSaveFailed] = useState(false);
   const [email, setEmail] = useState('');
   const [resendNote, setResendNote] = useState('');
   const [resendError, setResendError] = useState('');
@@ -64,7 +70,8 @@ export default function VerifyEmailPage() {
   // must never be enough to confirm an account.
   async function onConfirm(event: FormEvent) {
     event.preventDefault();
-    if (!token) return;
+    if (!token || confirmGuard.busy) return;
+    setSaveFailed(false);
     if (!fullName.trim()) {
       setFormError('Enter your name');
       return;
@@ -74,6 +81,7 @@ export default function VerifyEmailPage() {
       setFormError(clientError);
       return;
     }
+    if (!confirmGuard.claim()) return;
     try {
       setSubmitting(true);
       setFormError('');
@@ -89,11 +97,15 @@ export default function VerifyEmailPage() {
           .catch(() => setSigningIn(false));
       }
     } catch (err) {
+      confirmGuard.release();
       if (isDeadVerificationLink(getApiErrorCode(err))) {
         setStatus('failed');
         setMessage(authErrorMessage(err, 'This verification link is invalid or has expired.'));
+      } else if (isConnectionOrServerError(err)) {
+        // Keep the form, and say so under the button, so the user can retry.
+        setSaveFailed(true);
       } else {
-        // Keep the form so the user can retry (network, 422 validation, etc.).
+        // Keep the form so the user can retry (422 validation, etc.).
         setFormError(authErrorMessage(err, 'Unable to verify email. Please try again.'));
       }
     } finally {
@@ -147,6 +159,7 @@ export default function VerifyEmailPage() {
               onChange={(event) => setFullName(event.target.value)}
               autoComplete="name"
               maxLength={120}
+              readOnly={submitting}
               required
             />
           </div>
@@ -159,12 +172,21 @@ export default function VerifyEmailPage() {
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               autoComplete="new-password"
+              readOnly={submitting}
             />
           </div>
           <StatusToasts error={formError} success="" onClearError={() => setFormError('')} onClearSuccess={() => undefined} />
-          <button className="button button--primary" disabled={submitting}>
-            {submitting ? 'Saving...' : 'Confirm email and set password'}
+          <button
+            className={`button button--primary${busyClass(submitting)}`}
+            disabled={submitting}
+            aria-busy={submitting || undefined}
+            aria-describedby={saveFailed ? 'verify-email-save-failed' : undefined}
+          >
+            {submitting ? 'Saving…' : 'Confirm email and set password'}
           </button>
+          {saveFailed ? (
+            <p className="field-error save-failed" id="verify-email-save-failed" role="alert">{SAVE_FAILED_MESSAGE}</p>
+          ) : null}
         </form>
       ) : null}
 
