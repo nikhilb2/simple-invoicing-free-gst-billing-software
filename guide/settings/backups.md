@@ -37,3 +37,9 @@ A restore replaces the **entire database, including all companies**. Anything en
 3. Type `RESTORE` to confirm.
 4. Click **Restore backup**. Do not close or refresh the window.
 5. When you see **Restore complete**, click **Refresh page**.
+
+### If a restore fails
+
+A backup from an older version is updated to the current version after it is restored. If that update fails, the app puts your data back as it was before the restore.
+
+If putting your data back also fails, the error names a backup that starts with `pre_restore_`. It holds your data from before the restore and appears in the list of backups. **Download it at once**, then restore it as described above. Do this before you restart the app.

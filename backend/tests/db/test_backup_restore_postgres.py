@@ -14,6 +14,7 @@ from sqlalchemy.exc import OperationalError
 from src.core.config import settings
 from src.db.base import Base
 from src.services import backup
+from src.services import backup_scheduler
 
 
 pytestmark = pytest.mark.skipif(
@@ -58,6 +59,10 @@ def archive():
     return Path(backup.BACKUP_DIR) / item["file_name"]
 
 
+def pre_restore_backups():
+    return sorted(Path(backup.BACKUP_DIR).glob(f"{backup.PRE_RESTORE_BACKUP_PREFIX}*"))
+
+
 def old_archive(db):
     with db.begin() as conn:
         conn.execute(text("DROP TABLE product_bulk_updates"))
@@ -93,6 +98,7 @@ def test_older_backup_restores_and_recreates_new_table(backup_db):
         assert conn.execute(text("SELECT note FROM operator_notes")).scalar_one() == "keep me"
         assert conn.execute(text("SELECT oid, nspacl FROM pg_namespace WHERE nspname = 'public'")).one() == schema_before
     assert NEW_MIGRATION in backup.get_applied_migrations()
+    assert pre_restore_backups() == []
 
 
 def test_same_version_backup_still_restores(backup_db):
@@ -119,6 +125,7 @@ def test_restore_error_rolls_back_table_cleanup_and_data(backup_db, monkeypatch)
     monkeypatch.setattr(backup.subprocess, "run", inject_sql_error)
     with pytest.raises(HTTPException, match="Restore failed"):
         backup.restore_backup(upload(path))
+    assert pre_restore_backups() == []
 
     with backup_db.connect() as conn:
         assert conn.execute(text("SELECT name FROM company_profiles")).scalar_one() == "After the backup"
@@ -164,6 +171,7 @@ def test_failed_migration_after_restore_rolls_back_and_names_it(backup_db, monke
     assert "rolled back" in failure.value.detail
     assert f"migration {FAILING_MIGRATION} failed: division by zero" in failure.value.detail
     assert_database_as_before_restore(backup_db)
+    assert pre_restore_backups() == []
 
 
 def test_failed_rollback_after_failed_migration_is_reported(backup_db, monkeypatch, tmp_path):
@@ -182,9 +190,26 @@ def test_failed_rollback_after_failed_migration_is_reported(backup_db, monkeypat
 
     assert f"migration {FAILING_MIGRATION} failed" in failure.value.detail
     assert "also failed" in failure.value.detail
-    assert "Restore another (newer) backup, or fix the data and restart" in failure.value.detail
     with backup_db.connect() as conn:
         assert conn.execute(text("SELECT name FROM company_profiles")).scalar_one() == "In the backup"
+
+    # The data from before the restore survives as an ordinary backup (#1079).
+    [kept] = pre_restore_backups()
+    assert f"saved as the backup {kept.name} on the Backups page" in failure.value.detail
+    assert kept.name in [item["file_name"] for item in backup.list_backups()]
+    assert backup.get_backup_file_path(kept.name) == kept
+    monkeypatch.setattr(backup_scheduler, "BACKUP_DIR", backup.BACKUP_DIR)
+    for stamp in ("20000101_000000", "20000102_000000"):
+        (Path(backup.BACKUP_DIR) / f"{backup.AUTO_BACKUP_PREFIX}{stamp}.enc").write_bytes(b"old")
+    assert backup_scheduler.prune_auto_backups(keep=1) == [f"{backup.AUTO_BACKUP_PREFIX}20000101_000000.enc"]
+    assert kept.exists()
+
+    # ...and restoring it from the Backups page puts that data back, although the
+    # database is now behind the app's schema.
+    monkeypatch.setattr(backup, "_app_table_drops", drops)
+    assert backup.preflight_restore(upload(kept)).compatibility == "database_behind"
+    assert backup.restore_backup(upload(kept)) == ("database_behind", 0)
+    assert_database_as_before_restore(backup_db)
 
 
 def test_error_outside_a_migration_after_restore_also_rolls_back(backup_db, monkeypatch):
