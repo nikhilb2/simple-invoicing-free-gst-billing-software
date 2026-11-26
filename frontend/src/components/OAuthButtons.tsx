@@ -1,11 +1,16 @@
 import type { AuthProvider } from '../types/api';
 import { oauthLoginUrl } from '../utils/authFlow';
+import InAppBrowserNotice from './InAppBrowserNotice';
 
 type OAuthButtonsProps = {
   providers: AuthProvider[];
   next: string;
   /** Leads the "or" divider; the buttons sit above the email form. */
   label?: string;
+  /** Used in the in-app browser notice: "or sign up with your email below". */
+  emailAction?: 'sign up' | 'sign in';
+  /** Injected by tests. */
+  userAgent?: string;
 };
 
 // Keyed by provider id. Google's rules don't allow changing the colours of its "G" or
@@ -15,13 +20,14 @@ const PROVIDER_LOGOS: Record<string, string> = {
 };
 
 /** One "Continue with …" button per enabled provider, then an "or" divider. */
-export default function OAuthButtons({ providers, next, label = 'Continue with' }: OAuthButtonsProps) {
+export default function OAuthButtons({ providers, next, label = 'Continue with', emailAction = 'sign in', userAgent }: OAuthButtonsProps) {
   if (providers.length === 0) {
     return null;
   }
 
   return (
     <div className="stack">
+      <InAppBrowserNotice emailAction={emailAction} userAgent={userAgent} />
       {providers.map((provider) => (
         // A plain link: the browser must leave the SPA for the provider.
         <a

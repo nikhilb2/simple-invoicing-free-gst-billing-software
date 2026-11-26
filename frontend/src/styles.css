@@ -6004,6 +6004,19 @@ a.invoice-row {
   color: var(--text);
 }
 
+.in-app-notice {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.in-app-notice__title {
+  font-size: 0.9rem;
+  line-height: 1.5;
+  margin-bottom: -4px;
+}
+
 .marketplace-note--warning {
   color: var(--warning);
 }
@@ -6860,6 +6873,11 @@ a.ledger-chip:focus-visible {
   .button--small {
     min-height: 40px;
     padding: 8px 14px;
+  }
+
+  /* The in-app browser notice's Copy link is the only way out of a dead end. */
+  .in-app-notice__copy {
+    min-height: 44px;
   }
 
   .sidebar-toggle {

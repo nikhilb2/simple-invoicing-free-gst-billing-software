@@ -104,7 +104,7 @@ export default function RegisterPage() {
         <p className="section-copy">We will email you a link to choose your password, then you can set up your company.</p>
       </div>
 
-      <OAuthButtons providers={config.providers} next="/" label="Sign up with" />
+      <OAuthButtons providers={config.providers} next="/" label="Sign up with" emailAction="sign up" />
 
       {config.password_signup_enabled ? (
         <form onSubmit={onSubmit} className="stack">
