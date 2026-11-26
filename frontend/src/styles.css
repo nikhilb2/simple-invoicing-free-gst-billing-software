@@ -173,6 +173,7 @@
 }
 
 :root {
+  --app-header-height: 52px; /* the sticky .page-header */
   /* --- Hue triplets (consume as rgb(var(--rgb-x) / alpha)) --- */
   --rgb-overlay: 255 255 255;        /* sheen/hover/fill laid over a surface */
   --rgb-shadow: 0 0 0;               /* drop shadows, scrims, dark count badges */
@@ -692,7 +693,7 @@ input[type='radio'] {
 }
 
 .page-header {
-  height: 52px;
+  height: var(--app-header-height);
   display: flex;
   align-items: center;
   justify-content: flex-end;
@@ -9190,6 +9191,8 @@ a.ledger-chip:focus-visible {
   outline: 2px solid rgb(var(--rgb-accent));
   outline-offset: 4px;
   box-shadow: none;
+  /* Scrolling it into view stops short of the sticky app header. */
+  scroll-margin-top: calc(var(--app-header-height) + 8px);
 }
 
 .tour-coach__button {
@@ -9213,7 +9216,8 @@ a.ledger-chip:focus-visible {
     bottom: calc(var(--composer-bar-height, 0px) + 12px);
   }
 
-  /* The target sits in the bar itself (Create invoice): the card goes to the top. */
+  /* The target sits in the bar itself (Create invoice): the card goes to the top, 12px
+     from the edge on a phone (16px on desktop, in the rule above). Same rule, not a second copy. */
   :root:not(:has([aria-modal='true'])) .tour-coach--top,
   .tour-coach--top {
     top: 12px;

@@ -12,7 +12,7 @@ import {
   type Guide,
   type GuideTarget,
 } from '../features/firstInvoiceTour/tourSteps';
-import { createActiveMarker } from '../features/firstInvoiceTour/activeTarget';
+import { createActiveMarker, isWithinBand, stillTyping, visibleBand } from '../features/firstInvoiceTour/activeTarget';
 import { useAuthStore } from '../store/useAuthStore';
 import { useFirstInvoiceTourStore } from '../store/useFirstInvoiceTourStore';
 
@@ -24,13 +24,19 @@ function visibleElement(selector: string): HTMLElement | null {
   return width > 0 && height > 0 ? element : null;
 }
 
+/** When each field was last typed in. A paused field counts as filled in without losing focus. */
+const lastInputAt = new WeakMap<EventTarget, number>();
+
 function readField(selector: string): FieldState {
   const element = visibleElement(selector);
   if (!element) return { visible: false, value: '', focused: false };
+  const value = (element as HTMLInputElement).value ?? '';
+  const at = lastInputAt.get(element);
+  const since = at === undefined ? null : Date.now() - at;
   return {
     visible: true,
-    value: (element as HTMLInputElement).value ?? '',
-    focused: document.activeElement === element,
+    value,
+    focused: stillTyping(document.activeElement === element, value, since),
   };
 }
 
@@ -66,6 +72,12 @@ function useTarget(guide: Guide | null): GuideTarget | null {
       return undefined;
     }
 
+    const noteInput = (event: Event) => {
+      if (event.target) lastInputAt.set(event.target, Date.now());
+    };
+    document.addEventListener('input', noteInput, true);
+    document.addEventListener('change', noteInput, true);
+
     let frame = 0;
     const tick = () => {
       const next = pickTarget(guide, readField);
@@ -77,6 +89,8 @@ function useTarget(guide: Guide | null): GuideTarget | null {
     tick();
     return () => {
       cancelAnimationFrame(frame);
+      document.removeEventListener('input', noteInput, true);
+      document.removeEventListener('change', noteInput, true);
       marker.mark(null);
     };
   }, [guide]);
@@ -84,21 +98,26 @@ function useTarget(guide: Guide | null): GuideTarget | null {
   return target;
 }
 
-/** True when the card sits over part of the element. */
-function coveredBy(card: HTMLElement | null, rect: DOMRect): boolean {
-  if (!card) return false;
-  const box = card.getBoundingClientRect();
-  return rect.bottom > box.top && rect.top < box.bottom && rect.right > box.left && rect.left < box.right;
+/** Bottom of the sticky app header, measured; null when it is not on the page or a dialog covers it. */
+function stickyHeaderBottom(element: HTMLElement): number | null {
+  if (element.closest('.modal-panel')) return null;
+  const header = document.querySelector<HTMLElement>('.page-header');
+  if (!header || window.getComputedStyle(header).position !== 'sticky') return null;
+  return header.getBoundingClientRect().bottom;
 }
 
-/** Whether the element can be seen and used: on screen, clear of the card, and inside its dialog's panel. */
+/** Whether the element can be seen and used: wholly inside the band between the sticky header and the card, and inside its dialog's panel. */
 function isInClearView(element: HTMLElement, card: HTMLElement | null): boolean {
   const rect = element.getBoundingClientRect();
   const viewport = window.visualViewport;
-  const top = viewport?.offsetTop ?? 0;
-  const bottom = top + (viewport?.height ?? window.innerHeight);
-  if (rect.top < top || rect.bottom > bottom) return false;
-  if (coveredBy(card, rect)) return false;
+  const viewportTop = viewport?.offsetTop ?? 0;
+  const band = visibleBand({
+    viewportTop,
+    viewportBottom: viewportTop + (viewport?.height ?? window.innerHeight),
+    headerBottom: stickyHeaderBottom(element),
+    card: card ? card.getBoundingClientRect() : null,
+  });
+  if (!isWithinBand(rect, band)) return false;
   const panel = element.closest<HTMLElement>('.modal-panel');
   if (panel) {
     const box = panel.getBoundingClientRect();
@@ -243,16 +262,36 @@ export default function FirstInvoiceTourCoach() {
       const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
       element.scrollIntoView({ block: 'center', behavior: reduceMotion ? 'auto' : 'smooth' });
     };
-    // The card and the dialog settle a frame after the target changes.
-    let frame = requestAnimationFrame(bringIntoView);
-    const onResize = () => {
+    // The card and the dialog settle a frame after the target changes, and the page can
+    // still shift after that (an empty-state block that is loading), so check again on the
+    // next two frames and whenever the target, the page or its dialog changes size.
+    let frame = 0;
+    const later = (frames: number) => {
       cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => requestAnimationFrame(bringIntoView));
+      const step = (left: number) => {
+        frame = requestAnimationFrame(() => {
+          bringIntoView();
+          if (left > 1) step(left - 1);
+        });
+      };
+      step(frames);
     };
+    later(2);
+    const onResize = () => later(2);
     const viewport = window.visualViewport;
     viewport?.addEventListener('resize', onResize);
+    let observer: ResizeObserver | undefined;
+    if (typeof ResizeObserver !== 'undefined') {
+      observer = new ResizeObserver(onResize);
+      const element = visibleElement(selector);
+      if (element) observer.observe(element);
+      observer.observe(document.body);
+      const panel = element?.closest('.modal-panel');
+      if (panel) observer.observe(panel);
+    }
     return () => {
       cancelAnimationFrame(frame);
+      observer?.disconnect();
       viewport?.removeEventListener('resize', onResize);
     };
   }, [selector]);

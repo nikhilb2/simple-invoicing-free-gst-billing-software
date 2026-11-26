@@ -68,7 +68,7 @@ const CUSTOMER_FORM: Guide = {
   action: {
     selector: tour('save-customer'),
     title: 'Save the customer',
-    body: 'Tap Save customer. You can add phone and address later.',
+    body: 'Tap Save. You can add phone and address later.',
   },
 };
 
@@ -103,7 +103,7 @@ const PRODUCT_FORM: Guide = {
     {
       selector: '#modal-product-gst-rate',
       title: 'GST %',
-      body: 'Check it. It prints on the bill and goes into your GST return.',
+      body: 'Choose the rate. It prints on the bill and in your GST return.',
     },
     {
       // Only on screen while Maintain inventory is ticked; pickTarget passes over a field that is not.

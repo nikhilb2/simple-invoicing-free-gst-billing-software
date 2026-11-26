@@ -95,6 +95,14 @@ describe('the steps', () => {
     expect(fieldTitles(guide, ['#modal-product-opening-stock'])).toEqual(['Product name', 'Price', 'GST %', 'Save the product']);
   });
 
+  test('GST % says to choose the rate, and Save the customer says Tap Save', () => {
+    const gst = guideFor({ ...EMPTY, productFormOpen: true }).fields?.find((f) => f.title === 'GST %');
+    expect(gst?.body).toBe('Choose the rate. It prints on the bill and in your GST return.');
+    const save = guideFor({ ...EMPTY, ledgerFormOpen: true }).action;
+    expect(forPointer(save?.body ?? '', true)).toBe('Tap Save. You can add phone and address later.');
+    expect(forPointer(save?.body ?? '', false)).toBe('Click Save. You can add phone and address later.');
+  });
+
   test('no steps for phone, address or SKU', () => {
     const selectors = all().flatMap((guide) => (guide.fields ?? []).map((field) => field.selector));
     expect(selectors.join(' ')).not.toMatch(/phone|address|sku/);
@@ -110,7 +118,7 @@ describe('the steps', () => {
 
   test('uses the agreed words for the step texts', () => {
     expect(guideFor(EMPTY).action?.body).toBe('Tap Add a customer. You stay on this page.');
-    expect(guideFor({ ...EMPTY, ledgerFormOpen: true }).action?.body).toBe('Tap Save customer. You can add phone and address later.');
+    expect(guideFor({ ...EMPTY, ledgerFormOpen: true }).action?.body).toBe('Tap Save. You can add phone and address later.');
     expect(guideFor({ ...READY, stockShortage: true }).action?.body).toBe('Not enough in stock for this bill. Tap here to add it. Your bill stays as it is.');
     expect(guideFor(READY).action?.body).toBe('Tap Create invoice. This saves a real bill.');
   });
