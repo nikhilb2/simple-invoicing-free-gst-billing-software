@@ -9250,7 +9250,9 @@ a.ledger-chip:focus-visible {
   max-width: 640px;
 }
 
-/* First setup: a one-row sketch of the top of a bill, under the business name. */
+/* First setup: a one-row sketch of the top of a bill, under the business name
+   (#1097). The meta follows the name with a 12px gap rather than sitting at the
+   far edge, and shows in full at every width, as in the mockup. */
 .bill-header-preview {
   display: flex;
   align-items: center;
@@ -9262,7 +9264,7 @@ a.ledger-chip:focus-visible {
 }
 
 .bill-header-preview__name {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
@@ -9277,16 +9279,8 @@ a.ledger-chip:focus-visible {
 }
 
 .bill-header-preview__meta {
-  flex-shrink: 0;
+  flex: 0 0 auto;
   white-space: nowrap;
-}
-
-/* On a phone the name matters more than the bill number: "Ravi Kumar Mobiles"
-   fits at 390px only without " · Bill 1". */
-@media (max-width: 420px) {
-  .bill-header-preview__number {
-    display: none;
-  }
 }
 
 .company-setup-first .form-save-bar > .button {
