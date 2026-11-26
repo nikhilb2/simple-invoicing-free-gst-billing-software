@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { COMPOSER_NEXT_STEP, guideFor, mayNeedFirstInvoiceHelp, pickTarget, showComposerNextStep, tourOffer, type ComposerFacts, type FieldState, type Guide } from './tourSteps';
+import { COMPOSER_NEXT_STEP, forPointer, guideFor, mayNeedFirstInvoiceHelp, pickTarget, showComposerNextStep, tourOffer, type ComposerFacts, type FieldState, type Guide } from './tourSteps';
 
 const EMPTY: ComposerFacts = {
   ledgerCount: 0,
@@ -46,6 +46,82 @@ describe('guideFor follows what exists, not a saved position', () => {
 
   test('another voucher type is brought back to sales', () => {
     expect(id({ isSales: false }, READY)).toBe('voucher');
+  });
+});
+
+describe('the steps', () => {
+  const READ_ALL: FieldState = { visible: true, value: '', focused: false };
+  const fieldTitles = (guide: Guide, hidden: string[] = []) => {
+    const titles: string[] = [];
+    const filled = new Set<string>();
+    // Walk the form the way a person does: fill each field in turn, then leave it.
+    for (let guard = 0; guard < 10; guard += 1) {
+      const target = pickTarget(guide, (selector) => ({
+        ...READ_ALL,
+        visible: !hidden.includes(selector),
+        value: filled.has(selector) ? '5' : '',
+      }));
+      if (!target) break;
+      titles.push(target.title);
+      if (target === guide.action) break;
+      filled.add(target.selector);
+    }
+    return titles;
+  };
+  const all = () => {
+    const ids = [
+      { ...EMPTY },
+      { ...EMPTY, ledgerCount: 1 },
+      { ...EMPTY, ledgerFormOpen: true },
+      { ...EMPTY, productFormOpen: true },
+      { ...EMPTY, isSales: false },
+      { ...READY, stockShortage: true },
+      { ...READY, stockFormOpen: true },
+      { ...READY, productChosen: false },
+      { ...READY, ledgerChosen: false },
+      READY,
+    ];
+    return ids.map((facts) => guideFor(facts));
+  };
+
+  test('customer: Name, then Save', () => {
+    const guide = guideFor({ ...EMPTY, ledgerFormOpen: true });
+    expect(fieldTitles(guide)).toEqual(['Customer name', 'Save the customer']);
+  });
+
+  test('product: Name, Price, GST %, Opening stock only when it is on screen, then Save', () => {
+    const guide = guideFor({ ...EMPTY, productFormOpen: true });
+    expect(fieldTitles(guide)).toEqual(['Product name', 'Price', 'GST %', 'Stock you have now', 'Save the product']);
+    expect(fieldTitles(guide, ['#modal-product-opening-stock'])).toEqual(['Product name', 'Price', 'GST %', 'Save the product']);
+  });
+
+  test('no steps for phone, address or SKU', () => {
+    const selectors = all().flatMap((guide) => (guide.fields ?? []).map((field) => field.selector));
+    expect(selectors.join(' ')).not.toMatch(/phone|address|sku/);
+  });
+
+  test('plain words: no ledger, SKU or opening balance', () => {
+    for (const guide of all()) {
+      for (const text of [guide.title, guide.body, ...(guide.fields ?? []).flatMap((f) => [f.title, f.body]), guide.action?.title ?? '', guide.action?.body ?? '']) {
+        expect(text).not.toMatch(/ledger|SKU|opening balance/i);
+      }
+    }
+  });
+
+  test('uses the agreed words for the step texts', () => {
+    expect(guideFor(EMPTY).action?.body).toBe('Tap Add a customer. You stay on this page.');
+    expect(guideFor({ ...EMPTY, ledgerFormOpen: true }).action?.body).toBe('Tap Save customer. You can add phone and address later.');
+    expect(guideFor({ ...READY, stockShortage: true }).action?.body).toBe('Not enough in stock for this bill. Tap here to add it. Your bill stays as it is.');
+    expect(guideFor(READY).action?.body).toBe('Tap Create invoice. This saves a real bill.');
+  });
+
+  test('"Tap" on a touch screen, "Click" with a mouse', () => {
+    expect(forPointer('Tap Save.', true)).toBe('Tap Save.');
+    expect(forPointer('Tap Save.', false)).toBe('Click Save.');
+    for (const guide of all()) {
+      const texts = [guide.body, guide.action?.body ?? '', ...(guide.fields ?? []).map((f) => f.body)];
+      for (const text of texts) expect(forPointer(text, true)).not.toMatch(/\bClick\b/);
+    }
   });
 });
 

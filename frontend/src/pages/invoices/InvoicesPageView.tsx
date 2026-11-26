@@ -64,7 +64,35 @@ import { createItem, type InvoiceFormItem } from './types';
 import { defaultPaymentAccountId } from '../../utils/cashBank';
 import { missingSerialsMessage } from '../../utils/missingSerialsMessage';
 
+/**
+ * Publishes the fixed Create invoice bar's rendered height as --composer-bar-height
+ * on the page, so the walkthrough card can ride above it. The bar is only fixed
+ * below 768px (it is `display: contents` above that), so wider screens read 0.
+ */
+function useComposerBarHeight(): (element: HTMLElement | null) => void {
+  const [bar, setBar] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    const root = document.documentElement;
+    if (!bar) return undefined;
+    const publish = () => {
+      const fixed = window.getComputedStyle(bar).position === 'fixed';
+      root.style.setProperty('--composer-bar-height', `${fixed ? bar.getBoundingClientRect().height : 0}px`);
+    };
+    publish();
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(publish);
+    observer?.observe(bar);
+    window.addEventListener('resize', publish);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', publish);
+      root.style.removeProperty('--composer-bar-height');
+    };
+  }, [bar]);
+  return setBar;
+}
+
 export default function InvoicesPage() {
+  const composerBarRef = useComposerBarHeight();
   const { activeFY } = useFY();
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -2317,7 +2345,7 @@ export default function InvoicesPage() {
                   {conversion || challanConversion ? 'Cancel conversion' : 'Cancel edit'}
                 </button>
               ) : null}
-              <div className="composer-submit">
+              <div className="composer-submit" ref={composerBarRef}>
                 {serialSubmitMessage ? <p className="form-error composer-submit__reason" role="alert">{serialSubmitMessage}</p> : null}
                 <span className="composer-submit__total">{totalBarLabel(formatCurrency(projectedTotalAmount, activeCurrencyCode))}</span>
               {voucherType === 'payment' ? (

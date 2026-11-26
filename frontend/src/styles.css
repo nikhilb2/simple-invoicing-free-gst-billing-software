@@ -9180,39 +9180,48 @@ a.ledger-chip:focus-visible {
   background: rgb(var(--rgb-accent));
 }
 
-.tour-ring {
-  position: fixed;
-  z-index: 1290;
-  border: 2px solid rgb(var(--rgb-accent));
-  border-radius: 10px;
-  box-shadow: 0 0 0 4px rgb(var(--rgb-accent) / 0.25);
-  pointer-events: none;
-  animation: tour-ring-pulse 1.6s ease-in-out infinite;
+/* The element the walkthrough points at. It carries the outline itself, so the
+   outline scrolls, clips and stays put with it, and it stands in for the field's
+   own focus ring so every step looks the same. Doubled attribute selectors beat
+   the field focus and aria-invalid rules above whatever their order. */
+[data-tour-active][data-tour-active],
+[data-tour-active][data-tour-active]:focus,
+[data-tour-active][data-tour-active]:focus-visible {
+  outline: 2px solid rgb(var(--rgb-accent));
+  outline-offset: 4px;
+  box-shadow: none;
 }
 
-@keyframes tour-ring-pulse {
-  50% {
-    box-shadow: 0 0 0 8px rgb(var(--rgb-accent) / 0.1);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .tour-ring {
-    animation: none;
-  }
+.tour-coach__button {
+  min-height: 44px;
 }
 
 @media (max-width: 767px) {
+  /* Tight enough that a two-line step stays under 180px, with its 44px button. */
   .tour-coach {
     right: 12px;
     bottom: 12px;
     left: 12px;
+    gap: 6px;
     width: auto;
+    padding: 10px 16px;
   }
 
+  /* On the composer the fixed Create invoice bar sits at the bottom; the card rides
+     just above it. A dialog is above the bar, so it keeps the card at the edge. */
+  :root:not(:has([aria-modal='true'])) .tour-coach {
+    bottom: calc(var(--composer-bar-height, 0px) + 12px);
+  }
+
+  /* The target sits in the bar itself (Create invoice): the card goes to the top. */
+  :root:not(:has([aria-modal='true'])) .tour-coach--top,
   .tour-coach--top {
     top: 12px;
     bottom: auto;
+  }
+
+  :root[data-tour-card] .page-frame {
+    padding-bottom: calc(var(--tour-card-height, 0px) + var(--composer-bar-height, 0px) + 32px);
   }
 }
 

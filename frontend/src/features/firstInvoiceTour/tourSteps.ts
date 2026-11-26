@@ -49,7 +49,7 @@ const CUSTOMER: Guide = {
   action: {
     selector: tour('add-customer'),
     title: 'Add your customer',
-    body: 'Who is this invoice for? Click Add a customer. You stay on this page.',
+    body: 'Tap Add a customer. You stay on this page.',
   },
 };
 
@@ -57,28 +57,18 @@ const CUSTOMER_FORM: Guide = {
   id: 'customer-form',
   step: 1,
   title: 'Fill in the customer',
-  body: 'Only the name, phone number and address are needed.',
+  body: 'Only the name is needed.',
   fields: [
     {
       selector: '#modal-ledger-name',
       title: 'Customer name',
-      body: 'As it should appear on the invoice.',
-    },
-    {
-      selector: '#modal-ledger-phone',
-      title: 'Phone number',
-      body: 'The customer’s phone number.',
-    },
-    {
-      selector: '#modal-ledger-address',
-      title: 'Address',
-      body: 'This prints on the invoice. Include the state if you can.',
+      body: 'As it should print on the bill.',
     },
   ],
   action: {
     selector: tour('save-customer'),
     title: 'Save the customer',
-    body: 'A ledger is this app’s name for a customer’s account. Leave the other fields blank. Only enter an opening balance if they already owed you money before you started using this app, not for this sale.',
+    body: 'Tap Save customer. You can add phone and address later.',
   },
 };
 
@@ -86,11 +76,11 @@ const PRODUCT: Guide = {
   id: 'product',
   step: 2,
   title: 'Add what you sold',
-  body: 'Add the product or service that goes on this invoice.',
+  body: 'Add the product or service that goes on this bill.',
   action: {
     selector: tour('add-product'),
     title: 'Add what you sold',
-    body: 'Click Add a product. You stay on this page.',
+    body: 'Tap Add a product.',
   },
 };
 
@@ -98,39 +88,35 @@ const PRODUCT_FORM: Guide = {
   id: 'product-form',
   step: 2,
   title: 'Fill in the product',
-  body: 'Only a few of these fields are needed for now.',
+  body: 'Only a few fields are needed for now.',
   fields: [
     {
       selector: '#modal-product-name',
       title: 'Product name',
-      body: 'As it should appear on the invoice.',
-    },
-    {
-      selector: '#modal-product-sku',
-      title: 'SKU',
-      body: 'Optional. Leave it blank and we make a code from the product name.',
+      body: 'As it should print on the bill.',
     },
     {
       selector: '#modal-product-price',
-      title: 'Unit price',
-      body: 'What you charge for one unit.',
+      title: 'Price',
+      body: 'What you charge for one.',
     },
     {
       selector: '#modal-product-gst-rate',
       title: 'GST %',
-      body: 'The GST rate on this product. Check it, because it goes on the invoice and your returns.',
+      body: 'Check it. It prints on the bill and goes into your GST return.',
     },
     {
+      // Only on screen while Maintain inventory is ticked; pickTarget passes over a field that is not.
       selector: '#modal-product-opening-stock',
-      title: 'Opening stock',
-      body: 'How many you have right now. An invoice can’t sell more than you have. For a service, untick Maintain inventory above instead.',
+      title: 'Stock you have now',
+      body: 'How many you have today.',
       positive: true,
     },
   ],
   action: {
     selector: tour('save-product'),
     title: 'Save the product',
-    body: 'That’s all it needs. You can add the rest later.',
+    body: 'Tap Save. You can add the rest later.',
   },
 };
 
@@ -138,35 +124,35 @@ const VOUCHER: Guide = {
   id: 'voucher',
   step: 3,
   title: 'Switch back to Sales',
-  body: 'This walkthrough creates a sales invoice.',
+  body: 'This guide makes a sales bill.',
   action: {
     selector: '#invoice-voucher-type',
     title: 'Switch back to Sales',
-    body: 'This walkthrough creates a sales invoice, so choose Sales here.',
+    body: 'This guide makes a sales bill. Choose Sales here.',
   },
 };
 
 const PICK_CUSTOMER: Guide = {
   id: 'pick-customer',
   step: 3,
-  title: 'Choose the customer',
-  body: 'Pick who this invoice is for.',
+  title: 'Pick the customer',
+  body: 'Choose who this bill is for.',
   action: {
     selector: '#invoice-ledger',
-    title: 'Choose the customer',
-    body: 'Click here and pick who this invoice is for.',
+    title: 'Pick the customer',
+    body: 'Tap here and choose who this bill is for.',
   },
 };
 
 const PICK_PRODUCT: Guide = {
   id: 'pick-product',
   step: 3,
-  title: 'Choose what you sold',
-  body: 'Pick the product for the first line of the invoice.',
+  title: 'Pick what you sold',
+  body: 'Choose the item for the first line of the bill.',
   action: {
     selector: 'input[id^="invoice-product-"]',
-    title: 'Choose what you sold',
-    body: 'Click here and pick the product. Then check the quantity and price next to it.',
+    title: 'Pick what you sold',
+    body: 'Tap here and choose the item. Then check the quantity and price.',
   },
 };
 
@@ -174,11 +160,11 @@ const STOCK_SHORTAGE: Guide = {
   id: 'stock-shortage',
   step: 4,
   title: 'Add the missing stock',
-  body: 'There isn’t enough of this product in stock for this invoice.',
+  body: 'There is not enough of this item in stock for this bill.',
   action: {
     selector: tour('add-stock'),
     title: 'Add the missing stock',
-    body: 'There isn’t enough in stock for this invoice. Click here to add it. Your invoice stays as you filled it in.',
+    body: 'Not enough in stock for this bill. Tap here to add it. Your bill stays as it is.',
   },
 };
 
@@ -190,21 +176,26 @@ const STOCK_FORM: Guide = {
   action: {
     selector: tour('save-stock'),
     title: 'Save the stock',
-    body: 'The quantity is filled in with what’s missing. Change it if you have more, then save. Your invoice is still there.',
+    body: 'The missing quantity is filled in. Tap Save.',
   },
 };
 
 const CREATE: Guide = {
   id: 'create',
   step: 4,
-  title: 'Create your invoice',
+  title: 'Create the invoice',
   body: 'Check the details, then create the invoice.',
   action: {
     selector: tour('create-invoice'),
-    title: 'Create your invoice',
-    body: 'Check the date, quantity and price. Click here when it looks right. This creates a real invoice and takes the quantity out of your stock.',
+    title: 'Create the invoice',
+    body: 'Tap Create invoice. This saves a real bill.',
   },
 };
+
+/** The steps are written for a touch screen ("Tap"); a mouse says "Click". */
+export function forPointer(text: string, coarsePointer: boolean): string {
+  return coarsePointer ? text : text.replace(/\bTap\b/g, 'Click');
+}
 
 export const LOADING_GUIDE: Guide = {
   id: 'loading',
