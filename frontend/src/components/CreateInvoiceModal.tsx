@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { invoiceToastMessage } from '../utils/invoiceToast';
 import { Lock } from 'lucide-react';
 import ConfirmDialog from './ConfirmDialog';
 import ModalCloseButton from './ModalCloseButton';
@@ -233,9 +234,13 @@ export default function CreateInvoiceModal({
         }),
       };
       const res = await api.post<Invoice>('/invoices/', payload);
-      const msg = voucherType === 'sales'
-        ? 'Sales invoice created. Inventory has been reduced.'
-        : 'Purchase invoice created. Inventory has been increased.';
+      const msg = invoiceToastMessage({
+        action: 'create',
+        voucherType,
+        number: res.data.invoice_number,
+        lines: payload.items,
+        products,
+      });
       const warningMsg =
         res.data.warnings?.includes('invoice_date_outside_fy') && activeFY
           ? `⚠️ This date is outside the active financial year (${activeFY.label}). The invoice was still created.`

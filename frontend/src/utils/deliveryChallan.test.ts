@@ -82,8 +82,11 @@ describe('small helpers', () => {
     expect(showChallansEmptyState({ isLoading: false, isError: false, rowCount: 2 })).toBe(false);
   });
   it('words the toasts', () => {
-    expect(challanSavedMessage('DC-1', false)).toBe('Delivery challan DC-1 saved. Stock has been reduced.');
-    expect(challanSavedMessage('DC-1', true)).toBe('Delivery challan DC-1 updated. Stock has been adjusted.');
+    const products = [{ id: 1, maintain_inventory: true }, { id: 2, maintain_inventory: false }];
+    const lines = [{ product_id: 1 }, { product_id: 2 }];
+    expect(challanSavedMessage('DC-1', false)).toBe('Delivery challan DC-1 saved.');
+    expect(challanSavedMessage('DC-1', false, lines, products)).toBe('Delivery challan DC-1 saved. Stock updated for 1 of 2 items.');
+    expect(challanSavedMessage('DC-1', true, lines, products)).toBe('Delivery challan DC-1 updated. Stock adjusted for 1 of 2 items.');
     expect(challanCancelledMessage('DC-1')).toBe('Delivery challan DC-1 cancelled. Its goods are back in stock.');
   });
   it('joins the company terms in serial order', () => {

@@ -135,7 +135,12 @@ export default function DeliveryChallanFormPage() {
       // Stock moved: any product list the app holds is out of date.
       await queryClient.invalidateQueries({ queryKey: ['products'] });
       navigate('/delivery-challans', {
-        state: { success: challanSavedMessage(saved.challan_number, isEditing), openId: saved.id },
+        state: { success: challanSavedMessage(
+          saved.challan_number,
+          isEditing,
+          form.items.map((line) => ({ product_id: Number(line.productId) })),
+          productsQuery.data,
+        ), openId: saved.id },
       });
     },
     onError: (err) => setError(getApiErrorMessage(err, 'Unable to save the delivery challan')),

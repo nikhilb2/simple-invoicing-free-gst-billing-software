@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { invoiceToastMessage } from '../../utils/invoiceToast';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Boxes, Lock, Plus, Trash2 } from 'lucide-react';
@@ -1289,7 +1290,13 @@ export default function InvoicesPage() {
 
       if (editingInvoiceId) {
         const res = await api.put<Invoice>(`/invoices/${editingInvoiceId}`, payload);
-        setSuccess('Invoice updated successfully. Inventory has been recalculated.');
+        setSuccess(invoiceToastMessage({
+          action: 'edit',
+          voucherType: voucherType === 'purchase' ? 'purchase' : 'sales',
+          number: res.data.invoice_number,
+          lines: payload.items,
+          products,
+        }));
         setPreviewInvoice(res.data);
         if (searchParams.has('edit')) {
           setSearchParams((prev) => { prev.delete('edit'); return prev; }, { replace: true });
@@ -1302,16 +1309,26 @@ export default function InvoicesPage() {
         await queryClient.invalidateQueries({ queryKey: deliveryChallanQueryKeys.all });
       } else if (conversion) {
         const res = await api.post<Invoice>(`/quotations/${conversion.quotation_id}/convert`, conversionPayload(payload, conversion));
-        setSuccess(`Invoice ${res.data.invoice_number} created from ${conversion.quotation_number}. Inventory has been reduced.`);
+        setSuccess(invoiceToastMessage({
+          action: 'fromQuotation',
+          voucherType: 'sales',
+          number: res.data.invoice_number,
+          sourceNumber: conversion.quotation_number,
+          lines: payload.items,
+          products,
+        }));
         setPreviewInvoice(res.data);
         clearQuotationParams();
         await queryClient.invalidateQueries({ queryKey: quotationQueryKeys.all });
       } else {
         const res = await api.post<Invoice>('/invoices/', payload);
-        const baseMsg =
-          voucherType === 'sales'
-            ? 'Sales invoice created. Inventory has been reduced.'
-            : 'Purchase invoice created. Inventory has been increased.';
+        const baseMsg = invoiceToastMessage({
+          action: 'create',
+          voucherType: voucherType === 'purchase' ? 'purchase' : 'sales',
+          number: res.data.invoice_number,
+          lines: payload.items,
+          products,
+        });
         const warningNote =
           res.data.warnings?.includes('invoice_date_outside_fy') && activeFY
             ? ` ⚠️ Date is outside the active financial year (${activeFY.label}).`
