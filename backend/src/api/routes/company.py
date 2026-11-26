@@ -397,7 +397,11 @@ def upsert_company_profile(
     is_initial_setup = not (profile.name or "").strip()
 
     profile.name = payload.name.strip()
-    profile.address = payload.address.strip()
+    # The address may be left for later (#963), so it has a default. An update
+    # that leaves it out (an API client or AI assistant changing only the phone
+    # number) keeps the saved address; an explicit "" still clears it.
+    if "address" in payload.model_fields_set:
+        profile.address = payload.address.strip()
     profile.gst = payload.gst.strip().upper()
     if "pan" in payload.model_fields_set or "gst" in payload.model_fields_set:
         profile.pan = payload.pan

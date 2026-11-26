@@ -18,6 +18,7 @@ from src.models.product import Product
 from src.services.gst_tax_service import to_india_date
 
 from .builders import (
+    _address_html,
     _amount_in_words_indian,
     _e,
     _fmt_currency,
@@ -367,7 +368,7 @@ def _build_delivery_challan_html(
       {logo_html}
       {info_html}
       <h3>{_e(challan.company_name) or 'Company not set'}</h3>
-      <p>{_e(challan.company_address) or 'Address not provided'}</p>
+      {_address_html(challan.company_address)}
       <p>{_join([consignor_gstin, consignor_phone])}</p>
     </div>
     <div class="sheet__meta">
@@ -382,7 +383,7 @@ def _build_delivery_challan_html(
     <div class="sheet__party">
       <p class="eyebrow">Consignee</p>
       <h4>{_e(challan.ledger_name) or 'Unknown ledger'}</h4>
-      <p>{_e(challan.ledger_address) or 'Address not provided'}</p>
+      {_address_html(challan.ledger_address)}
       <p>{_join([consignee_gstin, consignee_phone])}</p>
     </div>{ship_to_html}
   </div>

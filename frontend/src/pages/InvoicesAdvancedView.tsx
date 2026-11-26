@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { invoiceToastMessage } from '../utils/invoiceToast';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChevronDown, Download, LayoutGrid, SlidersHorizontal, Table as TableIcon, X } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -84,9 +85,9 @@ export default function InvoicesAdvancedView() {
   const [paymentInvoice, setPaymentInvoice] = useState<Invoice | null>(null);
 
   const restoreMutation = useMutation({
-    mutationFn: (invoiceId: number) => api.post(`/invoices/${invoiceId}/restore`),
-    onSuccess: () => {
-      setActionSuccess('Invoice restored. Inventory has been re-applied.');
+    mutationFn: ({ id }: { id: number; message: string }) => api.post(`/invoices/${id}/restore`),
+    onSuccess: (_res, { message }) => {
+      setActionSuccess(message);
       void queryClient.invalidateQueries({ queryKey: invoiceQueryKeys.all });
     },
     onError: (err) => setActionError(getApiErrorMessage(err, 'Unable to restore invoice')),
@@ -120,11 +121,24 @@ export default function InvoicesAdvancedView() {
   }
 
   function handleCancelRequest(invoice: Invoice) {
-    requestCancel(invoice.id, invoice.invoice_number);
+    requestCancel(invoice.id, invoice.invoice_number, {
+      lines: invoice.items,
+      products,
+      voucherType: invoice.voucher_type,
+    });
   }
 
   function handleRestore(invoice: Invoice) {
-    restoreMutation.mutate(invoice.id);
+    restoreMutation.mutate({
+      id: invoice.id,
+      message: invoiceToastMessage({
+        action: 'restore',
+        voucherType: invoice.voucher_type,
+        number: invoice.invoice_number,
+        lines: invoice.items,
+        products,
+      }),
+    });
   }
 
   async function handleExportCsv() {

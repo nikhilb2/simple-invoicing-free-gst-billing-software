@@ -38,7 +38,10 @@ test.describe('Create invoice with missing fields', () => {
     await expect(ledger).toHaveAttribute('aria-invalid', 'true');
     await expect(page.locator('#invoice-ledger-error')).toHaveText('Choose or add a customer first');
     await expect(product).toHaveAttribute('aria-invalid', 'true');
-    await expect(page.locator('#invoice-product-1-error')).toHaveText('Product: Pick a product from the list.');
+    await expect(page.locator('#invoice-product-1-error')).toHaveText('Pick a product from the list');
+    // The strip by the button names the first problem and counts the rest.
+    const reason = page.locator('.composer-submit__reason');
+    await expect(reason).toHaveText('Choose a customer, and 1 more to fix.');
     // The page scrolls to the first missing field.
     await expect(ledger).toBeInViewport();
     await page.waitForTimeout(1500);
@@ -48,6 +51,7 @@ test.describe('Create invoice with missing fields', () => {
     await expect(ledger).not.toHaveAttribute('aria-invalid', 'true');
     await expect(page.locator('#invoice-ledger-error')).toHaveCount(0);
     await expect(product).toHaveAttribute('aria-invalid', 'true');
+    await expect(reason).toHaveText('Pick a product for line 1.');
     await page.waitForTimeout(1000);
 
     // An empty quantity is caught too.
@@ -57,13 +61,15 @@ test.describe('Create invoice with missing fields', () => {
     await page.waitForTimeout(500);
     await createButton.click();
     await expect(quantity).toHaveAttribute('aria-invalid', 'true');
-    await expect(page.locator('#invoice-quantity-1-error')).toHaveText('Qty: Required');
+    await expect(page.locator('#invoice-quantity-1-error')).toHaveText('Enter a quantity');
+    await expect(reason).toHaveText('Enter a quantity for line 1.');
     await expect(quantity).toBeFocused();
     await expect(product).not.toHaveAttribute('aria-invalid', 'true');
     await page.waitForTimeout(1500);
 
     await quantity.fill('2');
     await expect(quantity).not.toHaveAttribute('aria-invalid', 'true');
+    await expect(reason).toHaveCount(0);
     await page.waitForTimeout(800);
     await createButton.click();
     await expectSuccess(page, 'Sales invoice created');

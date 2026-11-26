@@ -20,6 +20,12 @@ def _e(text: str | None) -> str:
     return escape(text or "")
 
 
+def _address_html(address: str | None) -> str:
+    """Return the address paragraph, or nothing when the address is empty or blank."""
+    address = (address or "").strip()
+    return f"<p>{_e(address)}</p>" if address else ""
+
+
 def invoice_cancellation_note(invoice: Invoice) -> str:
     """Show the recorded cancellation date; old records may have no timestamp."""
     if getattr(invoice, "status", None) != "cancelled":

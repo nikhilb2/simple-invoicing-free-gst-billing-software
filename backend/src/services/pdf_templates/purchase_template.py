@@ -6,6 +6,7 @@ from src.models.invoice import Invoice
 from src.models.product import Product
 
 from .builders import (
+    _address_html,
     _build_invoice_discount_html,
     _build_item_discount_html,
     _build_pdf_payment_details_html,
@@ -331,14 +332,14 @@ def _build_purchase_invoice_html(
     <div>
       <p class="eyebrow">Supplier</p>
       <h3>{_e(invoice.ledger_name) or 'Unknown supplier'}</h3>
-      <p>{_e(invoice.ledger_address) or 'Address not provided'}</p>
+      {_address_html(invoice.ledger_address)}
       <p>{supplier_details}</p>
     </div>
     <div class="invoice-sheet__header-right">
       <p class="eyebrow">Bill To</p>
       <h3>{_e(invoice.company_name) or 'Your company'}</h3>
       {company_header_html}
-      <p>{_e(invoice.company_address) or 'Address not provided'}</p>
+      {_address_html(invoice.company_address)}
       <p>{company_details}</p>
     </div>
   </header>

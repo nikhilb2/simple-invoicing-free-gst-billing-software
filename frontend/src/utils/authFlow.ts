@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { apiBaseURL, getApiErrorMessage } from '../api/client';
 import { getStoredUtm, type UtmParams } from '../lib/utm';
-import { sanitizeNextPath } from './nextPath';
+import { SESSION_EXPIRED_REASON, sanitizeNextPath } from './nextPath';
 
 /**
  * Where the browser goes to start a provider sign-in.
@@ -30,7 +30,14 @@ const LOGIN_ERROR_MESSAGES: Record<string, string> = {
   email_not_verified: 'Please verify your email address before signing in.',
   account_inactive: 'This account has been deactivated.',
   oauth_failed: 'Sign-in with the provider did not complete. Please try again.',
+  session_expired: 'You were signed out. Sign in again to continue.',
 };
+
+/** The sign-in page header for a `?reason=` code, or null for none or an unknown one. */
+export function loginReasonNotice(reason: string | null | undefined) {
+  if (reason !== SESSION_EXPIRED_REASON) return null;
+  return { eyebrow: 'Session ended', title: 'Sign in again', copy: LOGIN_ERROR_MESSAGES[reason] };
+}
 
 export function loginErrorMessage(code: string | null | undefined): string {
   if (!code) return '';

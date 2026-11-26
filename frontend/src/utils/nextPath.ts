@@ -34,6 +34,8 @@ const MAX_LENGTH = 2048;
 
 export const LOGIN_PATH = '/login';
 export const NEXT_PARAM = 'next';
+/** The `?reason=` code for a visitor sent to /login because their session ended. */
+export const SESSION_EXPIRED_REASON = 'session_expired';
 
 /** Whether `value` is a relative path this app may navigate to. */
 export function isSafeNextPath(value: string | null | undefined): value is string {
@@ -57,8 +59,12 @@ export function sanitizeNextPath(value: string | null | undefined, fallback = '/
  *
  * A `from` of '/' is dropped: it is where login already lands, and carrying it
  * would put a redundant query string on the most-visited URL in the app.
+ * `reason` is a fixed code (see LOGIN_ERROR_MESSAGES), never free text.
  */
-export function loginPathWithNext(from: string | null | undefined): string {
-  if (!isSafeNextPath(from) || from === '/') return LOGIN_PATH;
-  return `${LOGIN_PATH}?${NEXT_PARAM}=${encodeURIComponent(from)}`;
+export function loginPathWithNext(from: string | null | undefined, reason?: string): string {
+  const params = new URLSearchParams();
+  if (isSafeNextPath(from) && from !== '/') params.set(NEXT_PARAM, from);
+  if (reason) params.set('reason', reason);
+  const query = params.toString();
+  return query ? `${LOGIN_PATH}?${query}` : LOGIN_PATH;
 }

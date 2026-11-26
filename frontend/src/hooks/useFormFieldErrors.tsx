@@ -57,15 +57,20 @@ function clearMark(el: Element | null) {
  * focused (a combobox is only scrolled to: focus would open its list over the
  * message). A field's mark goes as soon as it becomes valid.
  *
- * Put `onInvalidCapture` on the <form>.
+ * Put `onInvalidCapture` on the <form>. Pass `revealFirst: false` when the form
+ * scrolls to its first problem itself (the invoice composer, whose problems
+ * include more than its fields). A form that calls `checkValidity()` itself
+ * can call `flush()` right after it, so the marks land in the same render as
+ * its own state.
  */
-export function useFormFieldErrors() {
+export function useFormFieldErrors({ revealFirst = true }: { revealFirst?: boolean } = {}) {
   const [errors, setErrors] = useState<FieldErrors>({});
   const pending = useRef<Control[] | null>(null);
   const marked = useRef<Set<Control>>(new Set());
 
   const flush = useCallback(() => {
-    const failed = pending.current ?? [];
+    const failed = pending.current;
+    if (failed === null) return;
     pending.current = null;
     marked.current.forEach((el) => { if (!failed.includes(el)) clearMark(el); });
     marked.current = new Set(failed);
@@ -76,13 +81,13 @@ export function useFormFieldErrors() {
     });
     setErrors(next);
     const first = failed[0];
-    if (first) {
+    if (first && revealFirst) {
       first.scrollIntoView({ block: 'center', behavior: 'smooth' });
       // A combobox opens its list on focus, and the list would cover the message.
       // One with nothing to list (data-focus-on-error) has no list to cover it.
       if (first.getAttribute('role') !== 'combobox' || first.dataset.focusOnError) first.focus({ preventScroll: true });
     }
-  }, []);
+  }, [revealFirst]);
 
   /* The browser fires one `invalid` per failing field, each as its own event,
      so a microtask would flush after the first. A timeout waits for them all. */
@@ -114,15 +119,18 @@ export function useFormFieldErrors() {
     });
   });
 
-  return { errors, onInvalidCapture };
+  return { errors, onInvalidCapture, flush };
 }
 
-/** The message under a field that failed the last save. `label` names the field when the message sits apart from it. */
-export function FieldError({ id, errors, label }: { id: string; errors: FieldErrors; label?: string }) {
-  const message = errors[id];
+/**
+ * The message under a field that failed the last save. `label` names the field
+ * when the message sits apart from it; `text` words it in place of the browser.
+ */
+export function FieldError({ id, errors, label, text, className }: { id: string; errors: FieldErrors; label?: string; text?: string | null; className?: string }) {
+  const message = errors[id] ? text || errors[id] : '';
   if (!message) return null;
   return (
-    <small id={`${id}-error`} className="field-error field-error--block" role="alert">
+    <small id={`${id}-error`} className={className ? `field-error field-error--block ${className}` : 'field-error field-error--block'} role="alert">
       {label ? `${label}: ${message}` : message}
     </small>
   );

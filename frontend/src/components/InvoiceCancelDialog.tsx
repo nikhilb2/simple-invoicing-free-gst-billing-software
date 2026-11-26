@@ -5,17 +5,25 @@ import ConfirmDialog from './ConfirmDialog';
 import StatusToasts from './StatusToasts';
 import { useInvoiceCancelStore } from '../store/useInvoiceCancelStore';
 import { invoiceQueryKeys } from '../features/invoices/queryKeys';
+import { invoiceCancelConfirmMessage, invoiceToastMessage } from '../utils/invoiceToast';
 
 export default function InvoiceCancelDialog() {
-  const { pendingCancelId, pendingCancelNumber, dismissCancel } = useInvoiceCancelStore();
+  const {
+    pendingCancelId,
+    pendingCancelNumber,
+    pendingCancelLines,
+    pendingCancelProducts,
+    pendingCancelVoucherType,
+    dismissCancel,
+  } = useInvoiceCancelStore();
   const queryClient = useQueryClient();
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
 
   const cancelMutation = useMutation({
-    mutationFn: (invoiceId: number) => api.delete(`/invoices/${invoiceId}`),
-    onSuccess: () => {
-      setSuccess('Invoice cancelled. Inventory has been reversed.');
+    mutationFn: ({ id }: { id: number; message: string }) => api.delete(`/invoices/${id}`),
+    onSuccess: (_res, { message }) => {
+      setSuccess(message);
       void queryClient.invalidateQueries({ queryKey: invoiceQueryKeys.all });
     },
     onError: (err) => setError(getApiErrorMessage(err, 'Unable to cancel invoice')),
@@ -24,17 +32,31 @@ export default function InvoiceCancelDialog() {
   function handleConfirm() {
     if (pendingCancelId === null) return;
     dismissCancel();
-    cancelMutation.mutate(pendingCancelId);
+    cancelMutation.mutate({
+      id: pendingCancelId,
+      message: invoiceToastMessage({
+        action: 'cancel',
+        voucherType: pendingCancelVoucherType ?? undefined,
+        number: pendingCancelNumber,
+        lines: pendingCancelLines,
+        products: pendingCancelProducts,
+      }),
+    });
   }
 
-  const label = pendingCancelNumber ?? (pendingCancelId ? `#${pendingCancelId}` : '');
+  const label = pendingCancelNumber ?? (pendingCancelId ? `#${pendingCancelId}` : null);
 
   return (
     <>
       {pendingCancelId !== null && (
         <ConfirmDialog
           title="Cancel invoice"
-          message={`Are you sure you want to cancel invoice ${label}? Inventory will be reversed. The invoice will remain visible when showing cancelled invoices.`}
+          message={invoiceCancelConfirmMessage({
+            number: label,
+            voucherType: pendingCancelVoucherType,
+            lines: pendingCancelLines,
+            products: pendingCancelProducts,
+          })}
           confirmText="Cancel invoice"
           onConfirm={handleConfirm}
           onCancel={dismissCancel}

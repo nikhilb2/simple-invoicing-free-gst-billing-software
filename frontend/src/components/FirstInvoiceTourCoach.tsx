@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   AWAY_GUIDE,
+  forPointer,
   guideFor,
   INVOICE_PATH,
   pickTarget,
@@ -11,13 +12,10 @@ import {
   type Guide,
   type GuideTarget,
 } from '../features/firstInvoiceTour/tourSteps';
+import { createActiveMarker, isWithinBand, stillTyping, visibleBand } from '../features/firstInvoiceTour/activeTarget';
 import { useAuthStore } from '../store/useAuthStore';
 import { useFirstInvoiceTourStore } from '../store/useFirstInvoiceTourStore';
 
-type Box = { top: number; left: number; width: number; height: number };
-
-const RING_GAP = 4;
-const PANEL_MARGIN = 16;
 
 function visibleElement(selector: string): HTMLElement | null {
   const element = document.querySelector<HTMLElement>(selector);
@@ -26,60 +24,115 @@ function visibleElement(selector: string): HTMLElement | null {
   return width > 0 && height > 0 ? element : null;
 }
 
+/** When each field was last typed in. A paused field counts as filled in without losing focus. */
+const lastInputAt = new WeakMap<EventTarget, number>();
+
 function readField(selector: string): FieldState {
   const element = visibleElement(selector);
   if (!element) return { visible: false, value: '', focused: false };
+  const value = (element as HTMLInputElement).value ?? '';
+  const at = lastInputAt.get(element);
+  const since = at === undefined ? null : Date.now() - at;
   return {
     visible: true,
-    value: (element as HTMLInputElement).value ?? '',
-    focused: document.activeElement === element,
+    value,
+    focused: stillTyping(document.activeElement === element, value, since),
   };
 }
 
-function sameBox(a: Box | null, b: Box | null): boolean {
-  if (a === b) return true;
-  if (!a || !b) return false;
-  return a.top === b.top && a.left === b.left && a.width === b.width && a.height === b.height;
+export function isCoarsePointer(): boolean {
+  return typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: coarse)').matches;
+}
+
+/** The phone keyboard is up when it takes a quarter or more of the screen. */
+export function keyboardIsOpen(): boolean {
+  const viewport = window.visualViewport;
+  return !!viewport && isCoarsePointer() && viewport.height < window.innerHeight * 0.75;
 }
 
 /**
- * Follows the guide's target every frame. Dialogs open, forms scroll inside them,
- * and rows grow as they are filled in; one measurement of one element a frame is
- * simpler than watching for each of those, and stops as soon as the guide does.
+ * Follows which element the guide points at. Dialogs open and fields fill in, so
+ * the pick is re-read every frame, but the page is only touched when the pick
+ * changes: the target itself carries `data-tour-active`, and the outline then
+ * scrolls, clips and stays put with it like any other style.
  */
-function useTarget(guide: Guide | null): { target: GuideTarget | null; box: Box | null } {
-  const [state, setState] = useState<{ target: GuideTarget | null; box: Box | null }>({ target: null, box: null });
-  const current = useRef(state);
+function useTarget(guide: Guide | null): GuideTarget | null {
+  const [target, setTarget] = useState<GuideTarget | null>(null);
+  const picked = useRef<GuideTarget | null>(null);
 
   useEffect(() => {
-    const publish = (target: GuideTarget | null, box: Box | null) => {
-      if (current.current.target === target && sameBox(current.current.box, box)) return;
-      current.current = { target, box };
-      setState(current.current);
+    const marker = createActiveMarker();
+    const publish = (next: GuideTarget | null) => {
+      if (picked.current === next) return;
+      picked.current = next;
+      setTarget(next);
     };
-
     if (!guide) {
-      publish(null, null);
+      publish(null);
       return undefined;
     }
 
+    const noteInput = (event: Event) => {
+      if (event.target) lastInputAt.set(event.target, Date.now());
+    };
+    document.addEventListener('input', noteInput, true);
+    document.addEventListener('change', noteInput, true);
+
     let frame = 0;
     const tick = () => {
-      const target = pickTarget(guide, readField);
-      const element = target ? visibleElement(target.selector) : null;
-      if (element) {
-        const rect = element.getBoundingClientRect();
-        publish(target, { top: rect.top, left: rect.left, width: rect.width, height: rect.height });
-      } else {
-        publish(null, null);
-      }
+      const next = pickTarget(guide, readField);
+      const element = next ? visibleElement(next.selector) : null;
+      marker.mark(element);
+      publish(element ? next : null);
       frame = requestAnimationFrame(tick);
     };
     tick();
-    return () => cancelAnimationFrame(frame);
+    return () => {
+      cancelAnimationFrame(frame);
+      document.removeEventListener('input', noteInput, true);
+      document.removeEventListener('change', noteInput, true);
+      marker.mark(null);
+    };
   }, [guide]);
 
-  return state;
+  return target;
+}
+
+/** Bottom of the sticky app header, measured; null when it is not on the page or a dialog covers it. */
+function stickyHeaderBottom(element: HTMLElement): number | null {
+  if (element.closest('.modal-panel')) return null;
+  const header = document.querySelector<HTMLElement>('.page-header');
+  if (!header || window.getComputedStyle(header).position !== 'sticky') return null;
+  return header.getBoundingClientRect().bottom;
+}
+
+/** Whether the element can be seen and used: wholly inside the band between the sticky header and the card, and inside its dialog's panel. */
+function isInClearView(element: HTMLElement, card: HTMLElement | null): boolean {
+  const rect = element.getBoundingClientRect();
+  const viewport = window.visualViewport;
+  const viewportTop = viewport?.offsetTop ?? 0;
+  const band = visibleBand({
+    viewportTop,
+    viewportBottom: viewportTop + (viewport?.height ?? window.innerHeight),
+    headerBottom: stickyHeaderBottom(element),
+    card: card ? card.getBoundingClientRect() : null,
+  });
+  if (!isWithinBand(rect, band)) return false;
+  const panel = element.closest<HTMLElement>('.modal-panel');
+  if (panel) {
+    const box = panel.getBoundingClientRect();
+    if (rect.top < box.top || rect.bottom > box.bottom) return false;
+  }
+  return true;
+}
+
+/**
+ * True when the element sits in the composer's fixed Create invoice bar (on a phone). Scrolling can't move it clear of the card, so the card goes to the top.
+ */
+export function inFixedBar(element: HTMLElement | null): boolean {
+  // Only the composer's bar: dialogs are fixed too, but their targets scroll clear of the card.
+  const bar = element?.closest<HTMLElement>('.composer-submit');
+  return !!bar && window.getComputedStyle(bar).position === 'fixed';
 }
 
 /**
@@ -108,14 +161,14 @@ export type CoachCardProps = {
   title: string;
   body: string;
   done?: boolean;
-  placeOnTop?: boolean;
   onExit?: () => void;
   onFinish?: () => void;
   onBackToInvoice?: () => void;
   cardRef?: React.Ref<HTMLElement>;
+  placeOnTop?: boolean;
 };
 
-export function CoachCard({ step, title, body, done, placeOnTop, onExit, onFinish, onBackToInvoice, cardRef }: CoachCardProps) {
+export function CoachCard({ step, title, body, done, onExit, onFinish, onBackToInvoice, cardRef, placeOnTop }: CoachCardProps) {
   return (
     <section
       ref={cardRef}
@@ -135,17 +188,17 @@ export function CoachCard({ step, title, body, done, placeOnTop, onExit, onFinis
       </div>
       <div className="tour-coach__actions">
         {onBackToInvoice ? (
-          <button type="button" className="button button--primary button--small" onClick={onBackToInvoice}>
+          <button type="button" className="button button--primary tour-coach__button" onClick={onBackToInvoice}>
             Back to the invoice
           </button>
         ) : null}
         {onFinish ? (
-          <button type="button" className="button button--primary button--small" onClick={onFinish}>
+          <button type="button" className="button button--primary tour-coach__button" onClick={onFinish}>
             Finish
           </button>
         ) : null}
         {onExit ? (
-          <button type="button" className="button button--ghost button--small" onClick={onExit}>
+          <button type="button" className="button button--ghost tour-coach__button" onClick={onExit}>
             Exit walkthrough
           </button>
         ) : null}
@@ -175,40 +228,87 @@ export default function FirstInvoiceTourCoach() {
   const mine = owner === userEmail;
   const onInvoicePage = pathname === INVOICE_PATH;
   const guide = phase === 'running' && mine ? (onInvoicePage ? guideFor(facts) : AWAY_GUIDE) : null;
-  const { target, box } = useTarget(guide);
-
-  // Bring a target into view once, when it changes. After that the page is theirs to scroll.
-  const selector = target?.selector ?? null;
-  useEffect(() => {
-    if (!selector) return;
-    const element = visibleElement(selector);
-    if (!element) return;
-    const { top, bottom } = element.getBoundingClientRect();
-    if (top >= 0 && bottom <= window.innerHeight) return;
-    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-    element.scrollIntoView({ block: 'center', behavior: reduceMotion ? 'auto' : 'smooth' });
-  }, [selector]);
+  const target = useTarget(guide);
 
   const cardRef = useRef<HTMLElement>(null);
   const finished = phase === 'done' && mine;
-  useReserveCardSpace(cardRef, finished || guide !== null);
 
-  // Moves to the top of the screen rather than sit on the very thing it points at.
+  // While the phone keyboard is up the field's own label says what to type, and the card
+  // would only sit on the little dialog that is left.
+  const [keyboardOpen, setKeyboardOpen] = useState(keyboardIsOpen);
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    if (!viewport) return undefined;
+    const update = () => setKeyboardOpen(keyboardIsOpen());
+    viewport.addEventListener('resize', update);
+    window.addEventListener('resize', update);
+    return () => {
+      viewport.removeEventListener('resize', update);
+      window.removeEventListener('resize', update);
+    };
+  }, []);
+
+  const showCard = (finished || guide !== null) && !keyboardOpen;
+  useReserveCardSpace(cardRef, showCard);
+
+  // Bring the target into view when it changes and when the keyboard opens or closes: on
+  // screen, clear of the card, and inside its dialog. scrollIntoView moves the dialog's own scroller too.
+  const selector = target?.selector ?? null;
+  useEffect(() => {
+    if (!selector) return undefined;
+    const bringIntoView = () => {
+      const element = visibleElement(selector);
+      if (!element || isInClearView(element, cardRef.current)) return;
+      const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+      element.scrollIntoView({ block: 'center', behavior: reduceMotion ? 'auto' : 'smooth' });
+    };
+    // The card and the dialog settle a frame after the target changes, and the page can
+    // still shift after that (an empty-state block that is loading), so check again on the
+    // next two frames and whenever the target, the page or its dialog changes size.
+    let frame = 0;
+    const later = (frames: number) => {
+      cancelAnimationFrame(frame);
+      const step = (left: number) => {
+        frame = requestAnimationFrame(() => {
+          bringIntoView();
+          if (left > 1) step(left - 1);
+        });
+      };
+      step(frames);
+    };
+    later(2);
+    const onResize = () => later(2);
+    const viewport = window.visualViewport;
+    viewport?.addEventListener('resize', onResize);
+    let observer: ResizeObserver | undefined;
+    if (typeof ResizeObserver !== 'undefined') {
+      observer = new ResizeObserver(onResize);
+      const element = visibleElement(selector);
+      if (element) observer.observe(element);
+      observer.observe(document.body);
+      const panel = element?.closest('.modal-panel');
+      if (panel) observer.observe(panel);
+    }
+    return () => {
+      cancelAnimationFrame(frame);
+      observer?.disconnect();
+      viewport?.removeEventListener('resize', onResize);
+    };
+  }, [selector]);
+
+  // A target in the fixed bar (Create invoice on a phone) can't scroll clear of the
+  // card, so the card goes to the top, as in the #1117 mockup for the create step.
   const [placeOnTop, setPlaceOnTop] = useState(false);
   useLayoutEffect(() => {
-    const card = cardRef.current;
-    if (!card || !box) {
-      setPlaceOnTop(false);
-      return;
-    }
-    const { width, height } = card.getBoundingClientRect();
-    const zoneTop = window.innerHeight - height - PANEL_MARGIN * 2;
-    const zoneLeft = window.innerWidth - width - PANEL_MARGIN * 2;
-    setPlaceOnTop(box.top + box.height > zoneTop && box.left + box.width > zoneLeft);
-  }, [box]);
+    const element = selector ? visibleElement(selector) : null;
+    const update = () => setPlaceOnTop(inFixedBar(element));
+    update();
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, [selector]);
 
   if (finished) {
-    return createPortal(
+    return !showCard ? null : createPortal(
       <CoachCard
         cardRef={cardRef}
         step={TOUR_STEPS}
@@ -221,33 +321,19 @@ export default function FirstInvoiceTourCoach() {
     );
   }
 
-  if (!guide) return null;
+  if (!guide || !showCard) return null;
 
+  const coarse = isCoarsePointer();
   return createPortal(
-    <>
-      {box ? (
-        <div
-          className="tour-ring"
-          aria-hidden="true"
-          data-testid="tour-ring"
-          style={{
-            top: box.top - RING_GAP,
-            left: box.left - RING_GAP,
-            width: box.width + RING_GAP * 2,
-            height: box.height + RING_GAP * 2,
-          }}
-        />
-      ) : null}
-      <CoachCard
-        cardRef={cardRef}
-        step={guide.step}
-        title={target?.title ?? guide.title}
-        body={target?.body ?? guide.body}
-        placeOnTop={placeOnTop}
-        onExit={exit}
-        onBackToInvoice={onInvoicePage ? undefined : () => navigate(INVOICE_PATH)}
-      />
-    </>,
+    <CoachCard
+      cardRef={cardRef}
+      step={guide.step}
+      title={forPointer(target?.title ?? guide.title, coarse)}
+      body={forPointer(target?.body ?? guide.body, coarse)}
+      placeOnTop={placeOnTop}
+      onExit={exit}
+      onBackToInvoice={onInvoicePage ? undefined : () => navigate(INVOICE_PATH)}
+    />,
     document.body,
   );
 }

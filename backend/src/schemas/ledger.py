@@ -340,6 +340,7 @@ class Gstr1DocSummary(BaseModel):
     total_credit_notes: int = 0
     total_debit_notes: int = 0
     cancelled_invoices: int = 0
+    cancelled_credit_notes: int = 0
 
 
 class Gstr1Summary(BaseModel):

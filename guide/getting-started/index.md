@@ -23,13 +23,17 @@ If no email arrives, check your spam folder. The **Resend verification email** b
 
 ## 2. Set up your company
 
-The first time you sign in, the app asks for your company details. Enter at least the **Company name** and **Address**, and your **GSTIN** if you have one. **Currency** starts on **INR - Indian Rupee**.
+The first time you sign in, the app shows **Add your business**. It asks for one thing: your **Business name**. It starts with the name on your account, and you can change it. The box under the field shows how the name will look at the top of your bills.
 
-Click **Save company details**. A box then offers **Create my first invoice**, which starts the walkthrough described below. Or choose **Skip for now** to go to the dashboard. [Company setup](./company-setup) covers every other option, including invoice numbering, your logo, bank details and terms.
+If you are GST-registered, click **Have a GSTIN? Add it** and enter it. Otherwise leave it out. Then click **Start billing**.
 
-The dashboard then shows a **Get started** checklist with the next steps below. It goes away once you have created an invoice, or you can hide it.
+The invoice composer opens with the walkthrough running (described below). Your address, PAN, bank details, logo and the rest can be added later in [Company setup](./company-setup), which also covers invoice numbering and terms. **Currency** starts on **INR - Indian Rupee**.
 
-The dashboard also offers to walk you through your first invoice. Click **Show me how** and the app points at each field while you add a real customer and product and create the invoice. If you choose **Skip for now**, you can start it later with **Walk me through it** on the checklist. Admins and managers see this.
+Until you have added your business, the screen shows only this step, **Sign out** and the help button.
+
+The dashboard then shows a **Get started** checklist with the next steps below, starting with **Add your business address**. It goes away once you have created an invoice and added your address, or you can hide it.
+
+The walkthrough points at each field while you add a real customer and product and create the invoice. If you leave it with **Exit walkthrough** before your first invoice, the invoice composer says what to do next and shows **Show me how**, which starts it again. You can also start it with **Walk me through it** on the checklist. Admins and managers see this.
 
 ## 3. Add a customer
 

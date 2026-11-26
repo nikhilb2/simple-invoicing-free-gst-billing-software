@@ -6,6 +6,7 @@ import type {
   DeliveryChallanStatus,
   Product,
 } from '../types/api';
+import { invoiceToastMessage } from './invoiceToast';
 import { roundMoney } from './invoiceTotals';
 
 export const CHALLAN_PURPOSES: { value: DeliveryChallanPurpose; label: string }[] = [
@@ -259,10 +260,13 @@ export function buildChallanPayload(form: ChallanFormState, placeOfSupply: strin
   return payload;
 }
 
-export function challanSavedMessage(number: string, editing: boolean): string {
-  return editing
-    ? `Delivery challan ${number} updated. Stock has been adjusted.`
-    : `Delivery challan ${number} saved. Stock has been reduced.`;
+export function challanSavedMessage(
+  number: string,
+  editing: boolean,
+  lines?: { product_id: number }[],
+  products?: Pick<Product, 'id' | 'maintain_inventory'>[],
+): string {
+  return invoiceToastMessage({ action: editing ? 'challanEdit' : 'challanCreate', number, lines, products });
 }
 
 export function challanCancelledMessage(number: string): string {

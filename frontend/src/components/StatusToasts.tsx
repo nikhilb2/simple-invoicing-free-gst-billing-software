@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { DIALOG_SELECTOR, shouldDismissOnDialogOpen } from '../utils/toastDialog';
 import { ERROR_TOAST_MS, SUCCESS_TOAST_MS, scheduleToastDismiss } from '../utils/toastTiming';
 
 type ToastKind = 'success' | 'error';
@@ -64,6 +65,32 @@ export default function StatusToasts({
 
     return scheduleToastDismiss(successDurationMs, () => onClearSuccessRef.current());
   }, [success, successDurationMs]);
+
+  // A success already showing when a dialog opens is cleared so it cannot cover the dialog.
+  // The dialog count is read when this success is first shown (after the commit, so a dialog
+  // rendered in the same pass counts as already open); only a later rise clears it.
+  useEffect(() => {
+    if (!success || typeof MutationObserver === 'undefined') {
+      return undefined;
+    }
+
+    let dialogCount = document.querySelectorAll(DIALOG_SELECTOR).length;
+    const observer = new MutationObserver(() => {
+      const dialogCountAfter = document.querySelectorAll(DIALOG_SELECTOR).length;
+      const dismiss = shouldDismissOnDialogOpen({
+        kind: 'success',
+        successShownBeforeOpen: true,
+        dialogCountBefore: dialogCount,
+        dialogCountAfter,
+      });
+      dialogCount = dialogCountAfter;
+      if (dismiss) {
+        onClearSuccessRef.current();
+      }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, [success]);
 
   useEffect(() => {
     if (!error) {

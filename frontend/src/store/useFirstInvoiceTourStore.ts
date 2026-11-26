@@ -37,7 +37,12 @@ type TourState = {
   owner: string | null;
   facts: ComposerFacts | null;
   start: () => void;
-  /** Leaving part way counts as skipping. It can be started again from the dashboard. */
+  /**
+   * Leaving part way counts as skipping. The dashboard's offer card does not come
+   * back after that (tourOffer), but the walkthrough can be started again: from
+   * "Show me how" on the composer while the company has no invoice, and from
+   * "Walk me through it" on the Get-started card.
+   */
   exit: () => void;
   /** The invoice page calls this when a sales invoice is saved. Does nothing unless the walkthrough is running. */
   invoiceCreated: () => void;

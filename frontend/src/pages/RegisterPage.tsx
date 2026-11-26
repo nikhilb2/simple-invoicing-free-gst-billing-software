@@ -5,6 +5,7 @@ import { useAuthConfig } from '../hooks/useAuthConfig';
 import { authErrorMessage } from '../utils/authFlow';
 import AuthLayout from '../components/AuthLayout';
 import OAuthButtons from '../components/OAuthButtons';
+import { suggestEmailDomain } from '../utils/emailDomainSuggestion';
 import CheckEmailNotice from '../components/CheckEmailNotice';
 import StatusToasts from '../components/StatusToasts';
 
@@ -14,6 +15,7 @@ export default function RegisterPage() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [emailSuggestion, setEmailSuggestion] = useState<string | null>(null);
   const [submittedEmail, setSubmittedEmail] = useState<string | null>(null);
   const emailInputRef = useRef<HTMLInputElement>(null);
   const [focusEmail, setFocusEmail] = useState(false);
@@ -104,7 +106,7 @@ export default function RegisterPage() {
         <p className="section-copy">We will email you a link to choose your password, then you can set up your company.</p>
       </div>
 
-      <OAuthButtons providers={config.providers} next="/" label="Sign up with" />
+      <OAuthButtons providers={config.providers} next="/" label="Sign up with" emailAction="sign up" />
 
       {config.password_signup_enabled ? (
         <form onSubmit={onSubmit} className="stack">
@@ -128,10 +130,35 @@ export default function RegisterPage() {
               type="email"
               placeholder="you@example.com"
               value={email}
-              onChange={(event) => setEmail(event.target.value)}
+              onChange={(event) => {
+                setEmail(event.target.value);
+                setEmailSuggestion(null);
+              }}
+              onBlur={() => setEmailSuggestion(suggestEmailDomain(email))}
+              aria-describedby="email-suggestion"
               autoComplete="email"
               required
             />
+            <small id="email-suggestion" className="field-hint field-hint--live" aria-live="polite">
+              {emailSuggestion ? (
+                <>
+                  Did you mean{' '}
+                  <button
+                    type="button"
+                    className="link-button"
+                    aria-label={`Use ${emailSuggestion}`}
+                    onClick={() => {
+                      setEmail(emailSuggestion);
+                      setEmailSuggestion(null);
+                      emailInputRef.current?.focus();
+                    }}
+                  >
+                    {emailSuggestion}
+                  </button>
+                  ?
+                </>
+              ) : null}
+            </small>
           </div>
           {toasts}
 

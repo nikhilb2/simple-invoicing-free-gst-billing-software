@@ -173,6 +173,7 @@
 }
 
 :root {
+  --app-header-height: 52px; /* the sticky .page-header */
   /* --- Hue triplets (consume as rgb(var(--rgb-x) / alpha)) --- */
   --rgb-overlay: 255 255 255;        /* sheen/hover/fill laid over a surface */
   --rgb-shadow: 0 0 0;               /* drop shadows, scrims, dark count badges */
@@ -692,7 +693,7 @@ input[type='radio'] {
 }
 
 .page-header {
-  height: 52px;
+  height: var(--app-header-height);
   display: flex;
   align-items: center;
   justify-content: flex-end;
@@ -868,6 +869,22 @@ input[type='radio'] {
 
 .line-item__errors .field-error--block {
   margin-top: 0;
+}
+
+/* The composer's line messages (#1100) follow their own fields. On a phone the
+   line is one column, so each sits right under its field. Wider, the fields
+   sit side by side and the messages share one row under them, each in its
+   field's column, so the controls stay level with their neighbours. */
+.line-item > .line-item__error {
+  margin-top: 0;
+}
+
+@media (min-width: 721px) {
+  .line-item > .line-item__error { grid-row: 2; }
+  .line-item > .line-item__error--product { grid-column: 1; }
+  .line-item > .line-item__error--quantity { grid-column: 2; }
+  .line-item > .line-item__error--price { grid-column: 3; }
+  .line-item > .line-item__error--discount { grid-column: 4; }
 }
 
 /* A field that stopped a save. See useFormFieldErrors. */
@@ -1728,6 +1745,22 @@ input[type='radio'] {
   .invoice-composer-page .line-items__tools .link-button { min-height: 44px; min-width: 44px; }
   .invoice-composer-page .line-item > .button--icon { width: 44px; height: 44px; }
 }
+/* A live hint that is empty most of the time. Out of the grid flow while empty
+   (an empty grid item still adds the field's 8px gap), but still in the
+   accessibility tree so screen readers announce text when it appears. */
+.field-hint--live:empty {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+/* A fix offered inside a field hint reads as part of the sentence. */
+.field-hint .link-button {
+  font-size: inherit;
+  text-align: left;
+}
 
 /* An address the person has to check by eye, on a line of its own. */
 .sent-address {
@@ -2025,6 +2058,9 @@ input[type='radio'] {
 }
 
 .button:disabled.is-busy {
+  /* Busy is not dead: a button waiting on the server keeps its colour (#963). */
+  opacity: 1;
+  filter: none;
   cursor: wait;
 }
 
@@ -6007,6 +6043,26 @@ a.invoice-row {
   color: var(--text);
 }
 
+.in-app-notice {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+/* The ghost border (--line) is about 1.3:1 on the note's teal tint, and the
+   input border is lower still. This denser --line-strong hue keeps the helper
+   button's edge at least 3:1 against the note in light and dark (Naina, #1121). */
+.in-app-notice__copy {
+  border-color: rgb(var(--rgb-info) / 0.8);
+}
+
+.in-app-notice__title {
+  font-size: 0.9rem;
+  line-height: 1.5;
+  margin-bottom: -4px;
+}
+
 .marketplace-note--warning {
   color: var(--warning);
 }
@@ -6865,8 +6921,17 @@ a.ledger-chip:focus-visible {
     padding: 8px 14px;
   }
 
+  /* The in-app browser notice's Copy link is the only way out of a dead end. */
+  .in-app-notice__copy {
+    min-height: 44px;
+  }
+
   .sidebar-toggle {
     min-height: 40px;
+  }
+
+  .field-hint .link-button {
+    min-height: 44px;
   }
 }
 
@@ -9184,39 +9249,51 @@ a.ledger-chip:focus-visible {
   background: rgb(var(--rgb-accent));
 }
 
-.tour-ring {
-  position: fixed;
-  z-index: 1290;
-  border: 2px solid rgb(var(--rgb-accent));
-  border-radius: 10px;
-  box-shadow: 0 0 0 4px rgb(var(--rgb-accent) / 0.25);
-  pointer-events: none;
-  animation: tour-ring-pulse 1.6s ease-in-out infinite;
+/* The element the walkthrough points at. It carries the outline itself, so the
+   outline scrolls, clips and stays put with it, and it stands in for the field's
+   own focus ring so every step looks the same. Doubled attribute selectors beat
+   the field focus and aria-invalid rules above whatever their order. */
+[data-tour-active][data-tour-active],
+[data-tour-active][data-tour-active]:focus,
+[data-tour-active][data-tour-active]:focus-visible {
+  outline: 2px solid rgb(var(--rgb-accent));
+  outline-offset: 4px;
+  box-shadow: none;
+  /* Scrolling it into view stops short of the sticky app header. */
+  scroll-margin-top: calc(var(--app-header-height) + 8px);
 }
 
-@keyframes tour-ring-pulse {
-  50% {
-    box-shadow: 0 0 0 8px rgb(var(--rgb-accent) / 0.1);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .tour-ring {
-    animation: none;
-  }
+.tour-coach__button {
+  min-height: 44px;
 }
 
 @media (max-width: 767px) {
+  /* Tight enough that a two-line step stays under 180px, with its 44px button. */
   .tour-coach {
     right: 12px;
     bottom: 12px;
     left: 12px;
+    gap: 6px;
     width: auto;
+    padding: 10px 16px;
   }
 
+  /* On the composer the fixed Create invoice bar sits at the bottom; the card rides
+     just above it. A dialog is above the bar, so it keeps the card at the edge. */
+  :root:not(:has([aria-modal='true'])) .tour-coach {
+    bottom: calc(var(--composer-bar-height, 0px) + 12px);
+  }
+
+  /* The target sits in the bar itself (Create invoice): the card goes to the top, 12px
+     from the edge on a phone (16px on desktop, in the rule above). Same rule, not a second copy. */
+  :root:not(:has([aria-modal='true'])) .tour-coach--top,
   .tour-coach--top {
     top: 12px;
     bottom: auto;
+  }
+
+  :root[data-tour-card] .page-frame {
+    padding-bottom: calc(var(--tour-card-height, 0px) + var(--composer-bar-height, 0px) + 32px);
   }
 }
 
@@ -9252,9 +9329,184 @@ a.ledger-chip:focus-visible {
   font-weight: 600;
 }
 
-/* The first company setup: one short card, a readable width, not the full page. */
-.company-setup-first {
-  max-width: 640px;
+/* ── First setup (#963): the setup-only frame and "Add your business" ── */
+
+/* No sidebar column: the header spans the page and the content is centred at
+   560px (hero and card 464px wide inside the frame's padding on a desktop). */
+.setup-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.setup-header {
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.setup-header__brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  color: var(--text);
+}
+
+.setup-header__name {
+  display: block;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.setup-header__tagline {
+  display: block;
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+
+.setup-header__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.setup-header__help {
+  justify-content: center;
+}
+
+/* Touch screens: every target in the header at least 44px. */
+@media (max-width: 767px) {
+  .setup-header__help {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+.setup-shell__main {
+  width: 100%;
+  max-width: 560px;
+  margin: 0 auto;
+}
+
+/* The bill header strip and the hint (or the empty-name error) under the name. */
+.company-setup__preview {
+  display: grid;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+/* Fixed height, so the error taking the hint's place moves nothing below it. */
+.company-setup__hint-slot {
+  min-height: 24px;
+}
+
+.company-setup__hint-slot > *,
+.company-setup__save-error {
+  margin: 0;
+}
+
+.company-setup__hint-slot > .field-error {
+  line-height: 1.4;
+}
+
+.company-setup__gst-link {
+  justify-self: start;
+}
+
+.company-setup__submit {
+  width: 100%;
+  min-height: 48px;
+}
+
+/* First setup: a one-row sketch of the top of a bill, under the business name
+   (#1097). The meta follows the name with a 12px gap rather than sitting at the
+   far edge. Under 420px it reads only "TAX INVOICE", so a shop name fits (#1114). */
+.bill-header-preview {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 8px 12px;
+  border: 1px dashed var(--color-border);
+  border-radius: 10px;
+}
+
+.bill-header-preview__name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.bill-header-preview__name--empty {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.bill-header-preview__meta {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+@media (max-width: 419.98px) {
+  .bill-header-preview__number {
+    display: none;
+  }
+}
+
+/* Fields that are made read-only together while a save is on its way, without
+   a box of their own between the form's grid and its fields. */
+.fieldset-contents {
+  display: contents;
+}
+
+/* "Couldn’t save. Check your internet and try again." under a Save button (#963). */
+.save-failed {
+  margin: 0;
+}
+
+.panel__header + .save-failed {
+  margin: -8px 0 16px;
+}
+
+/* The composer after "Exit walkthrough", before the first invoice (#963):
+   what to do next, and a way to start the walkthrough again. */
+.composer-next-step {
+  display: grid;
+  justify-items: start;
+}
+
+/* One short line in the mockup: 13px, semibold, body colour (not the muted hint). */
+.composer-next-step__line {
+  margin: 0;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* E-way bill dialog: the company has no address yet. The way out is a real
+   button with a 44px target, on its own line under the message on phones. */
+.eway-address-warning {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.eway-address-warning__action {
+  min-height: 44px;
+}
+
+@media (min-width: 768px) {
+  .eway-address-warning {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
 }
 
 /* Floating WhatsApp support link, bottom right on every screen. Below the
@@ -9339,13 +9591,17 @@ a.ledger-chip:focus-visible {
 
 .composer-submit { display: contents; }
 .composer-submit__total { display: none; }
-.composer-submit__reason { flex: 1 1 100%; order: -1; margin: 0; }
+.composer-submit__reason { flex: 1 1 100%; order: -1; margin: 0; cursor: pointer; }
+/* A field a save stopped at is scrolled to with its label clear of the sticky header. */
+.invoice-composer-page :is(input, select, textarea):invalid { scroll-margin-block: 96px 16px; }
 .serial-line__stock-action { min-height: 44px; }
 
 @media (max-width: 767px) {
   .invoice-composer-page { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
   .invoice-composer-page:has(.composer-submit__reason) { padding-bottom: calc(200px + env(safe-area-inset-bottom)); }
   .invoice-composer-page .serial-line { scroll-margin-block: 24px 180px; }
+  /* On a phone, clear of the fixed bar as well. */
+  .invoice-composer-page :is(input, select, textarea):invalid { scroll-margin-block: 80px 200px; }
   .serial-line__stock-action { width: 100%; }
   .invoice-composer-page .composer-hide-phone { display: none; }
   .invoice-composer-page .composer-show-phone { display: block; }

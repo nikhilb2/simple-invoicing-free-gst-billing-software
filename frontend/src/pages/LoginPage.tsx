@@ -1,9 +1,9 @@
 import { FormEvent, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { resendVerification } from '../api/auth';
 import { useAuth } from '../context/AuthContext';
 import { useAuthConfig } from '../hooks/useAuthConfig';
-import { authErrorMessage, loginErrorMessage } from '../utils/authFlow';
+import { authErrorMessage, loginErrorMessage, loginReasonNotice } from '../utils/authFlow';
 import { sanitizeNextPath } from '../utils/nextPath';
 import AuthLayout from '../components/AuthLayout';
 import OAuthButtons from '../components/OAuthButtons';
@@ -11,7 +11,11 @@ import StatusToasts from '../components/StatusToasts';
 import PasswordInput from '../components/PasswordInput';
 
 export default function LoginPage() {
-  const [email, setEmail] = useState('');
+  // The email of the session that just ended, handed over in router state by
+  // api/client.ts -- never in the URL.
+  const location = useLocation();
+  const endedEmail = (location.state as { email?: unknown } | null)?.email;
+  const [email, setEmail] = useState(typeof endedEmail === 'string' ? endedEmail : '');
   const [password, setPassword] = useState('');
   const [searchParams] = useSearchParams();
   // The OAuth callback redirects here with ?error=<code>.
@@ -29,6 +33,7 @@ export default function LoginPage() {
   // unchecked ?next= is an open redirect aimed at a user who has just typed
   // their password. See utils/nextPath.ts.
   const next = sanitizeNextPath(searchParams.get('next'));
+  const notice = loginReasonNotice(searchParams.get('reason'));
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
@@ -71,9 +76,11 @@ export default function LoginPage() {
   return (
     <AuthLayout title="Login">
       <div>
-        <p className="eyebrow">Welcome back</p>
-        <h2 className="page-title">Sign in</h2>
-        <p className="section-copy">Enter your email and password to see your invoices, stock and payments.</p>
+        <p className="eyebrow">{notice?.eyebrow ?? 'Welcome back'}</p>
+        <h2 className="page-title">{notice?.title ?? 'Sign in'}</h2>
+        <p className="section-copy">
+          {notice?.copy ?? 'Enter your email and password to see your invoices, stock and payments.'}
+        </p>
       </div>
 
       <OAuthButtons providers={config.providers} next={next} />
@@ -101,6 +108,7 @@ export default function LoginPage() {
             value={password}
             onChange={(event) => setPassword(event.target.value)}
             autoComplete="current-password"
+            autoFocus={email !== ''}
           />
         </div>
 

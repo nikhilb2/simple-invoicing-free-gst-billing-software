@@ -5,22 +5,24 @@ import axios from 'axios';
 import api, { getApiErrorCode, getApiErrorDetails, getApiErrorMessage } from '../api/client';
 import { createTerm, deleteTerm, removeLogo, updateTerm, uploadLogo } from '../api/company';
 import CurrencyChangeDialog from '../components/CurrencyChangeDialog';
+import GstinInput from '../components/GstinInput';
 import StatusToasts from '../components/StatusToasts';
 import { useAuthStore } from '../store/useAuthStore';
 import { useFYStore } from '../store/useFYStore';
 import { useFirstInvoiceTourStore } from '../store/useFirstInvoiceTourStore';
-import { INVOICE_PATH } from '../features/firstInvoiceTour/tourSteps';
-import { setupPromptChoices } from '../utils/setupPrompt';
+import { canStartTour, INVOICE_PATH } from '../features/firstInvoiceTour/tourSteps';
 import { useFY } from '../context/FYContext';
 import { PAPER_LABELS } from '../utils/paper';
 import type { CompanyProfile, CompanyProfileUpdate, InvoiceSeries, InvoiceSeriesUpdate, CompanyTermOut, PdfPaper } from '../types/api';
-import { clearSetupDraft, companyFormCurrency, isCompanyConfigured, isCompanyFormDirty, missingCompanyFields, readSetupDraft, writeSetupDraft, type MissingCompanyFields } from '../utils/companySetup';
+import { clearSetupDraft, companyFormCurrency, isCompanyConfigured, isCompanyFormDirty, missingCompanyFields, pickSetupNamePrefill, readSetupDraft, writeSetupDraft, type MissingCompanyFields } from '../utils/companySetup';
+import { createSubmitGuard, isConnectionOrServerError, SAVE_FAILED_MESSAGE } from '../utils/saveFeedback';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { isCurrencyChange } from '../utils/currencyChange';
 import { buildSeriesPreview, clampNextSequenceInput, gstr1SeriesFormatError, MAX_NEXT_SEQUENCE, parseNextSequenceInput } from '../utils/seriesPreview';
 import { purchaseTdsSetting } from '../utils/tds';
 import { companyIdentityErrors, firstIdentityErrorField, type CompanyIdentityErrors } from '../utils/companyFieldErrors';
 import { GSTIN_LENGTH, gstinError, normalizeGstinInput } from '../utils/gstin';
+import FirstBusinessSetup from '../components/FirstBusinessSetup';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -764,8 +766,6 @@ export default function CompanyPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
-  const companyRole = useAuthStore((state) => state.companyRole);
-  const setupChoices = setupPromptChoices(companyRole);
   const seriesSectionRef = useRef<HTMLElement>(null);
   const gstInputRef = useRef<HTMLInputElement>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
@@ -813,6 +813,12 @@ export default function CompanyPage() {
   const [additionalInfo, setAdditionalInfo] = useState('');
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  // First setup: claimed before the first await, so a second tap can never send
+  // a second POST, and left claimed on success until the composer has opened.
+  const [setupGuard] = useState(createSubmitGuard);
+  const [setupSaveError, setSetupSaveError] = useState('');
+  const [gstOpen, setGstOpen] = useState(false);
+  const nameEditedRef = useRef(false);
   const [additionalSaving, setAdditionalSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -822,10 +828,12 @@ export default function CompanyPage() {
   const [gstTouched, setGstTouched] = useState(false);
   const invalidGst = gstinError(form.gst);
   const gstError = identityErrors.gst ?? (gstTouched || form.gst.length >= GSTIN_LENGTH ? invalidGst : null);
-  const [showFirstSetupPrompt, setShowFirstSetupPrompt] = useState(false);
   // No "Complete company setup" popup any more: it was one more click between a
   // new user and the form, and read as homework. The short form says it instead.
   const setupRequiredByRoute = searchParams.get('setup') === 'required';
+  // The one-field first-run screen: no company at all (409 company_required), or
+  // a profile nobody has named yet (a fresh self-hosted install).
+  const firstSetup = noCompany || initialSetupRequired === true;
 
   async function loadCompanyProfile() {
     try {
@@ -862,6 +870,7 @@ export default function CompanyPage() {
         enable_tcs: data.enable_tcs || false,
       };
       setForm(loaded);
+      if (loaded.gst) setGstOpen(true);
       setSavedForm(loaded);
       setAdditionalInfo(data.additional_company_info || '');
       if (data.logo_data && data.logo_mime_type) {
@@ -875,6 +884,7 @@ export default function CompanyPage() {
         setCompanyId(0);
         const draft = readSetupDraft<CompanyProfileUpdate>(useAuthStore.getState().userEmail);
         if (draft) setForm((current) => ({ ...current, ...draft }));
+        if (draft?.gst?.trim()) setGstOpen(true);
         if (initialSetupRequired === null) {
           setInitialSetupRequired(true);
         }
@@ -890,11 +900,30 @@ export default function CompanyPage() {
     void loadCompanyProfile();
   }, []);
 
+  useEffect(() => {
+    if (!loading && !noCompany && searchParams.get('focus') === 'address') {
+      addressInputRef.current?.focus();
+      addressInputRef.current?.scrollIntoView({ block: 'center' });
+    }
+  }, [loading, noCompany, searchParams]);
+
   // Until the first company is saved, keep what has been typed for this tab.
   const setupDraftOwner = useAuthStore((state) => state.userEmail);
   useEffect(() => {
     if (noCompany) writeSetupDraft(setupDraftOwner, form);
   }, [noCompany, form, setupDraftOwner]);
+
+  // First setup starts with the account's name (Google name, or the one confirmed
+  // at email sign-up), unless a draft already has a name or the person has typed.
+  // /auth/me may answer after the profile, so this waits for both.
+  const accountFullName = useAuthStore((state) => state.fullName);
+  useEffect(() => {
+    if (loading || !firstSetup || !accountFullName || nameEditedRef.current) return;
+    setForm((current) => {
+      const name = pickSetupNamePrefill(accountFullName, setupDraftOwner, current.name);
+      return name === current.name ? current : { ...current, name };
+    });
+  }, [loading, firstSetup, accountFullName, setupDraftOwner]);
 
   // Any invoice at all, cancelled and purchase vouchers included: each of them
   // was issued in the currency the company had then. If the check fails we warn
@@ -936,7 +965,7 @@ export default function CompanyPage() {
       return;
     }
 
-    if (!noCompany && isCurrencyChange(savedCurrency, form.currency_code)) {
+    if (isCurrencyChange(savedCurrency, form.currency_code)) {
       setSubmitting(true);
       const hasInvoices = await companyHasInvoices();
       setSubmitting(false);
@@ -948,61 +977,121 @@ export default function CompanyPage() {
     await saveCompany();
   }
 
+  function buildPayload(): CompanyProfileUpdate {
+    return {
+      name: form.name.trim(),
+      address: form.address.trim(),
+      gst: normalizeGstinInput(form.gst),
+      pan: (form.pan || '').trim().toUpperCase(),
+      tan: (form.tan || '').trim().toUpperCase(),
+      // Never send the setting on without a TAN: the server refuses that save.
+      enable_purchase_tds: purchaseTdsSetting(form.enable_purchase_tds, form.tan),
+      phone_number: form.phone_number.trim(),
+      currency_code: form.currency_code.trim().toUpperCase(),
+      email: form.email.trim(),
+      website: form.website.trim(),
+      show_sku_on_pdf: form.show_sku_on_pdf,
+      default_pdf_paper: form.default_pdf_paper,
+      eway_enabled: form.eway_enabled,
+      eway_local_threshold: form.eway_local_threshold,
+      eway_interstate_threshold: form.eway_interstate_threshold,
+      eway_always_show_button: form.eway_always_show_button,
+      show_pay_qr_on_invoice: form.show_pay_qr_on_invoice,
+      show_upi_pay_button: form.show_upi_pay_button,
+      enable_tcs: form.enable_tcs,
+    };
+  }
+
+  /**
+   * "Start billing" on the first-run screen (#963). Save always answers: an
+   * empty name is shown under the field with no request and no toast; while
+   * waiting the button says "Starting…"; it cannot send twice; and a failed
+   * request says so under the button with the typed values kept.
+   */
+  async function handleFirstSetupSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (setupGuard.busy) return;
+    setSetupSaveError('');
+
+    const missing = missingCompanyFields(form, false);
+    setMissingFields(missing);
+    if (missing.name) {
+      nameInputRef.current?.focus();
+      nameInputRef.current?.scrollIntoView({ block: 'nearest' });
+      return;
+    }
+    if (checkGstinBeforeSave()) return;
+
+    if (!setupGuard.claim()) return;
+    setSubmitting(true);
+    const payload = buildPayload();
+    try {
+      if (noCompany) {
+        // First company for this user: the creator becomes its admin and the
+        // new company becomes their active one.
+        const created = await api.post<CompanyProfile>('/company/companies', payload);
+        localStorage.setItem('active_company_id', String(created.data.id));
+      } else {
+        // A profile that exists but was never named (a fresh self-hosted install).
+        await api.put<CompanyProfileUpdate>('/company/', payload);
+      }
+    } catch (err) {
+      setupGuard.release();
+      setSubmitting(false);
+      if (isConnectionOrServerError(err)) {
+        setSetupSaveError(SAVE_FAILED_MESSAGE);
+        return;
+      }
+      const { message, fieldErrors } = await getApiErrorDetails(err, 'Unable to save company profile');
+      const errors = companyIdentityErrors(fieldErrors);
+      if (errors.gst) {
+        // A GSTIN the server refused goes under the GSTIN field, opened if need be.
+        setGstOpen(true);
+        setIdentityErrors(errors);
+        window.requestAnimationFrame(() => gstInputRef.current?.focus());
+        return;
+      }
+      setSetupSaveError(message);
+      return;
+    }
+
+    // The company exists now. Nothing below may send the person back to the form:
+    // a second tap would create a second company.
+    clearSetupDraft(useAuthStore.getState().userEmail);
+    try {
+      // The creator's role only exists now; without this they would look like a
+      // non-admin until the next page load.
+      await useAuthStore.getState().hydrateUserRole();
+      // The FY list was loaded at sign-in, when the API still answered 409 (no
+      // company). The backend has now seeded an active FY, so reload it.
+      await useFYStore.getState().refreshFYList();
+      await queryClient.invalidateQueries({ queryKey: ['company-setup-required'] });
+      await queryClient.invalidateQueries({ queryKey: ['sidebar-companies'] });
+      await queryClient.invalidateQueries({ queryKey: ['company', 'profile'] });
+    } catch {
+      /* Each of these reloads on its own later; the company is saved either way. */
+    }
+    // Straight into the composer with the walkthrough running: no "Company
+    // created" dialog in between. Someone who cannot add products goes to the dashboard.
+    if (canStartTour(useAuthStore.getState().companyRole)) {
+      useFirstInvoiceTourStore.getState().start();
+      navigate(INVOICE_PATH);
+    } else {
+      navigate('/');
+    }
+    // The guard and the busy state stay set: this page is on its way out.
+  }
+
   async function saveCompany() {
     try {
       setSubmitting(true);
       setError('');
       setSuccess('');
 
-      const payload: CompanyProfileUpdate = {
-        name: form.name.trim(),
-        address: form.address.trim(),
-        gst: normalizeGstinInput(form.gst),
-        pan: (form.pan || '').trim().toUpperCase(),
-        tan: (form.tan || '').trim().toUpperCase(),
-        // Never send the setting on without a TAN: the server refuses that save.
-        enable_purchase_tds: purchaseTdsSetting(form.enable_purchase_tds, form.tan),
-        phone_number: form.phone_number.trim(),
-        currency_code: form.currency_code.trim().toUpperCase(),
-        email: form.email.trim(),
-        website: form.website.trim(),
-        show_sku_on_pdf: form.show_sku_on_pdf,
-        default_pdf_paper: form.default_pdf_paper,
-        eway_enabled: form.eway_enabled,
-        eway_local_threshold: form.eway_local_threshold,
-        eway_interstate_threshold: form.eway_interstate_threshold,
-        eway_always_show_button: form.eway_always_show_button,
-        show_pay_qr_on_invoice: form.show_pay_qr_on_invoice,
-        show_upi_pay_button: form.show_upi_pay_button,
-        enable_tcs: form.enable_tcs,
-      };
-
-      if (noCompany) {
-        // First company for this user: the creator becomes its admin and the
-        // new company becomes their active one.
-        const created = await api.post<CompanyProfile>('/company/companies', payload);
-        setNoCompany(false);
-        clearSetupDraft(useAuthStore.getState().userEmail);
-        setCompanyId(created.data.id);
-        localStorage.setItem('active_company_id', String(created.data.id));
-        // The creator's role only exists now; without this they would look like a
-        // non-admin until the next page load.
-        await useAuthStore.getState().hydrateUserRole();
-        // The FY list was loaded at sign-in, when the API still answered 409 (no
-        // company). The backend has now seeded an active FY, so reload it.
-        await useFYStore.getState().refreshFYList();
-        await queryClient.invalidateQueries({ queryKey: ['company-setup-required'] });
-        await queryClient.invalidateQueries({ queryKey: ['sidebar-companies'] });
-        setSuccess('Company created. New invoices will now show this as billing company.');
-      } else {
-        await api.put<CompanyProfileUpdate>('/company/', payload);
-        // The sidebar reads enable_tcs from this query to show the TCS page.
-        await queryClient.invalidateQueries({ queryKey: ['company-setup-required'] });
-        setSuccess('Company profile saved. New invoices will now show this as billing company.');
-      }
-      if (initialSetupRequired && payload.name) {
-        setShowFirstSetupPrompt(true);
-      }
+      await api.put<CompanyProfileUpdate>('/company/', buildPayload());
+      // The sidebar reads enable_tcs from this query to show the TCS page.
+      await queryClient.invalidateQueries({ queryKey: ['company-setup-required'] });
+      setSuccess('Company profile saved. New invoices will now show this as billing company.');
       await queryClient.invalidateQueries({ queryKey: ['company', 'profile'] });
       setIdentityErrors({});
       await loadCompanyProfile();
@@ -1076,33 +1165,47 @@ export default function CompanyPage() {
     </>
   );
 
-  function handleCreateFirstInvoice() {
-    setShowFirstSetupPrompt(false);
-    useFirstInvoiceTourStore.getState().start();
-    navigate(INVOICE_PATH);
-  }
-
-  function handleSkipOnboardingStep() {
-    setShowFirstSetupPrompt(false);
-    navigate('/');
+  if (firstSetup || (loading && setupRequiredByRoute)) {
+    return (
+      <FirstBusinessSetup
+        loading={loading}
+        name={form.name}
+        onNameChange={(name) => {
+          nameEditedRef.current = true;
+          setMissingFields((current) => ({ ...current, name: undefined }));
+          setForm((current) => ({ ...current, name }));
+        }}
+        nameError={missingFields.name}
+        gst={form.gst}
+        onGstChange={(gst) => {
+          setIdentityErrors((current) => ({ ...current, gst: undefined }));
+          setForm((current) => ({ ...current, gst }));
+        }}
+        onGstBlur={() => setGstTouched(true)}
+        gstError={gstError}
+        gstOpen={gstOpen}
+        onOpenGst={() => {
+          setGstOpen(true);
+          // The field replaces the link; put the caret in it once it is there.
+          window.requestAnimationFrame(() => gstInputRef.current?.focus());
+        }}
+        busy={submitting}
+        saveError={setupSaveError}
+        onSubmit={handleFirstSetupSubmit}
+        nameInputRef={nameInputRef}
+        gstInputRef={gstInputRef}
+      />
+    );
   }
 
   return (
     <div className="page-grid">
       <section className="page-hero">
-        {noCompany || (loading && setupRequiredByRoute) ? (
-          <div>
-            <p className="eyebrow">Getting started</p>
-            <h1 className="page-title">Add your business</h1>
-            <p className="section-copy">Two details and you can make your first invoice. GSTIN, PAN, bank and invoice settings can wait until later.</p>
-          </div>
-        ) : (
-          <div>
-            <p className="eyebrow">Company</p>
-            <h1 className="page-title">Billing identity</h1>
-            <p className="section-copy">Set the company details, branding, and legal terms that appear on invoices and other documents.</p>
-          </div>
-        )}
+        <div>
+          <p className="eyebrow">Company</p>
+          <h1 className="page-title">Billing identity</h1>
+          <p className="section-copy">Set the company details, branding, and legal terms that appear on invoices and other documents.</p>
+        </div>
       </section>
 
       <StatusToasts error={error} success={success} onClearError={() => setError('')} onClearSuccess={() => setSuccess('')} />
@@ -1140,42 +1243,8 @@ export default function CompanyPage() {
         />
       ) : null}
 
-      {showFirstSetupPrompt ? (
-        <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="company-created-title">
-          <div className="modal-panel">
-            <div className="panel__header">
-              <div>
-                <p className="eyebrow">Next step</p>
-                <h2 id="company-created-title" className="nav-panel__title">Company created successfully</h2>
-              </div>
-            </div>
-            <p className="section-copy" style={{ marginTop: '8px' }}>{setupChoices.copy}</p>
-            <div className="button-row" style={{ marginTop: '16px' }}>
-              {setupChoices.showFirstInvoice ? (
-                <button
-                  type="button"
-                  className="button button--primary"
-                  onClick={handleCreateFirstInvoice}
-                  title="Create my first invoice"
-                  aria-label="Create my first invoice"
-                >
-                  Create my first invoice
-                </button>
-              ) : null}
-              <button
-                type="button"
-                className="button button--ghost"
-                onClick={handleSkipOnboardingStep}
-              >
-                {setupChoices.dismissLabel}
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
       {/* -------- Branding Section (Logo + Additional Info) -------- */}
-      {!loading && !noCompany && (
+      {!loading && (
         <section className="content-grid content-grid--single">
           <article className="panel stack" style={{ gap: '24px' }}>
             <LogoUploadCard logoUrl={logoUrl} onLogoChanged={loadCompanyProfile} />
@@ -1188,14 +1257,12 @@ export default function CompanyPage() {
         </section>
       )}
 
-      {/* First setup has one short card and nothing beside it, so it takes the
-          width rather than half a two-column grid. */}
-      <section className={noCompany ? 'content-grid content-grid--single company-setup-first' : 'content-grid'}>
+      <section className="content-grid">
         <article className="panel stack">
           <div className="panel__header">
             <div>
               <p className="eyebrow">Company setup</p>
-              <h2 className="nav-panel__title">{noCompany ? 'Your business' : 'Invoice header details'}</h2>
+              <h2 className="nav-panel__title">Invoice header details</h2>
             </div>
           </div>
           {loading ? <div className="empty-state">Loading company profile...</div> : null}
@@ -1208,8 +1275,8 @@ export default function CompanyPage() {
             <form ref={formRef} className="stack" onSubmit={handleSubmit} noValidate>
               <small className="field-hint">Fields marked <span style={{ color: 'var(--color-danger)' }}>*</span> are required.</small>
               <div className="field-grid">
-                <div className={noCompany ? 'field field--full' : 'field'}>
-                  <label htmlFor="company-name">{noCompany ? 'Business name' : 'Company name'} <span style={{ color: 'var(--color-danger)' }} aria-hidden="true">*</span></label>
+                <div className="field">
+                  <label htmlFor="company-name">Company name <span style={{ color: 'var(--color-danger)' }} aria-hidden="true">*</span></label>
                   <input
                     id="company-name"
                     ref={nameInputRef}
@@ -1229,22 +1296,14 @@ export default function CompanyPage() {
                     : <small className="field-hint" id="company-name-hint">As it should appear on your invoices, e.g. Sharma Traders.</small>}
                 </div>
 
-                {noCompany ? (
-                  <div className="field field--full">
-                    <label htmlFor="company-address">Address <span style={{ color: 'var(--color-danger)' }} aria-hidden="true">*</span></label>
-                    {addressInput}
-                  </div>
-                ) : null}
-
-                <div className={noCompany ? 'field field--full' : 'field'}>
-                  <label htmlFor="company-gst">GSTIN{noCompany ? ' (optional)' : ''}</label>
-                  <input
+                <div className="field">
+                  <label htmlFor="company-gst">GSTIN</label>
+                  <GstinInput
                     id="company-gst"
                     ref={gstInputRef}
                     className="input"
                     value={form.gst}
-                    onChange={(event) => {
-                      const gst = normalizeGstinInput(event.target.value);
+                    onValueChange={(gst) => {
                       setIdentityErrors((current) => ({ ...current, gst: undefined }));
                       setForm((current) => ({ ...current, gst }));
                     }}
@@ -1253,19 +1312,10 @@ export default function CompanyPage() {
                     aria-invalid={gstError ? true : undefined}
                     aria-describedby={gstError ? 'company-gst-error' : undefined}
                   />
-                  <small className="field-hint">
-                    {noCompany
-                      ? 'Leave blank if you are not GST-registered. 15 characters, e.g. 27ABCDE1234F1Z0.'
-                      : 'Format: 27ABCDE1234F1Z0'}
-                  </small>
+                  <small className="field-hint">Format: 27ABCDE1234F1Z0</small>
                   {gstError ? <p className="field-error" id="company-gst-error" role="alert">{gstError}</p> : null}
                 </div>
 
-                {/* The first setup asks only what an invoice cannot go without. The
-                    rest (PAN, TAN, TDS, contact details, currency, PDF options) shows
-                    once the company exists. Currency stays INR until then. */}
-                {!noCompany ? (
-                <>
                 <div className="field">
                   <label htmlFor="company-pan">PAN</label>
                   <input
@@ -1482,18 +1532,7 @@ export default function CompanyPage() {
                   </small>
                 </div>
 
-                </>
-                ) : null}
-
                 <div className="field field--full">
-                  {/* Before the first save there is no company to add accounts to, and
-                      leaving here would only bring you back to setup. */}
-                  {noCompany ? (
-                    <small className="field-hint">
-                      After you save, you can add your bank and cash accounts from Cash &amp; Bank Accounts.
-                    </small>
-                  ) : (
-                  <>
                   {/* A text link, not a button: as a button beside Save it drew the
                       click meant for Save, and leaving dropped the edits. */}
                   <small className="field-hint">
@@ -1510,25 +1549,21 @@ export default function CompanyPage() {
                       Cash &amp; Bank Accounts &rarr;
                     </Link>
                   </small>
-                  </>
-                  )}
                 </div>
               </div>
 
               <div className={`form-save-bar${formDirty ? ' form-save-bar--dirty' : ''}`}>
                 <button
                   className="button button--primary"
-                  disabled={submitting || (!noCompany && !formDirty)}
+                  disabled={submitting || !formDirty}
                   title="Save company details"
                   aria-label="Save company details"
                 >
                   {submitting ? 'Saving company...' : 'Save company details'}
                 </button>
-                {!noCompany && (
-                  <span className="form-save-bar__status" role="status">
-                    {formDirty ? 'You have unsaved changes' : 'All changes saved'}
-                  </span>
-                )}
+                <span className="form-save-bar__status" role="status">
+                  {formDirty ? 'You have unsaved changes' : 'All changes saved'}
+                </span>
               </div>
             </form>
           ) : null}
@@ -1540,14 +1575,14 @@ export default function CompanyPage() {
         )}
 
         {/* E-Way Bill Settings */}
-        {!loading && !noCompany && (
+        {!loading && (
           <EWayBillSettingsCard
             form={form}
             onChange={(patch) => setForm((current) => ({ ...current, ...patch }))}
           />
         )}
 
-        {!noCompany && <InvoiceSeriesCard sectionRef={seriesSectionRef} savedGstin={savedGstin} />}
+        <InvoiceSeriesCard sectionRef={seriesSectionRef} savedGstin={savedGstin} />
       </section>
     </div>
   );

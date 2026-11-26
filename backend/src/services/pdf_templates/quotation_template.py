@@ -21,6 +21,7 @@ from src.models.quotation import DOCUMENT_PROFORMA, STATUS_CANCELLED, Quotation
 from src.services.gst_tax_service import india_today, to_india_date
 
 from .builders import (
+    _address_html,
     _amount_in_words_indian,
     _build_invoice_discount_html,
     _build_item_discount_html,
@@ -447,7 +448,7 @@ def _build_quotation_html(
       {logo_html}
       {info_html}
       <h3>{_e(quotation.company_name) or 'Company not set'}</h3>
-      <p>{_e(quotation.company_address) or 'Address not provided'}</p>
+      {_address_html(quotation.company_address)}
       <p>{_party_details(quotation.company_gst, quotation.company_phone)}</p>
       <p>{_join([f"Email: {_e(quotation.company_email)}" if quotation.company_email else "", f"Web: {_e(quotation.company_website)}" if quotation.company_website else ""])}</p>
     </div>
@@ -463,7 +464,7 @@ def _build_quotation_html(
     <div class="sheet__party">
       <p class="eyebrow">{party_eyebrow}</p>
       <h4>{_e(quotation.ledger_name) or 'Unknown ledger'}</h4>
-      <p>{_e(quotation.ledger_address) or 'Address not provided'}</p>
+      {_address_html(quotation.ledger_address)}
       <p>{_party_details(quotation.ledger_gst, quotation.ledger_phone)}</p>
     </div>{ship_to_html}
   </div>

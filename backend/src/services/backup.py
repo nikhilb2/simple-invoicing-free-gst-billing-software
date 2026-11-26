@@ -11,7 +11,6 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import NoReturn
 from zipfile import ZIP_DEFLATED, ZipFile
 
 from fastapi import HTTPException, UploadFile
@@ -32,6 +31,9 @@ BACKUP_DIR = Path(os.getenv("BACKUP_DIR", "./backups"))
 # them without ever touching one someone made by hand.
 MANUAL_BACKUP_PREFIX = "backup_"
 AUTO_BACKUP_PREFIX = "autobackup_"
+# The data from before a restore that must be migrated. Deleted once the restore
+# or its rollback succeeds; kept, and named in the error, when both fail (#1079).
+PRE_RESTORE_BACKUP_PREFIX = "pre_restore_"
 MIGRATIONS_DIR = Path(__file__).resolve().parents[2] / "migrations"
 logger = logging.getLogger(__name__)
 _backup_key_warned = False
@@ -182,13 +184,16 @@ def _run_pg_dump(output_path: Path) -> None:
         raise HTTPException(status_code=500, detail=f"Backup failed: {detail}") from err
 
 
-def create_backup_archive(file_prefix: str = MANUAL_BACKUP_PREFIX) -> dict:
+def create_backup_archive(file_prefix: str = MANUAL_BACKUP_PREFIX, dump_path: Path | None = None) -> dict:
     """Dump, encrypt and store one backup archive.
 
     ``file_prefix`` is what tells a scheduled archive apart from one a person
     clicked for, and retention pruning keys off it -- see
     ``src.services.backup_scheduler``. Both kinds list, download and restore
     identically; the prefix only decides what the scheduler is allowed to delete.
+
+    ``dump_path``, when given, is where the plain pg_dump is written and left for
+    the caller, who must delete it.
     """
     ensure_backup_dir()
 
@@ -198,7 +203,7 @@ def create_backup_archive(file_prefix: str = MANUAL_BACKUP_PREFIX) -> dict:
 
     with TemporaryDirectory() as temp_dir_name:
         temp_dir = Path(temp_dir_name)
-        dump_path = temp_dir / "database.dump"
+        dump_path = dump_path or temp_dir / "database.dump"
         manifest_path = temp_dir / "manifest.json"
         plain_zip_path = temp_dir / "backup.zip"
 
@@ -386,9 +391,20 @@ def _classify_compatibility(backup_migrations: list[str], current_migrations: li
 
     if current_set.issubset(backup_set):
         gap = len(backup_set - current_set)
+        if backup_set <= _shipped_migrations():
+            # Only after a restore whose migrations and rollback both failed: the
+            # database is behind this app, and the backup (such as the kept
+            # pre-restore one) is not newer than it (#1079).
+            return "database_behind", "The database is behind this app's schema; this backup matches the app and will replace it.", gap
         return "newer_than_app", "Backup appears to come from a newer app schema and cannot be restored safely.", gap
 
     return "diverged", "Backup schema history diverges from current database migrations.", abs(len(current_set) - len(backup_set))
+
+
+def _shipped_migrations() -> set[str]:
+    if not MIGRATIONS_DIR.exists():
+        return set()
+    return {f.stem for f in MIGRATIONS_DIR.iterdir() if f.suffix == ".py" and f.name != "__init__.py"}
 
 
 def preflight_restore(upload: UploadFile) -> RestorePreflight:
@@ -576,6 +592,8 @@ def _apply_dump(dump_path: Path, env: dict[str, str], prefix_sql: str = "") -> N
 def restore_backup(upload: UploadFile) -> tuple[str, int]:
     logger.debug(f"restore start: filename={upload.filename}")
     prepared = _prepare_uploaded_backup(upload)
+    snapshot_file: str | None = None
+    keep_snapshot = False
     try:
         logger.debug(f"backup prepared: dump={prepared.dump_path}")
         table_of_contents = _probe_dump(prepared.dump_path)
@@ -601,23 +619,27 @@ def restore_backup(upload: UploadFile) -> tuple[str, int]:
         # An older backup is restored and then migrated in two transactions (psql
         # cannot run the Python migrations), so keep the current database to put
         # back if a migration fails: the app must never run on a half-migrated
-        # schema (#974).
+        # schema (#974). It is also saved as an ordinary encrypted backup, so that
+        # if putting it back fails too it survives this request and can be
+        # restored from the Backups page (#1079).
         snapshot_path: Path | None = None
+        prefix_sql = ""
         if compatibility == "requires_migration":
             snapshot_path = Path(prepared.temp_dir.name) / "before_restore.dump"
             try:
-                _run_pg_dump(snapshot_path)
-            except HTTPException as err:
+                snapshot_file = create_backup_archive(PRE_RESTORE_BACKUP_PREFIX, dump_path=snapshot_path)["file_name"]
+            except Exception as err:
+                detail = getattr(err, "detail", None) or str(err) or type(err).__name__
                 raise HTTPException(
                     status_code=500,
-                    detail=f"Restore cancelled, nothing was changed: could not save the current data first. {err.detail}",
+                    detail=f"Restore cancelled, nothing was changed: could not save the current data first. {detail}",
                 ) from err
-
-        _apply_dump(
-            prepared.dump_path,
-            env,
-            _post_backup_table_drops(table_of_contents) if compatibility == "requires_migration" else "",
-        )
+            prefix_sql = _post_backup_table_drops(table_of_contents)
+        elif compatibility == "database_behind":
+            # The database is on an older schema than the backup: drop every app
+            # table first, as the rollback below does.
+            prefix_sql = _app_table_drops(keep=set())
+        _apply_dump(prepared.dump_path, env, prefix_sql)
 
         # Discard all pooled connections — they point to the pre-restore state.
         # SQLAlchemy will open fresh connections on the next request.
@@ -635,41 +657,46 @@ def restore_backup(upload: UploadFile) -> tuple[str, int]:
             logger.error(f"restore migration failed: {failure}")
             if snapshot_path is None:
                 raise HTTPException(status_code=500, detail=f"Restore failed: {failure}") from err
-            _roll_back_restore(snapshot_path, env, failure)
+            try:
+                _roll_back_restore(snapshot_path, env)
+            except Exception as rollback_err:
+                keep_snapshot = True
+                rollback_detail = getattr(rollback_err, "detail", None) or str(rollback_err) or type(rollback_err).__name__
+                logger.error(f"restore rollback failed: {rollback_detail}; pre-restore data kept in {snapshot_file}")
+                raise HTTPException(
+                    status_code=500,
+                    detail=(
+                        f"Restore failed: {failure}. Putting back the data from before the restore also "
+                        f"failed ({rollback_detail}), so the database holds the backup's data on an "
+                        f"older schema. Your data from before the restore is saved as the backup "
+                        f"{snapshot_file} on the Backups page: download it, then restore it there to "
+                        "put that data back. Do this before restarting the app, which retries the "
+                        "migrations on start and may clear the server's backups."
+                    ),
+                ) from failure
+            logger.debug("restore rolled back to the pre-restore snapshot")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Restore failed and was rolled back, your data is unchanged: {failure}.",
+            ) from failure
         logger.debug(f"restore completed: compatibility={compatibility}, applied_migrations={applied_count}")
         return compatibility, applied_count
     finally:
         logger.debug("cleanup temp dir and dispose engine")
         prepared.temp_dir.cleanup()
+        if snapshot_file and not keep_snapshot:
+            (BACKUP_DIR / snapshot_file).unlink(missing_ok=True)
         # On both success and failure, force pool reset so new requests reconnect cleanly.
         _dispose_engines()
 
 
-def _roll_back_restore(snapshot_path: Path, env: dict[str, str], failure: MigrationFailed) -> NoReturn:
-    """Put back the database as it was before the restore, then raise ``failure`` as an HTTP error."""
-    try:
-        _dispose_engines()
-        _terminate_other_db_sessions(env)
-        _dispose_engines()
-        # Drop every app table first, so constraints only the backup's older
-        # schema had cannot block the snapshot's own DROP commands. This only
-        # drops tables the current models define: a table that exists only in
-        # the backup's older schema stays in the database after the rollback.
-        _apply_dump(snapshot_path, env, _app_table_drops(keep=set()))
-    except Exception as err:
-        rollback_detail = getattr(err, "detail", None) or str(err) or type(err).__name__
-        logger.error(f"restore rollback failed: {rollback_detail}")
-        raise HTTPException(
-            status_code=500,
-            detail=(
-                f"Restore failed: {failure}. Putting back the data from before the restore also "
-                f"failed ({rollback_detail}), so the database holds the backup's data on an "
-                "older schema. Restore another (newer) backup, or fix the data and restart the "
-                "app to retry the migrations."
-            ),
-        ) from failure
-    logger.debug("restore rolled back to the pre-restore snapshot")
-    raise HTTPException(
-        status_code=500,
-        detail=f"Restore failed and was rolled back, your data is unchanged: {failure}.",
-    ) from failure
+def _roll_back_restore(snapshot_path: Path, env: dict[str, str]) -> None:
+    """Put back the database as it was before the restore."""
+    _dispose_engines()
+    _terminate_other_db_sessions(env)
+    _dispose_engines()
+    # Drop every app table first, so constraints only the backup's older
+    # schema had cannot block the snapshot's own DROP commands. This only
+    # drops tables the current models define: a table that exists only in
+    # the backup's older schema stays in the database after the rollback.
+    _apply_dump(snapshot_path, env, _app_table_drops(keep=set()))

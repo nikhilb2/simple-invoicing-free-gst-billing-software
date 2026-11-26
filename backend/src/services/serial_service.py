@@ -19,6 +19,7 @@ from fastapi import HTTPException
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
+from src.models.inventory import Inventory
 from src.models.invoice import Invoice
 from src.models.product import Product
 from src.models.product_serial import (
@@ -29,6 +30,7 @@ from src.models.product_serial import (
 )
 from src.schemas.invoice import InvoiceCreate
 from src.services.company_access import company_scope
+from src.services.inventory_service import InventoryManager
 
 logger = logging.getLogger(__name__)
 
@@ -191,6 +193,7 @@ class SerialManager:
         voucher_type: str,
         company_id: int | None,
         invoice_id: int | None,
+        unserialed: set[int] | frozenset[int] = frozenset(),
     ) -> None:
         """Reject any serial problem on *validated_items* before anything is written.
 
@@ -198,6 +201,10 @@ class SerialManager:
         sequence returned by :meth:`InvoiceProcessor.validate_items`.  Rows
         already attached to *invoice_id* are treated as belonging to this
         invoice, so re-saving an edit does not collide with itself.
+
+        A product in *unserialed* (see :meth:`unserialed_products`) was billed on
+        the invoice being edited before tracking was turned on: its line carries
+        no serial numbers and takes none.
         """
         seen: dict[str, str] = {}
         lines: list[tuple[Product, list[str]]] = []
@@ -205,6 +212,16 @@ class SerialManager:
 
         for item_schema, product, quantity_value in validated_items:
             codes = self._codes_for(item_schema)
+
+            if product.track_serials and product.id in unserialed:
+                if codes:
+                    raise self.untracked_line_error(
+                        product.name,
+                        "was billed on this invoice",
+                        "save the invoice",
+                        codes_given=True,
+                    )
+                continue
 
             if not product.track_serials:
                 if codes:
@@ -441,6 +458,9 @@ class SerialManager:
             for code in self._codes_for(item):
                 incoming.setdefault(item.product_id, {})[code.upper()] = code
 
+        self._require_unserialed_edit(invoice, payload, company_id=company_id)
+        unserialed = self.unserialed_products(invoice)
+
         billed = {item.product_id for item in payload.items}
         diffs: list[tuple[int, list[ProductSerial], list[str]]] = []
         for product_id in set(existing) | set(incoming):
@@ -450,8 +470,11 @@ class SerialManager:
             # A product whose flag was switched off can carry no serials on the
             # edit, so the units its line went out with stay put while the
             # invoice still bills it — the history of what shipped stays
-            # readable. Once the edit drops it, they go back (#1068).
-            if not product.track_serials and product_id in billed:
+            # readable. Once the edit drops it, they go back (#1068). A line
+            # billed before the flag was switched on has no serials to move.
+            if product_id in billed and (
+                not product.track_serials or product_id in unserialed
+            ):
                 continue
             current = existing.get(product_id, {})
             wanted = incoming.get(product_id, {})
@@ -498,6 +521,13 @@ class SerialManager:
             invoice.id,
             invoice.voucher_type,
         )
+        if invoice.voucher_type == "purchase":
+            self._require_unserialed_lines(
+                invoice,
+                company_id=invoice.company_id,
+                how="came in on this purchase",
+                action="cancel it",
+            )
         rows = self._invoice_rows(invoice, include_void=False)
         if not rows:
             return
@@ -561,12 +591,22 @@ class SerialManager:
                 self.db.flush()
             return
 
+        self._require_unserialed_lines(
+            invoice,
+            company_id=company_id,
+            how="was sold on this invoice",
+            action="restore this invoice",
+        )
+        unserialed = self.unserialed_products(invoice)
         available: dict[int, list[ProductSerial]] = {}
         for row in self._invoice_rows(invoice, include_void=False):
             if row.status == STATUS_IN_STOCK:
                 available.setdefault(row.product_id, []).append(row)
 
         for item in invoice.items:
+            if item.product_id in unserialed:
+                # Sold before tracking was switched on: no serial went out (#1068).
+                continue
             product = self._get_product(
                 item.product_id, company_id, f"restoring invoice {invoice.id}"
             )
@@ -593,6 +633,159 @@ class SerialManager:
                 row.status = STATUS_SOLD
                 row.sales_invoice_id = invoice.id
         self.db.flush()
+
+    # ------------------------------------------------------------------
+    # Lines saved before tracking was switched on (#1068)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def unserialed_products(invoice: Invoice) -> set[int]:
+        """Products whose lines on *invoice* were saved carrying no serial numbers.
+
+        Read from the lines (``serials_applied``), not the product: "Track
+        serials" may have been switched on since. Undoing such a line moves no
+        serial row. A line with no record is left to the old rule.
+        """
+        carried = {item.product_id for item in invoice.items if item.serials_applied}
+        return {
+            item.product_id for item in invoice.items if item.serials_applied is False
+        } - carried
+
+    def linked_products(self, invoice: Invoice) -> set[int]:
+        """Products with live serial rows on *invoice*: the lines that carry serials."""
+        rows = (
+            self.db.query(ProductSerial.product_id)
+            .filter(
+                or_(
+                    ProductSerial.purchase_invoice_id == invoice.id,
+                    ProductSerial.sales_invoice_id == invoice.id,
+                ),
+                ProductSerial.status != STATUS_VOID,
+            )
+            .distinct()
+        )
+        return {product_id for (product_id,) in rows}
+
+    @staticmethod
+    def untracked_line_error(
+        name: str, how: str, action: str, *, codes_given: bool = False
+    ) -> HTTPException:
+        """Why a line saved before tracking was switched on cannot be undone as asked.
+
+        The way out is to do it untracked: with tracking off nothing needs a
+        serial, and switching it back on reconciles the serials with the shelf
+        (#918, #925).
+        """
+        way_out = (
+            f"serial tracking for {name}, {action}, then turn it back on and give "
+            "the serial numbers of the units on the shelf."
+        )
+        if codes_given:
+            reason = f"so it takes no serial numbers here. Leave them out, or turn off {way_out}"
+        else:
+            reason = f"so there is no record of which serial numbers leave the shelf. Turn off {way_out}"
+        return HTTPException(
+            status_code=400,
+            detail=f"{name} {how} before serial tracking was turned on, {reason}",
+        )
+
+    def require_unserialed_stock(
+        self,
+        product: Product,
+        quantity: Decimal,
+        *,
+        company_id: int | None,
+        how: str,
+        action: str,
+    ) -> None:
+        """Raise 400 unless *quantity* units of *product* on the shelf have no serial.
+
+        A line saved before tracking was switched on takes units off the shelf
+        without a serial row going with them. That is sound only for units no
+        serial covers; any more and the in-stock serials would outnumber the
+        shelf, offering units that are gone (#925).
+        """
+        if quantity <= 0:
+            return
+        # The app's sessions don't autoflush (src/db/session.py), and a note's
+        # earlier lines change stock without flushing, so send those changes
+        # before reading the shelf or each line would see the stock from before
+        # the note.
+        self.db.flush()
+        query = self.db.query(Inventory.quantity).filter(Inventory.product_id == product.id)
+        if company_id is not None:
+            query = query.filter(company_scope(Inventory.company_id, company_id))
+        stock = Decimal(str(query.scalar() or 0))
+        spare = stock - self.count_in_stock(product.id, company_id=company_id)
+        if spare >= quantity:
+            return
+        logger.warning(
+            "serials: refusing to take %s unserialed unit(s) of product_id=%s (spare=%s)",
+            quantity,
+            product.id,
+            spare,
+        )
+        raise self.untracked_line_error(product.name, how, action)
+
+    def _require_unserialed_lines(
+        self, invoice: Invoice, *, company_id: int | None, how: str, action: str
+    ) -> None:
+        """Check the units the invoice's unserialed lines take off the shelf when undone.
+
+        Called where undoing the invoice takes stock out: restoring a sale and
+        cancelling a purchase.
+        """
+        for product_id in self.unserialed_products(invoice):
+            product = self._get_product(product_id, company_id, f"undoing invoice {invoice.id}")
+            if not product.track_serials:
+                continue
+            quantity = sum(
+                (
+                    Decimal(str(item.quantity))
+                    for item in invoice.items
+                    if item.product_id == product_id
+                    and InventoryManager.line_moved_stock(item, product)
+                ),
+                Decimal("0"),
+            )
+            self.require_unserialed_stock(
+                product, quantity, company_id=company_id, how=how, action=action
+            )
+
+    def _require_unserialed_edit(
+        self, invoice: Invoice, payload: InvoiceCreate, *, company_id: int | None
+    ) -> None:
+        """Check the units an edit takes off the shelf for a line billed untracked.
+
+        The edit keeps the product's stock rule (#905), so its stock moves by the
+        change in quantity; only a move off the shelf needs units with no serial.
+        """
+        for product_id in self.unserialed_products(invoice):
+            product = self._get_product(product_id, company_id, f"editing invoice {invoice.id}")
+            lines = [item for item in invoice.items if item.product_id == product_id]
+            if not product.track_serials or not any(
+                InventoryManager.line_moved_stock(item, product) for item in lines
+            ):
+                continue
+            before = sum(
+                (InventoryManager.effect_for_voucher_type(item.quantity, invoice.voucher_type) for item in lines),
+                Decimal("0"),
+            )
+            after = sum(
+                (
+                    InventoryManager.effect_for_voucher_type(item.quantity, payload.voucher_type)
+                    for item in payload.items
+                    if item.product_id == product_id
+                ),
+                Decimal("0"),
+            )
+            self.require_unserialed_stock(
+                product,
+                before - after,
+                company_id=company_id,
+                how="was billed on this invoice",
+                action="save the invoice",
+            )
 
     # ------------------------------------------------------------------
     # Read paths

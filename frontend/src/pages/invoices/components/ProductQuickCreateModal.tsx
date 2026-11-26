@@ -3,6 +3,7 @@ import ModalCloseButton from '../../../components/ModalCloseButton';
 import { useQueryClient } from '@tanstack/react-query';
 import api, { getApiErrorMessage } from '../../../api/client';
 import { useEscapeClose } from '../../../hooks/useEscapeClose';
+import { busyClass, createSubmitGuard, isConnectionOrServerError, SAVE_FAILED_MESSAGE } from '../../../utils/saveFeedback';
 import { invoiceQueryKeys } from '../../../features/invoices/queryKeys';
 import { useInvoiceComposerStore } from '../../../store/useInvoiceComposerStore';
 import type { Product } from '../../../types/api';
@@ -65,6 +66,11 @@ export default function ProductQuickCreateModal({ countsStockByDefault }: Produc
   const setCreatedProduct = useInvoiceComposerStore((state) => state.setCreatedProduct);
   const [productForm, setProductForm] = useState<ProductFormState>(() => createInitialProductForm(countsStockByDefault));
   const [productSubmitting, setProductSubmitting] = useState(false);
+  // Claimed before the first await, so a second tap cannot create a second
+  // product. Released when the sheet opens again, never on the success path.
+  const [submitGuard] = useState(createSubmitGuard);
+  // A network failure or a 5xx, shown under Save with the typed values kept.
+  const [saveFailed, setSaveFailed] = useState(false);
 
   useEffect(() => {
     if (showProductCreateModal && productCreateName) {
@@ -76,6 +82,8 @@ export default function ProductQuickCreateModal({ countsStockByDefault }: Produc
      box under the user's hand. */
   useEffect(() => {
     if (showProductCreateModal) {
+      submitGuard.release();
+      setSaveFailed(false);
       setProductForm((form) => ({ ...form, maintain_inventory: countsStockByDefault || form.track_serials }));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -105,6 +113,8 @@ export default function ProductQuickCreateModal({ countsStockByDefault }: Produc
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (submitGuard.busy) return;
+    setSaveFailed(false);
 
     const hsnError = hsnProblem(productForm.hsn_sac);
     if (hsnError) {
@@ -116,6 +126,7 @@ export default function ProductQuickCreateModal({ countsStockByDefault }: Produc
       return;
     }
 
+    if (!submitGuard.claim()) return;
     try {
       setProductSubmitting(true);
       setFeedbackError('');
@@ -142,7 +153,12 @@ export default function ProductQuickCreateModal({ countsStockByDefault }: Produc
       await queryClient.invalidateQueries({ queryKey: invoiceQueryKeys.all });
       await queryClient.invalidateQueries({ queryKey: invoiceQueryKeys.products });
     } catch (err) {
-      setFeedbackError(plainProductError(getApiErrorMessage(err, 'Unable to create product')));
+      submitGuard.release();
+      if (isConnectionOrServerError(err)) {
+        setSaveFailed(true);
+      } else {
+        setFeedbackError(plainProductError(getApiErrorMessage(err, 'Unable to create product')));
+      }
     } finally {
       setProductSubmitting(false);
     }
@@ -167,18 +183,25 @@ export default function ProductQuickCreateModal({ countsStockByDefault }: Produc
               type="submit"
               form="product-quick-create-form"
               data-tour="save-product"
-              className="button button--primary"
+              className={`button button--primary${busyClass(productSubmitting)}`}
               disabled={productSubmitting}
+              aria-busy={productSubmitting || undefined}
+              aria-describedby={saveFailed ? 'product-quick-create-save-failed' : undefined}
               title="Save product"
               aria-label="Save product"
             >
-              {productSubmitting ? 'Saving...' : 'Save'}
+              {productSubmitting ? 'Saving…' : 'Save'}
             </button>
             <ModalCloseButton onClick={closeProductCreateModal} label="Close create product" disabled={productSubmitting} />
           </div>
         </div>
+        {saveFailed ? (
+          <p className="field-error save-failed" id="product-quick-create-save-failed" role="alert">{SAVE_FAILED_MESSAGE}</p>
+        ) : null}
 
         <form id="product-quick-create-form" className="stack" onSubmit={handleSubmit}>
+          {/* Nothing can be changed while the save is on its way. */}
+          <fieldset className="fieldset-contents" disabled={productSubmitting}>
           <div className="field">
             <label htmlFor="modal-product-name">Product name <RequiredMark /></label>
             <input
@@ -338,6 +361,7 @@ export default function ProductQuickCreateModal({ countsStockByDefault }: Produc
             </label>
             <SerialTrackingHint tracked={productForm.track_serials} />
           </div>
+          </fieldset>
         </form>
       </div>
     </div>

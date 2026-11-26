@@ -1,14 +1,17 @@
 import { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
 import { Check, X } from 'lucide-react';
 import api from '../api/client';
 import { canStartTour, INVOICE_PATH } from '../features/firstInvoiceTour/tourSteps';
 import { useAuthStore } from '../store/useAuthStore';
 import { useFirstInvoiceTourStore } from '../store/useFirstInvoiceTourStore';
-import type { CompanyAccount, DashboardMetrics, PaginatedLedgers } from '../types/api';
+import type { CompanyAccount, CompanyProfile, DashboardMetrics, PaginatedLedgers } from '../types/api';
+import { COMPANY_ADDRESS_PATH, hasCompanyAddress } from '../utils/companySetup';
 import {
   activeCompanyId,
   getStartedStatus,
+  getStartedTitle,
   isGetStartedComplete,
   readGetStartedDismissed,
   shouldRunGetStarted,
@@ -27,6 +30,7 @@ const STEPS: Array<{
   action: string;
   optional?: boolean;
 }> = [
+  { id: 'address', title: 'Add your business address', copy: 'Printed on every bill. Needed for e-way bills.', to: COMPANY_ADDRESS_PATH, action: 'Add address' },
   { id: 'customer', title: 'Add a customer', copy: 'Who you sell to.', to: '/invoices?add=customer', action: 'Add customer' },
   {
     id: 'product',
@@ -62,7 +66,7 @@ export function GetStartedCard({ status, onDismiss, onStartTour }: Props) {
       <div className="panel__header">
         <div>
           <p className="eyebrow">Get started</p>
-          <h2 className="nav-panel__title" id="get-started-title">Set up your first invoice</h2>
+          <h2 className="nav-panel__title" id="get-started-title">{getStartedTitle(status)}</h2>
         </div>
         <button
           type="button"
@@ -112,14 +116,19 @@ export function GetStartedCard({ status, onDismiss, onStartTour }: Props) {
 
 /**
  * Looks up what the dashboard metrics cannot say (customers, bank accounts) and
- * only while the card can still appear. Companies that already have invoices, or
- * dismissed it, make no extra requests.
+ * only while the card can still appear. The company profile shares the sidebar's
+ * cached query. Dismissed or fully configured companies make no extra lookups.
  */
 export default function GetStartedChecklist({ metrics }: { metrics: DashboardMetrics | null }) {
   const [companyId] = useState(activeCompanyId);
   const [dismissed, setDismissed] = useState(() => readGetStartedDismissed(companyId));
   const [facts, setFacts] = useState<GetStartedFacts | null>(null);
-  const run = shouldRunGetStarted(metrics, dismissed);
+  const companyQuery = useQuery({
+    queryKey: ['company-setup-required'],
+    queryFn: async () => (await api.get<CompanyProfile>('/company/')).data,
+    retry: false,
+  });
+  const run = shouldRunGetStarted(metrics, dismissed, companyQuery.isSuccess ? hasCompanyAddress(companyQuery.data) : null);
   const companyRole = useAuthStore((state) => state.companyRole);
   const startTour = useFirstInvoiceTourStore((state) => state.start);
   const navigate = useNavigate();
@@ -144,7 +153,7 @@ export default function GetStartedChecklist({ metrics }: { metrics: DashboardMet
 
   return (
     <GetStartedCard
-      status={getStartedStatus(metrics, facts)}
+      status={getStartedStatus(metrics, { ...facts, companyAddress: companyQuery.data?.address })}
       onStartTour={
         canStartTour(companyRole)
           ? () => {

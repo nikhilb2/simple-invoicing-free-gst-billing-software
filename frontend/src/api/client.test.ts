@@ -1,7 +1,8 @@
 import { AxiosError, type AxiosResponse, type InternalAxiosRequestConfig } from 'axios';
 import axios from 'axios';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import api, { getApiErrorDetails, getApiErrorMessage, getBlobErrorMessage } from './client';
+
+import api, { getApiErrorDetails, getApiErrorMessage, getBlobErrorMessage, setSessionEndedHandler } from './client';
 
 /* Node environment, no DOM: storage is an in-memory stub and the WebView bridge
    a stubbed window. The API's transport is replaced with an adapter that only
@@ -10,6 +11,9 @@ import api, { getApiErrorDetails, getApiErrorMessage, getBlobErrorMessage } from
 
 let store: Record<string, string> = {};
 const postMessage = vi.fn();
+const navigateToLogin = vi.fn();
+const storeLogout = vi.fn();
+const session = { token: 'old-access' as string | null, email: 'owner@example.com' as string | null };
 
 function sentMessages() {
   return postMessage.mock.calls.map(([data]) => JSON.parse(data as string));
@@ -32,7 +36,16 @@ beforeEach(() => {
     setItem: (key: string, value: string) => { store[key] = String(value); },
     removeItem: (key: string) => { delete store[key]; },
   });
-  vi.stubGlobal('window', { ReactNativeWebView: { postMessage } });
+  vi.stubGlobal('window', {
+    ReactNativeWebView: { postMessage },
+    location: { pathname: '/invoices-view', search: '?page=2', assign: vi.fn() },
+  });
+  session.token = 'old-access';
+  setSessionEndedHandler({
+    getSession: () => (session.token ? { email: session.email } : null),
+    logout: storeLogout,
+    navigate: navigateToLogin,
+  });
 
   api.defaults.adapter = async (config) => {
     if (config.headers.Authorization === 'Bearer new-access') {
@@ -46,6 +59,9 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   postMessage.mockReset();
+  storeLogout.mockReset();
+  navigateToLogin.mockReset();
+  setSessionEndedHandler(null);
 });
 
 describe('refresh interceptor and the native bridge', () => {
@@ -80,14 +96,31 @@ describe('refresh interceptor and the native bridge', () => {
     ['a timeout', new AxiosError('timeout exceeded', AxiosError.ECONNABORTED)],
     ['a 500', refreshFailure(500)],
     ['a 503', refreshFailure(503)],
-  ])('clears the tokens but does not post logout when the refresh fails with %s', async (_, failure) => {
+  ])('does not sign anyone out when the refresh fails with %s', async (_, failure) => {
     vi.spyOn(axios, 'post').mockRejectedValue(failure);
 
     await expect(api.get('/anything')).rejects.toBeInstanceOf(AxiosError);
 
-    // Web behaviour is unchanged; the app keeps its pair and re-injects it.
-    expect(store).toEqual({});
+    // Says nothing about the session: the pair stays for the next attempt.
+    expect(store).toEqual({ token: 'old-access', refresh_token: 'old-refresh' });
     expect(postMessage).not.toHaveBeenCalled();
+    expect(storeLogout).not.toHaveBeenCalled();
+    expect(navigateToLogin).not.toHaveBeenCalled();
+  });
+
+  it('does not sign anyone out when a request fails with a 5xx or a network error', async () => {
+    api.defaults.adapter = async (config) => {
+      throw new AxiosError('Server error', 'ERR_BAD_RESPONSE', config, null, respond(config, 503));
+    };
+    await expect(api.get('/anything')).rejects.toBeInstanceOf(AxiosError);
+    api.defaults.adapter = async () => {
+      throw new AxiosError('Network Error', AxiosError.ERR_NETWORK);
+    };
+    await expect(api.get('/anything')).rejects.toBeInstanceOf(AxiosError);
+
+    expect(store).toEqual({ token: 'old-access', refresh_token: 'old-refresh' });
+    expect(storeLogout).not.toHaveBeenCalled();
+    expect(navigateToLogin).not.toHaveBeenCalled();
   });
 
   it('does not post again for a 401 once the session is already gone', async () => {
@@ -98,6 +131,52 @@ describe('refresh interceptor and the native bridge', () => {
 
     expect(refresh).not.toHaveBeenCalled();
     expect(postMessage).not.toHaveBeenCalled();
+  });
+});
+
+describe('a session that cannot be renewed', () => {
+  const loginPath = '/login?next=%2Finvoices-view%3Fpage%3D2&reason=session_expired';
+
+  it('clears the auth store and goes to sign-in when the refresh token is rejected', async () => {
+    vi.spyOn(axios, 'post').mockRejectedValue(refreshFailure(401));
+
+    const results = await Promise.allSettled([api.get('/a'), api.get('/b')]);
+
+    expect(results.map((r) => r.status)).toEqual(['rejected', 'rejected']);
+    // One logout and one redirect for however many requests were waiting, and
+    // neither tells the server (the session is already dead).
+    expect(storeLogout).toHaveBeenCalledTimes(1);
+    expect(storeLogout).toHaveBeenCalledWith({ remote: false, notifyNative: false, sessionEnded: { email: 'owner@example.com' } });
+    expect(navigateToLogin).toHaveBeenCalledTimes(1);
+    expect(navigateToLogin).toHaveBeenCalledWith(loginPath, { email: 'owner@example.com' });
+    expect(sentMessages()).toEqual([{ type: 'logout' }]);
+  });
+
+  it('does the same when there is no refresh token', async () => {
+    store = { token: 'old-access' };
+
+    await expect(api.get('/anything')).rejects.toBeInstanceOf(AxiosError);
+
+    expect(storeLogout).toHaveBeenCalledTimes(1);
+    expect(navigateToLogin).toHaveBeenCalledWith(loginPath, { email: 'owner@example.com' });
+    expect(store).toEqual({});
+    expect(postMessage).not.toHaveBeenCalled();
+  });
+
+  it('does nothing more once the store has no session, so a late 401 is not a second sign-out', async () => {
+    store = {};
+    session.token = null;
+
+    await expect(api.get('/anything')).rejects.toBeInstanceOf(AxiosError);
+
+    expect(storeLogout).not.toHaveBeenCalled();
+    expect(navigateToLogin).not.toHaveBeenCalled();
+  });
+
+  it('never puts the email in the sign-in URL', async () => {
+    store = { token: 'old-access' };
+    await expect(api.get('/anything')).rejects.toBeInstanceOf(AxiosError);
+    expect(navigateToLogin.mock.calls[0][0]).not.toContain('owner');
   });
 });
 

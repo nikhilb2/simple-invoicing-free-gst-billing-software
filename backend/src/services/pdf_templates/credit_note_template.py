@@ -21,7 +21,7 @@ from src.models.invoice import Invoice
 from src.models.product import Product
 from src.services.gst_tax_service import to_india_date
 
-from .builders import _amount_in_words_indian, _e, _fmt_currency, _fmt_rate, _pdf_display_quantity, document_paper_css
+from .builders import _address_html, _amount_in_words_indian, _e, _fmt_currency, _fmt_rate, _pdf_display_quantity, document_paper_css
 from .purchase_template import _extract_pan_from_gstin, _is_interstate_supply
 
 CREDIT_NOTE_TYPE_LABELS = {
@@ -394,7 +394,7 @@ def _build_credit_note_html(
       <p class="eyebrow">Issued by</p>
       {company_header_html}
       <h3>{_e(seller_name) or 'Company not set'}</h3>
-      <p>{_e(seller_address) or 'Address not provided'}</p>
+      {_address_html(seller_address)}
       <p>{_join_parts(_gst_parts(seller_gst, seller_phone))}</p>
       <p>{_join_parts([f"Email: {_e(seller_email)}" if seller_email else "", f"Web: {_e(seller_website)}" if seller_website else ""])}</p>
     </div>
@@ -410,7 +410,7 @@ def _build_credit_note_html(
   <div class="sheet__party">
     <p class="eyebrow">Issued to</p>
     <h4>{_e(party_name) or 'Unknown ledger'}</h4>
-    <p>{_e(party_address) or 'Address not provided'}</p>
+    {_address_html(party_address)}
     <p>{_join_parts(_gst_parts(party_gst, party_phone))}</p>
   </div>
 

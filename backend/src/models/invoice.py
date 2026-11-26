@@ -150,5 +150,10 @@ class InvoiceItem(Base):
     # even if "Maintain inventory" was switched since (#905). NULL means unknown
     # and falls back to the product's current setting.
     stock_applied = Column(Boolean, nullable=True)
+    # Whether this line carried serial numbers when it was written: its units are
+    # the serial rows linked to the invoice. A line saved while the product was
+    # untracked has none, so undoing it moves no serial even if "Track serials"
+    # was switched on since (#1068). NULL means unknown and keeps the old rule.
+    serials_applied = Column(Boolean, nullable=True)
 
     invoice = relationship("Invoice", back_populates="items")

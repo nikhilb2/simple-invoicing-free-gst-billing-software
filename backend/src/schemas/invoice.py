@@ -148,6 +148,10 @@ class InvoiceItemOut(BaseModel):
     discount_type: str | None = None
     discount_value: float | None = None
     serial_numbers: list[str] = Field(default_factory=list)
+    # Whether the line carried serial numbers when it was saved. False: it was
+    # billed before "Track serials" was on and takes none on an edit. None: no
+    # record, so the product's current setting decides (#1104).
+    serials_applied: bool | None = None
 
     class Config:
         from_attributes = True

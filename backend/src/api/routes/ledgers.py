@@ -2725,6 +2725,12 @@ def _gstr1_cancelled_numbers(db: Session, from_date: date, to_date: date, compan
     return [number for (number,) in query.all() if number]
 
 
+def _table13_cancelled(numbers: list[str]) -> list[str]:
+    """The cancelled numbers Table 13 reports. GSTR-1 can't take the others, so the
+    export leaves them out (validate warns about each), and the summary must too."""
+    return [number for number in numbers if is_gstr1_document_number(number)]
+
+
 @router.get("/tax-ledger/gstr1/validate", response_model=Gstr1ValidationResult)
 def gstr1_validate(
     from_date: date = Query(...),
@@ -3022,7 +3028,10 @@ def gstr1_summary(
         total_invoices=total_sales,
         total_credit_notes=len(issued_credit_notes),
         total_debit_notes=0,
-        cancelled_invoices=len(_gstr1_cancelled_numbers(db, from_date, to_date, company_id)),
+        cancelled_invoices=len(_table13_cancelled(_gstr1_cancelled_numbers(db, from_date, to_date, company_id))),
+        cancelled_credit_notes=len(
+            _table13_cancelled(_gstr1_cancelled_credit_note_numbers(db, from_date, to_date, company_id))
+        ),
     )
 
     return Gstr1Summary(
@@ -3251,10 +3260,7 @@ def gstr1_export_json(
     ]
     # A cancelled invoice keeps its number, so it still counts as issued; only
     # net_issue leaves it out.
-    cancelled_numbers = [
-        number for number in _gstr1_cancelled_numbers(db, from_date, to_date, company_id)
-        if is_gstr1_document_number(number)
-    ]
+    cancelled_numbers = _table13_cancelled(_gstr1_cancelled_numbers(db, from_date, to_date, company_id))
     inv_ranges = _doc_ranges(inv_numbers + cancelled_numbers, frozenset(cancelled_numbers))
     if inv_ranges:  # 1 = Invoices for outward supply
         doc_det.append({"doc_num": 1, "docs": inv_ranges})
@@ -3264,10 +3270,9 @@ def gstr1_export_json(
     # filtered to outward, so notes received from suppliers — which number out
     # of their own DN series — never reach this range. Like a cancelled invoice,
     # a cancelled note keeps its number and counts as issued (#800).
-    cancelled_note_numbers = [
-        number for number in _gstr1_cancelled_credit_note_numbers(db, from_date, to_date, company_id)
-        if is_gstr1_document_number(number)
-    ]
+    cancelled_note_numbers = _table13_cancelled(
+        _gstr1_cancelled_credit_note_numbers(db, from_date, to_date, company_id)
+    )
     cn_ranges = _doc_ranges(
         [cn.credit_note_number or f"CN-{cn.id}" for cn in issued_credit_notes] + cancelled_note_numbers,
         frozenset(cancelled_note_numbers),

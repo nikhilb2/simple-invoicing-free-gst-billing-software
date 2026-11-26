@@ -22,12 +22,16 @@ function decodeEmailFromToken(token: string | null) {
 type AuthState = {
   token: string | null;
   userEmail: string | null;
+  /** Set by logout() when the server ended the session; cleared by the next sign-in. */
+  sessionEnded: { email: string | null } | null;
   userRole: UserProfile['role'] | null;
   /** Role in the active company; null until /auth/me answers or without one. */
   companyRole: UserProfile['role'] | null;
   canManagePlatform: boolean;
   /** False from page load until /auth/me has answered (or failed). Role guards must wait for it. */
   profileLoaded: boolean;
+  /** The account's name from /auth/me (the Google name, or the one confirmed at email sign-up). Null until it answers. */
+  fullName: string | null;
   /** Undefined until /auth/me answers, null if the user has not answered the walkthrough. */
   firstInvoiceTourStatus: UserProfile['first_invoice_tour_status'] | undefined;
   setFirstInvoiceTourStatus: (status: UserProfile['first_invoice_tour_status']) => void;
@@ -37,16 +41,30 @@ type AuthState = {
   /** Stores a token pair however it was obtained (password login, OAuth exchange). */
   setSession: (tokens: AuthToken) => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
-  logout: () => void;
+  /**
+   * `remote: false` skips the server's /auth/logout and `notifyNative: false`
+   * skips the app's logout message: both are for a session the server already
+   * rejected (see api/client.ts), where there is nothing to tell either.
+   */
+  logout: (options?: LogoutOptions) => void;
+};
+
+export type LogoutOptions = {
+  remote?: boolean;
+  notifyNative?: boolean;
+  /** Set when the server ended the session; `Protected` then sends the visitor to sign in with a notice. */
+  sessionEnded?: { email: string | null };
 };
 
 export const useAuthStore = create<AuthState>((set, get) => ({
   token: localStorage.getItem('token'),
   userEmail: decodeEmailFromToken(localStorage.getItem('token')),
+  sessionEnded: null,
   userRole: null,
   companyRole: null,
   canManagePlatform: false,
   profileLoaded: false,
+  fullName: null,
   firstInvoiceTourStatus: undefined,
 
   setFirstInvoiceTourStatus: (status) => set({ firstInvoiceTourStatus: status }),
@@ -56,13 +74,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   setUserRole: (role) => {
-    set(role === null ? { userRole: null, companyRole: null, canManagePlatform: false, profileLoaded: false, firstInvoiceTourStatus: undefined } : { userRole: role });
+    set(role === null ? { userRole: null, companyRole: null, canManagePlatform: false, profileLoaded: false, fullName: null, firstInvoiceTourStatus: undefined } : { userRole: role });
   },
 
   hydrateUserRole: async () => {
     const token = get().token;
     if (!token) {
-      set({ userRole: null, companyRole: null, canManagePlatform: false, profileLoaded: false, firstInvoiceTourStatus: undefined });
+      set({ userRole: null, companyRole: null, canManagePlatform: false, profileLoaded: false, fullName: null, firstInvoiceTourStatus: undefined });
       return;
     }
 
@@ -78,10 +96,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         companyRole: res.data.company_role ?? null,
         canManagePlatform: res.data.can_manage_platform ?? false,
         profileLoaded: true,
+        fullName: res.data.full_name ?? null,
         firstInvoiceTourStatus: res.data.first_invoice_tour_status ?? null,
       });
     } catch {
-      set({ userRole: null, companyRole: null, canManagePlatform: false, profileLoaded: true, firstInvoiceTourStatus: undefined });
+      set({ userRole: null, companyRole: null, canManagePlatform: false, profileLoaded: true, fullName: null, firstInvoiceTourStatus: undefined });
     }
   },
 
@@ -93,6 +112,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({
       token: tokens.access_token,
       userEmail: identifiedEmail,
+      sessionEnded: null,
     });
 
     // Login, verified email sign-up and Google sign-up all establish identity
@@ -113,22 +133,26 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     await get().setSession(res.data);
   },
 
-  logout: () => {
+  logout: ({ remote = true, notifyNative = true, sessionEnded = undefined } = {}) => {
     // Fire-and-forget, and before the token is cleared: the endpoint exists so
     // that signing out is counted on the server like every other event. Nothing
     // waits on it and a failure is not worth surfacing -- the sign-out itself is
     // local, and happens either way.
-    void api.post('/auth/logout').catch(() => undefined);
+    if (remote) {
+      void api.post('/auth/logout').catch(() => undefined);
+    }
     resetAnalyticsUser();
     localStorage.removeItem('token');
     localStorage.removeItem('refresh_token');
     localStorage.removeItem('active_company_id');
     // The mobile app holds its own copy of the tokens; this is what sends it
     // back to its native login screen instead of reloading us signed in.
-    postToNative({ type: 'logout' });
+    if (notifyNative) {
+      postToNative({ type: 'logout' });
+    }
     // Cached figures belong to the user who fetched them. The tab is not reloaded,
     // so without this the next login would show them until they went stale.
     queryClient.clear();
-    set({ token: null, userEmail: null, userRole: null, companyRole: null, canManagePlatform: false, profileLoaded: false, firstInvoiceTourStatus: undefined });
+    set({ token: null, userEmail: null, sessionEnded: sessionEnded ?? null, userRole: null, companyRole: null, canManagePlatform: false, profileLoaded: false, fullName: null, firstInvoiceTourStatus: undefined });
   },
 }));

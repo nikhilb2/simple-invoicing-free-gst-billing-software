@@ -9,6 +9,7 @@ from src.core.validation import GST_STATE_NAMES
 from src.services.gst_tax_service import invoice_is_interstate
 
 from .builders import (
+    _address_html,
     _build_invoice_discount_html,
     _build_item_discount_html,
     _amount_in_words_indian,
@@ -199,7 +200,7 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
     <div class="invoice-sheet__billto">
       <p class="eyebrow">Bill to</p>
       <h4>{_e(invoice.ledger_name) or 'Unknown ledger'}</h4>
-      <p>{_e(invoice.ledger_address) or 'Address not provided'}</p>
+      {_address_html(invoice.ledger_address)}
       <p>{billto_details}</p>
     </div>{ship_to_html}
   </div>"""
@@ -577,7 +578,7 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
       <p class="eyebrow">Billed by</p>
       {company_header_html}
       <h3>{_e(invoice.company_name) or 'Company not set'}</h3>
-      <p>{_e(invoice.company_address) or 'Address not provided'}</p>
+      {_address_html(invoice.company_address)}
       <p>{company_details}</p>
       <p>{company_contact}</p>
     </div>

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Settings2 } from 'lucide-react';
 import api, { getApiErrorMessage } from '../../api/client';
 import ModalCloseButton from '../../components/ModalCloseButton';
+import { busyClass, createSubmitGuard, isConnectionOrServerError, SAVE_FAILED_MESSAGE } from '../../utils/saveFeedback';
 import { useEscapeClose } from '../../hooks/useEscapeClose';
 import type { Product, ProductCreate } from '../../types/api';
 import SerialChips from '../invoices/components/SerialChips';
@@ -175,7 +176,12 @@ export default function ProductFormModal({
     source && source.unit && !UNIT_OPTIONS.includes(source.unit) ? source.unit : '',
   );
   const [submitting, setSubmitting] = useState(false);
+  // Claimed before the first await, so a second tap cannot send a second
+  // request. Left claimed on success: the dialog is closing.
+  const [submitGuard] = useState(createSubmitGuard);
   const [error, setError] = useState('');
+  // A network failure or a 5xx, shown under the button with the typed values kept.
+  const [saveFailed, setSaveFailed] = useState(false);
   const [prefs, setPrefs] = useState(readProductFormPrefs);
   const firstFieldRef = useRef<HTMLInputElement | null>(null);
 
@@ -279,7 +285,8 @@ export default function ProductFormModal({
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (submitting) return;
+    if (submitGuard.busy) return;
+    setSaveFailed(false);
 
     const message = validate();
     if (message) {
@@ -297,6 +304,7 @@ export default function ProductFormModal({
       return;
     }
 
+    if (!submitGuard.claim()) return;
     try {
       setSubmitting(true);
       setError('');
@@ -325,18 +333,23 @@ export default function ProductFormModal({
         onSaved(savedMessage(`${payload.name} created.${madeCode}`, created.data));
       }
     } catch (err) {
+      submitGuard.release();
+      setSubmitting(false);
+      if (isConnectionOrServerError(err)) {
+        setSaveFailed(true);
+        return;
+      }
       setError(
         plainProductError(
           getApiErrorMessage(err, isEdit ? 'Unable to update product' : 'Unable to create product'),
         ),
       );
-    } finally {
-      setSubmitting(false);
     }
   }
 
   const titleId = 'product-form-title';
   const errorId = 'product-form-error';
+  const saveFailedId = 'product-form-save-failed';
 
   return (
     <div className="modal-overlay" onClick={onCancel}>
@@ -358,6 +371,8 @@ export default function ProductFormModal({
         </div>
 
         <form className="stack" onSubmit={handleSubmit}>
+          {/* Nothing can be changed while the save is on its way. */}
+          <fieldset className="fieldset-contents" disabled={submitting}>
           <div className="field-grid">
             <label className="field" htmlFor="product-name">
               <span>
@@ -714,6 +729,8 @@ export default function ProductFormModal({
             </div>
           ) : null}
 
+          </fieldset>
+
           {error ? (
             <p className="form-error" id={errorId} role="alert">
               {error}
@@ -726,13 +743,17 @@ export default function ProductFormModal({
             </button>
             <button
               type="submit"
-              className={`button button--primary${submitting ? ' is-busy' : ''}`}
+              className={`button button--primary${busyClass(submitting)}`}
               disabled={submitting}
-              aria-describedby={error ? errorId : undefined}
+              aria-busy={submitting || undefined}
+              aria-describedby={error ? errorId : saveFailed ? saveFailedId : undefined}
             >
               {submitting ? 'Saving…' : isEdit ? 'Save changes' : 'Create product'}
             </button>
           </div>
+          {saveFailed ? (
+            <p className="field-error save-failed" id={saveFailedId} role="alert">{SAVE_FAILED_MESSAGE}</p>
+          ) : null}
         </form>
       </div>
     </div>

@@ -15,9 +15,8 @@ import GitHubStarButton from './GitHubStarButton';
 import InvoiceCancelDialog from './InvoiceCancelDialog';
 import ShortcutCheatSheet from './ShortcutCheatSheet';
 import ThemeToggle from './ThemeToggle';
+import { GUIDE_URL } from './SetupLayout';
 import UpdateAvailableToast from './UpdateAvailableToast';
-
-const GUIDE_URL = 'https://guide.gstbill.in';
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const location = useLocation();

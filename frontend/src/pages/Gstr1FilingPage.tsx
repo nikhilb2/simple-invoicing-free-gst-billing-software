@@ -472,9 +472,10 @@ function Gstr1SummaryView({
               <h2 className="nav-panel__title">Return categories</h2>
             </div>
             <div className="metric-strip">
-              <Metric label="Invoices" value={docs.total_invoices} />
-              <Metric label="Cancelled" value={docs.cancelled_invoices} />
-              <Metric label="Credit notes" value={docs.total_credit_notes} />
+              <Metric label="Active invoices" value={docs.total_invoices} />
+              <Metric label="Cancelled invoices" value={docs.cancelled_invoices} />
+              <Metric label="Active credit notes" value={docs.total_credit_notes} />
+              <Metric label="Cancelled credit notes" value={docs.cancelled_credit_notes} />
               <Metric label="Debit notes" value={docs.total_debit_notes} />
             </div>
           </div>
