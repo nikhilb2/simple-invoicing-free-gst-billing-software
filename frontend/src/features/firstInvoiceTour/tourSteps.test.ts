@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { guideFor, pickTarget, tourOffer, type ComposerFacts, type FieldState, type Guide } from './tourSteps';
+import { COMPOSER_NEXT_STEP, guideFor, mayNeedFirstInvoiceHelp, pickTarget, showComposerNextStep, tourOffer, type ComposerFacts, type FieldState, type Guide } from './tourSteps';
 
 const EMPTY: ComposerFacts = {
   ledgerCount: 0,
@@ -121,5 +121,42 @@ describe('tourOffer', () => {
   test('decides nothing until the account and figures have loaded', () => {
     expect(tourOffer(undefined, 'admin', none)).toBe('none');
     expect(tourOffer(null, 'admin', null)).toBe('none');
+  });
+});
+
+describe('after "Exit walkthrough": the next step on the composer', () => {
+  test('uses the wording from the addendum', () => {
+    expect(COMPOSER_NEXT_STEP).toBe('Next: pick your customer, add an item, then tap Create invoice.');
+  });
+
+  test('only looks for an invoice while the walkthrough is unanswered or skipped', () => {
+    expect(mayNeedFirstInvoiceHelp(null)).toBe(true);
+    expect(mayNeedFirstInvoiceHelp('skipped')).toBe(true);
+    expect(mayNeedFirstInvoiceHelp('completed')).toBe(false);
+    expect(mayNeedFirstInvoiceHelp('not_needed')).toBe(false);
+    expect(mayNeedFirstInvoiceHelp(undefined)).toBe(false);
+  });
+
+  test('shows on a new sales invoice while the company has no invoice and the walkthrough is not running', () => {
+    expect(showComposerNextStep({ tourRunning: false, hasInvoice: false, isNewSalesInvoice: true })).toBe(true);
+  });
+
+  test('hides while the walkthrough runs, so "Show me how" restarts it rather than doubling it', () => {
+    expect(showComposerNextStep({ tourRunning: true, hasInvoice: false, isNewSalesInvoice: true })).toBe(false);
+  });
+
+  test('hides once there is an invoice, or before that is known', () => {
+    expect(showComposerNextStep({ tourRunning: false, hasInvoice: true, isNewSalesInvoice: true })).toBe(false);
+    expect(showComposerNextStep({ tourRunning: false, hasInvoice: null, isNewSalesInvoice: true })).toBe(false);
+  });
+
+  test('hides on a purchase, a quotation or an edit', () => {
+    expect(showComposerNextStep({ tourRunning: false, hasInvoice: false, isNewSalesInvoice: false })).toBe(false);
+  });
+
+  test('the dashboard offer still stays answered after a skip; restarting does not depend on it', () => {
+    const none = { sales: { sales_invoice_count: 0, purchase_invoice_count: 0 } } as Parameters<typeof tourOffer>[2];
+    expect(tourOffer('skipped', 'admin', none)).toBe('none');
+    expect(showComposerNextStep({ tourRunning: false, hasInvoice: false, isNewSalesInvoice: true })).toBe(true);
   });
 });

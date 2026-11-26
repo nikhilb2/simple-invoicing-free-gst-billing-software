@@ -264,6 +264,9 @@ export type TourOffer = 'offer' | 'not_needed' | 'none';
 /**
  * Whether the dashboard should offer the walkthrough.
  *
+ * Only the offer card: once answered it stays answered. Starting the walkthrough
+ * again does not depend on this (see showComposerNextStep and the Get-started card).
+ *
  * `undefined` means /auth/me has not answered, so nothing is decided on it. Staff
  * cannot add products, so they are not offered a tour they could not finish, and
  * nothing is saved for them.
@@ -280,4 +283,40 @@ export function tourOffer(
 
 export function canStartTour(companyRole: UserProfile['role'] | null): boolean {
   return companyRole === 'admin' || companyRole === 'manager';
+}
+
+/**
+ * Whether the active company has any invoice at all (any year, cancelled and
+ * purchases included). The active company's id follows this prefix.
+ */
+export const FIRST_INVOICE_QUERY_KEY = ['first-invoice-tour', 'company-has-invoice'] as const;
+
+/** The composer's line for someone who left the walkthrough before their first invoice (#963). */
+export const COMPOSER_NEXT_STEP = 'Next: pick your customer, add an item, then tap Create invoice.';
+
+/**
+ * Whether it is worth asking the server if the company has an invoice yet, so
+ * the composer can offer the next step. Only while the walkthrough is unanswered
+ * or was skipped: "completed" and "not_needed" both mean an invoice exists, and
+ * `undefined` means /auth/me has not answered.
+ */
+export function mayNeedFirstInvoiceHelp(status: FirstInvoiceTourStatus | null | undefined): boolean {
+  return status === null || status === 'skipped';
+}
+
+/**
+ * Whether the composer shows the next-step line and "Show me how" (#963 §5):
+ * a new sales invoice, for a company with no invoice yet, while the walkthrough
+ * is not running. `hasInvoice` is null until that is known, which shows nothing.
+ */
+export function showComposerNextStep({
+  tourRunning,
+  hasInvoice,
+  isNewSalesInvoice,
+}: {
+  tourRunning: boolean;
+  hasInvoice: boolean | null;
+  isNewSalesInvoice: boolean;
+}): boolean {
+  return !tourRunning && hasInvoice === false && isNewSalesInvoice;
 }

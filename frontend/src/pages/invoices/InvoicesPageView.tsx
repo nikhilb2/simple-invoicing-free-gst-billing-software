@@ -47,6 +47,8 @@ import {
 import { invoiceQueryKeys } from '../../features/invoices/queryKeys';
 import { missingQuantity, readStockShortage } from '../../features/invoices/stockShortage';
 import { useFirstInvoiceTourStore } from '../../store/useFirstInvoiceTourStore';
+import ComposerNextStep from '../../components/ComposerNextStep';
+import { FIRST_INVOICE_QUERY_KEY } from '../../features/firstInvoiceTour/tourSteps';
 import { useInvoiceComposerStore } from '../../store/useInvoiceComposerStore';
 import LedgerQuickCreateModal from './components/LedgerQuickCreateModal';
 import ProductQuickCreateModal from './components/ProductQuickCreateModal';
@@ -1291,6 +1293,8 @@ export default function InvoicesPage() {
         if (voucherType === 'sales') useFirstInvoiceTourStore.getState().invoiceCreated();
       }
 
+      // The company has an invoice now: the composer stops offering the first-invoice next step.
+      queryClient.setQueriesData({ queryKey: FIRST_INVOICE_QUERY_KEY }, true);
       resetInvoiceForm();
       await refreshInvoicesAfterMutation();
     } catch (err) {
@@ -1427,6 +1431,8 @@ export default function InvoicesPage() {
           </div>
 
           <p className="muted-text composer-show-phone composer-billing-line">{billingAsLine(company?.name)}</p>
+
+          <ComposerNextStep isNewSalesInvoice={!isQuote && voucherType === 'sales' && isDefaultEntryTitle} />
 
           <div className="summary-box composer-hide-phone">
             <p className="eyebrow">Billing company</p>

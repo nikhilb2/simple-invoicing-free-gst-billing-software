@@ -9387,6 +9387,17 @@ a.ledger-chip:focus-visible {
   margin: -8px 0 16px;
 }
 
+/* The composer after "Exit walkthrough", before the first invoice (#963):
+   what to do next, and a way to start the walkthrough again. */
+.composer-next-step {
+  display: grid;
+  justify-items: start;
+}
+
+.composer-next-step__line {
+  margin: 0;
+}
+
 /* E-way bill dialog: the company has no address yet. The way out is a real
    button with a 44px target, on its own line under the message on phones. */
 .eway-address-warning {
