@@ -63,7 +63,7 @@ export default function InAppBrowserNotice({
     <div className="marketplace-note marketplace-note--emphasis in-app-notice" data-testid="in-app-browser-notice">
       <strong className="in-app-notice__title">Google sign-in doesn’t work inside {where}.</strong>
       <span>{menu}, or {emailAction} with your email below.</span>
-      <button type="button" className="button button--ghost button--small in-app-notice__copy" onClick={onCopy}>
+      <button type="button" className="button button--primary button--small in-app-notice__copy" onClick={onCopy}>
         <span aria-live="polite">{copied ? 'Link copied' : 'Copy link'}</span>
       </button>
     </div>
