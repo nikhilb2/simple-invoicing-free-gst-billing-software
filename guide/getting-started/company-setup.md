@@ -10,9 +10,13 @@ description: "Set your GSTIN, logo, bank details, invoice terms, e-way bill sett
 
 ## Create your first business
 
-On **Add your business**, enter your business name and, if you have one, your GSTIN. Click **Create business and continue** to open the invoice composer. Address, PAN, bank details and logo can be added later.
+The first time you sign in, **Add your business** asks only for your **Business name**. It starts with the name on your account (your Google name, or the name you confirmed when you verified your email), and you can change it. The box under the field shows how it will look at the top of your bills.
 
-The dashboard's **Add your business address** reminder links directly to the address field in Settings → Company. Add it before generating an e-way bill; that screen also links to the field when the address is missing. New invoices use the address saved when they are created.
+To add your GSTIN now, click **Have a GSTIN? Add it**. Leave it out if you are not registered. Click **Start billing**: the invoice composer opens with the first-invoice walkthrough running. Address, PAN, bank details and logo can be added on this page later.
+
+While you have no business yet, the screen shows only this step, with **Sign out** and the help button. Settings and the rest of the app open once the business is added.
+
+The dashboard's **Add your business address** reminder links directly to the address field in Settings → Company. Add it before generating an e-way bill; that screen also has an **Add address** button when the address is missing. New invoices use the address saved when they are created.
 
 ## Invoice header details
 
