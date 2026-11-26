@@ -22,6 +22,12 @@ Once a product is serial-tracked:
 
 Turning tracking off is allowed, and the serial records stay for your history.
 
+### Invoices from before you turned it on
+
+An invoice or return saved while the product was not serial-tracked has no serials for it, and never asks for any. Cancelling it, restoring it or returning goods against it works without serials, as long as the units it takes off the shelf are units that have no serial.
+
+When every unit on the shelf has a serial, restoring such a sale, or cancelling such a purchase or return, is refused: the app cannot tell which serials leave. Turn serial tracking off for the product, restore or cancel, then turn it back on and enter the serials of the units still on the shelf. Do the same to edit such an invoice, since the invoice form asks for serials on the line.
+
 ## Scan on an invoice
 
 The scan bar appears on the invoice form once you have at least one serial-tracked product.
@@ -57,5 +63,5 @@ Scanning a plain product barcode adds one unit of an untracked product. For a se
 Cancelling a sale returns its serials to stock. A purchase cannot be cancelled while one of its serials has been sold, so cancel that sale first.
 
 ::: warning Returns of serial-tracked products
-The credit note screen has no place to enter serials, so a **Return** credit note for a serial-tracked product cannot be completed there yet. A **Discount** credit note works normally. See [Credit and debit notes](../sales/credit-notes#limits-to-keep-in-mind).
+The credit note screen has no place to enter serials, so a **Return** credit note for a serial-tracked product cannot be completed there yet, unless the invoice was saved before serial tracking was turned on. A **Discount** credit note works normally. See [Credit and debit notes](../sales/credit-notes#limits-to-keep-in-mind).
 :::

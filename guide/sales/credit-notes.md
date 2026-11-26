@@ -76,7 +76,7 @@ earlier annual return. A note within this date limit still needs those filing ch
 - Cancelled invoices cannot be credited.
 - Credit notes cannot be edited. Cancel and raise a new one.
 - Returning stock to a supplier needs that stock to be on hand.
-- **Serial-tracked products:** this screen has no place to enter serials, so a Return for one cannot be completed here yet. A Discount note works, but it does not put the unit back in stock.
+- **Serial-tracked products:** this screen has no place to enter serials, so a Return for one cannot be completed here yet, unless its invoice was saved before serial tracking was turned on. A Discount note works, but it does not put the unit back in stock.
 
 ## Find, share and cancel
 

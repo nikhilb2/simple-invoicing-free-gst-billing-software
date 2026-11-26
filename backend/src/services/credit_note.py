@@ -629,7 +629,18 @@ def create_credit_note(
                 raise HTTPException(status_code=404, detail=f"Product {item_data['product_id']} not found")
 
             codes = SerialManager.normalize_codes(cn_item.serial_numbers)
-            if getattr(product, "track_serials", False):
+            invoice_item = invoice_item_map[item_data["invoice_item_id"]]
+            # A line billed before tracking was switched on has no serials to take
+            # back or send back, so its return carries none either (#1068).
+            unserialed = getattr(product, "track_serials", False) and invoice_item.serials_applied is False
+            if unserialed and codes:
+                raise SerialManager.untracked_line_error(
+                    product.name,
+                    "was billed on this invoice",
+                    "create the return",
+                    codes_given=True,
+                )
+            if getattr(product, "track_serials", False) and not unserialed:
                 if len(codes) != item_data["quantity"]:
                     raise HTTPException(
                         status_code=400,
@@ -664,10 +675,16 @@ def create_credit_note(
 
             # Only what the invoice line itself moved comes back, whatever the
             # product's setting is now (#905).
-            if not InventoryManager.line_moved_stock(
-                invoice_item_map[item_data["invoice_item_id"]], product
-            ):
+            if not InventoryManager.line_moved_stock(invoice_item, product):
                 continue
+            if unserialed and direction == "inward":
+                serials.require_unserialed_stock(
+                    product,
+                    Decimal(str(item_data["quantity"])),
+                    company_id=company_id,
+                    how="came in on this purchase",
+                    action="create the return",
+                )
 
             kwargs = {"company_id": company_id} if company_id is not None else {}
             # A return undoes what its invoice did to stock: a sale took units
@@ -745,10 +762,18 @@ def cancel_credit_note(
                 )
                 # The units this return moved carry its note, so they go back even
                 # if tracking was switched off since (#1068). A return with none
-                # follows the product: a tracked one needs units to reverse.
-                if getattr(product, "track_serials", False) or serials.has_marked_units(
+                # follows the product: a tracked one needs units to reverse, unless
+                # its line was billed before tracking was switched on, so moved none.
+                marked = serials.has_marked_units(
                     product_id=product.id, company_id=company_id, note=note
-                ):
+                )
+                unserialed = (
+                    not marked
+                    and getattr(product, "track_serials", False)
+                    and item.invoice_item is not None
+                    and item.invoice_item.serials_applied is False
+                )
+                if marked or (getattr(product, "track_serials", False) and not unserialed):
                     if direction == "inward":
                         serials.reverse_credit_note_supplier_return(
                             product_id=product.id,
@@ -774,6 +799,14 @@ def cancel_credit_note(
                     moved = bool(getattr(product, "maintain_inventory", True))
                 if not moved:
                     continue
+                if unserialed and direction == "outward":
+                    serials.require_unserialed_stock(
+                        product,
+                        Decimal(str(item.quantity)),
+                        company_id=company_id,
+                        how="was returned on this credit note",
+                        action="cancel the credit note",
+                    )
 
                 kwargs = {"company_id": company_id} if company_id is not None else {}
                 # Creating the note negated the invoice's effect on stock, so

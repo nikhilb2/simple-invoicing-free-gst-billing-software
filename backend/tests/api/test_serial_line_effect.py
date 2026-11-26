@@ -6,6 +6,8 @@ must not strand those units: a restored sale sells them again, a cancelled retur
 sends them back out, and an edit that drops the product puts them back in stock.
 """
 
+from datetime import date
+
 from test_serials import (
     _create_invoice,
     _create_ledger,
@@ -335,6 +337,30 @@ def test_cancelling_an_untracked_purchase_after_tracking_is_on_is_refused(client
     _set_tracking(client, product, True, ["K1", "K2"])
 
     response = client.delete(f"/api/invoices/{purchase['id']}")
+    assert response.status_code == 400, response.text
+    assert TURN_OFF in response.json()["detail"]
+    assert assert_serial_invariant(db_session, product) == 2
+
+
+def test_returning_an_untracked_purchase_after_tracking_is_on_is_refused(client, db_session):
+    supplier = _create_ledger(client, name="Late Return Supplier")
+    product = _create_product(client, db_session, sku="SER-ON-PUR-RET", track_serials=False)
+    purchase = _create_invoice(client, supplier, "purchase", product, 2)
+    _set_tracking(client, product, True, ["M1", "M2"])
+
+    response = client.post("/api/credit-notes/", json={
+        "ledger_id": supplier,
+        "invoice_ids": [purchase["id"]],
+        "credit_note_type": "return",
+        "direction": "inward",
+        "supplier_credit_note_number": "SUP-CN-1",
+        "supplier_credit_note_date": date.today().isoformat(),
+        "items": [{
+            "invoice_id": purchase["id"],
+            "invoice_item_id": purchase["items"][0]["id"],
+            "quantity": 1,
+        }],
+    })
     assert response.status_code == 400, response.text
     assert TURN_OFF in response.json()["detail"]
     assert assert_serial_invariant(db_session, product) == 2

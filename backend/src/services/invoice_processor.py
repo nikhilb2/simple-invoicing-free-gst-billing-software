@@ -286,9 +286,13 @@ class InvoiceProcessor:
         voucher_type: str,
         apply_inventory_changes: bool = True,
         invoice_id: int | None = None,
+        unserialed: set[int] | frozenset[int] = frozenset(),
     ) -> list[tuple]:
         """Validate each line item and return a list of (item_schema, product, quantity_decimal)
         tuples, raising 400/404 errors for invalid data.
+
+        *unserialed* names the products the invoice being edited billed before
+        serial tracking was switched on (:meth:`SerialManager.unserialed_products`).
         """
         validated = self.resolve_items(items, company_id)
 
@@ -310,6 +314,7 @@ class InvoiceProcessor:
             voucher_type=voucher_type,
             company_id=company_id,
             invoice_id=invoice_id,
+            unserialed=unserialed,
         )
 
         if apply_inventory_changes and voucher_type == "sales":
@@ -470,6 +475,7 @@ class InvoiceProcessor:
         regenerate_number: bool = True,
         apply_inventory_changes: bool = True,
         stock_policy: dict[int, bool] | None = None,
+        unserialed: set[int] | frozenset[int] = frozenset(),
     ) -> None:
         """Apply *payload* data onto *invoice*, updating all scalar fields,
         creating new InvoiceItem rows, and recalculating totals.
@@ -477,7 +483,9 @@ class InvoiceProcessor:
         This is the primary entry-point used by both create and update routes.
         Each new line records whether it moved stock: per *stock_policy*
         (product_id -> moved) when an edit passes one, else the product's
-        "Maintain inventory" setting now.
+        "Maintain inventory" setting now. It also records whether it carries
+        serial numbers, read from the serial rows once they are applied; an edit
+        passes the products it billed before tracking was on as *unserialed*.
         """
         company = active_company
         if company is None:
@@ -579,6 +587,7 @@ class InvoiceProcessor:
             payload.voucher_type,
             apply_inventory_changes=apply_inventory_changes,
             invoice_id=invoice.id,
+            unserialed=unserialed,
         )
 
         interstate_supply = invoice_is_interstate(invoice)
@@ -600,6 +609,9 @@ class InvoiceProcessor:
 
         # Calculate per-line totals
         line_results = self.calculate_totals(validated, payload.tax_inclusive)
+        # The serials are in place by now: on create just above, on an edit
+        # before the old lines went.
+        carries_serials = self.serials.linked_products(invoice)
 
         # Create InvoiceItem ORM objects
         created_items: list[InvoiceItem] = []
@@ -637,6 +649,7 @@ class InvoiceProcessor:
                 stock_applied=(stock_policy or {}).get(
                     result["product"].id, bool(result["product"].maintain_inventory)
                 ),
+                serials_applied=result["product"].id in carries_serials,
             )
             created_items.append(invoice_item)
             self.db.add(invoice_item)

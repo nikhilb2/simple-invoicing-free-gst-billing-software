@@ -777,6 +777,9 @@ def update_invoice(
                 )
 
         processor = InvoiceProcessor(db)
+        # Lines billed before "Track serials" was switched on carry none, and
+        # keep carrying none (#1068). Read now: the old lines go below.
+        unserialed = processor.serials.unserialed_products(invoice)
         # Validate before either delta touches stock. apply_payload validates
         # again later, but by then the inventory delta has already run and a
         # serial-tracked line would report the stock shortfall that follows
@@ -788,6 +791,7 @@ def update_invoice(
             payload.voucher_type,
             apply_inventory_changes=False,
             invoice_id=invoice.id,
+            unserialed=unserialed,
         )
         processor.apply_serial_delta_for_update(
             invoice,
@@ -812,6 +816,7 @@ def update_invoice(
             regenerate_number=False,
             apply_inventory_changes=False,
             stock_policy=stock_policy,
+            unserialed=unserialed,
         )
         db.commit()
         db.refresh(invoice)
