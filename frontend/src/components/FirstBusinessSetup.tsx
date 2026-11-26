@@ -1,7 +1,8 @@
-import type { FormEvent, Ref } from 'react';
+import { useEffect, useRef, type FormEvent, type Ref } from 'react';
 import BillHeaderPreview from './BillHeaderPreview';
 import GstinInput from './GstinInput';
 import { busyClass } from '../utils/saveFeedback';
+import { keepInViewScroll, visibleViewportBottom } from '../utils/keepInView';
 
 export const SETUP_NAME_HINT = 'Top of your bills. You can change it later.';
 export const SETUP_GSTIN_HINT = '15 characters, e.g. 27ABCDE1234F1Z0. Leave it blank if you are not registered.';
@@ -54,6 +55,42 @@ export default function FirstBusinessSetup({
   nameInputRef,
   gstInputRef,
 }: Props) {
+  const formRef = useRef<HTMLFormElement>(null);
+  const submitRef = useRef<HTMLButtonElement>(null);
+
+  // While a field here is focused on a phone, keep "Start billing" above the
+  // keyboard. With GSTIN open the button sits below a 336px keyboard on a
+  // 390×844 phone, so scroll the page up just enough (never hiding the field).
+  useEffect(() => {
+    const form = formRef.current;
+    if (!form || typeof window === 'undefined') return undefined;
+    let timer: number | undefined;
+    const adjust = () => {
+      const focused = document.activeElement;
+      const button = submitRef.current;
+      if (!button || !(focused instanceof HTMLElement) || !form.contains(focused) || focused === button) return;
+      const delta = keepInViewScroll({
+        targetBottom: button.getBoundingClientRect().bottom,
+        viewportBottom: visibleViewportBottom(),
+        focusedTop: focused.getBoundingClientRect().top,
+      });
+      if (delta > 0) window.scrollBy(0, delta);
+    };
+    // The keyboard slides in after focus; check again once it has.
+    const onFocusIn = () => {
+      window.clearTimeout(timer);
+      adjust();
+      timer = window.setTimeout(adjust, 350);
+    };
+    form.addEventListener('focusin', onFocusIn);
+    window.visualViewport?.addEventListener('resize', adjust);
+    return () => {
+      window.clearTimeout(timer);
+      form.removeEventListener('focusin', onFocusIn);
+      window.visualViewport?.removeEventListener('resize', adjust);
+    };
+  }, [loading]);
+
   return (
     <div className="page-grid company-setup-page">
       <section className="page-hero">
@@ -69,7 +106,7 @@ export default function FirstBusinessSetup({
       ) : (
         <article className="panel company-setup">
           {/* noValidate: the empty name is answered under the field, not by a browser bubble. */}
-          <form className="stack" onSubmit={onSubmit} noValidate>
+          <form ref={formRef} className="stack" onSubmit={onSubmit} noValidate>
             <div className="field">
               <label htmlFor="company-name">Business name</label>
               <input
@@ -127,6 +164,7 @@ export default function FirstBusinessSetup({
             )}
 
             <button
+              ref={submitRef}
               type="submit"
               className={`button button--primary company-setup__submit${busyClass(busy)}`}
               disabled={busy}

@@ -9394,8 +9394,12 @@ a.ledger-chip:focus-visible {
   justify-items: start;
 }
 
+/* One short line in the mockup: 13px, semibold, body colour (not the muted hint). */
 .composer-next-step__line {
   margin: 0;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
 }
 
 /* E-way bill dialog: the company has no address yet. The way out is a real
