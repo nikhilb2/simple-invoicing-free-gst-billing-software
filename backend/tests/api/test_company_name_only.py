@@ -62,3 +62,28 @@ def test_name_only_company_can_issue_an_invoice_and_render_every_paper(client, d
         assert "seller_pincode" in {field["field"] for field in generated.json()["detail"]["errors"]}
     finally:
         _restore_user_override(old_override)
+
+
+def test_update_without_address_keeps_the_saved_address(client, db_session):
+    """A partial PUT (e.g. an AI assistant changing only the phone) must not blank the address."""
+    user = _ensure_admin_user(db_session)
+    user.email_verified_at = datetime(2026, 11, 23)
+    db_session.commit()
+    old_override = _with_persistent_user_override()
+    try:
+        created = client.post("/api/company/companies", json={"name": "Address shop", "address": "12 MG Road"})
+        assert created.status_code == 200, created.text
+        headers = _headers(created.json()["id"])
+
+        updated = client.put("/api/company/", headers=headers, json={"name": "Address shop", "phone_number": "9999999999"})
+        assert updated.status_code == 200, updated.text
+        assert updated.json()["address"] == "12 MG Road"
+        assert updated.json()["phone_number"] == "9999999999"
+        assert client.get("/api/company/", headers=headers).json()["address"] == "12 MG Road"
+
+        cleared = client.put("/api/company/", headers=headers, json={"name": "Address shop", "address": ""})
+        assert cleared.status_code == 200, cleared.text
+        assert cleared.json()["address"] == ""
+        assert client.get("/api/company/", headers=headers).json()["address"] == ""
+    finally:
+        _restore_user_override(old_override)
