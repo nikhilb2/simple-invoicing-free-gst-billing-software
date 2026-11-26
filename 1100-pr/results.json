@@ -1,0 +1,687 @@
+[
+  {
+    "name": "phone line2 product: field outlined",
+    "pass": true,
+    "detail": "true"
+  },
+  {
+    "name": "phone line2 product: message under field",
+    "pass": true,
+    "detail": {
+      "message": "Pick a product from the list",
+      "gap": 12,
+      "field": {
+        "top": 340,
+        "bottom": 384,
+        "left": 54,
+        "right": 336
+      },
+      "messageRect": {
+        "top": 396,
+        "bottom": 415,
+        "left": 54,
+        "right": 336
+      }
+    }
+  },
+  {
+    "name": "phone line2 product: message fully above fixed bar",
+    "pass": true,
+    "detail": {
+      "messageBottom": 415,
+      "barTop": 717,
+      "fieldTop": 340
+    }
+  },
+  {
+    "name": "phone line2 product: strip text and visible",
+    "pass": true,
+    "detail": {
+      "strip": "Pick a product for line 2.",
+      "stripRect": {
+        "top": 730,
+        "bottom": 772,
+        "left": 16,
+        "right": 374
+      }
+    }
+  },
+  {
+    "name": "phone line2 product: no input has focus (no keyboard)",
+    "pass": true,
+    "detail": {
+      "active": "button",
+      "pointerFine": false
+    }
+  },
+  {
+    "name": "phone line2 product: scrollWidth == 390",
+    "pass": true,
+    "detail": 390
+  },
+  {
+    "name": "phone line2 product: no toast",
+    "pass": true,
+    "detail": 0
+  },
+  {
+    "name": "phone two problems: strip",
+    "pass": true,
+    "detail": "Pick a product for line 2, and 1 more to fix."
+  },
+  {
+    "name": "phone two problems: first field scrolled into view, message above bar",
+    "pass": true,
+    "detail": {
+      "field": {
+        "top": 340,
+        "bottom": 384,
+        "left": 54,
+        "right": 336
+      },
+      "messageRect": {
+        "top": 396,
+        "bottom": 415,
+        "left": 54,
+        "right": 336
+      },
+      "barTop": 717
+    }
+  },
+  {
+    "name": "phone two problems: no input focus",
+    "pass": true,
+    "detail": "button"
+  },
+  {
+    "name": "phone after fixing first: strip updates without a tap",
+    "pass": true,
+    "detail": "Enter a quantity of 1 or more for line 3."
+  },
+  {
+    "name": "phone after fixing first: line 2 message gone",
+    "pass": true,
+    "detail": null
+  },
+  {
+    "name": "phone line3 qty (next problem): field outlined",
+    "pass": true,
+    "detail": "true"
+  },
+  {
+    "name": "phone line3 qty (next problem): message under field",
+    "pass": true,
+    "detail": {
+      "message": "Enter 1 or more",
+      "gap": 12,
+      "field": {
+        "top": 340,
+        "bottom": 384,
+        "left": 54,
+        "right": 336
+      },
+      "messageRect": {
+        "top": 396,
+        "bottom": 415,
+        "left": 54,
+        "right": 336
+      }
+    }
+  },
+  {
+    "name": "phone line3 qty (next problem): message fully above fixed bar",
+    "pass": true,
+    "detail": {
+      "messageBottom": 415,
+      "barTop": 717,
+      "fieldTop": 340
+    }
+  },
+  {
+    "name": "phone line3 qty (next problem): strip text and visible",
+    "pass": true,
+    "detail": {
+      "strip": "Enter a quantity of 1 or more for line 3.",
+      "stripRect": {
+        "top": 730,
+        "bottom": 772,
+        "left": 16,
+        "right": 374
+      }
+    }
+  },
+  {
+    "name": "phone line3 qty (next problem): no input has focus (no keyboard)",
+    "pass": true,
+    "detail": {
+      "active": "body",
+      "pointerFine": false
+    }
+  },
+  {
+    "name": "phone line3 qty (next problem): scrollWidth == 390",
+    "pass": true,
+    "detail": 390
+  },
+  {
+    "name": "phone line3 qty (next problem): no toast",
+    "pass": true,
+    "detail": 0
+  },
+  {
+    "name": "phone all fixed: strip gone",
+    "pass": true,
+    "detail": null
+  },
+  {
+    "name": "phone qty 0: field outlined",
+    "pass": true,
+    "detail": "true"
+  },
+  {
+    "name": "phone qty 0: message under field",
+    "pass": true,
+    "detail": {
+      "message": "Enter 1 or more",
+      "gap": 12,
+      "field": {
+        "top": 340,
+        "bottom": 384,
+        "left": 54,
+        "right": 336
+      },
+      "messageRect": {
+        "top": 396,
+        "bottom": 415,
+        "left": 54,
+        "right": 336
+      }
+    }
+  },
+  {
+    "name": "phone qty 0: message fully above fixed bar",
+    "pass": true,
+    "detail": {
+      "messageBottom": 415,
+      "barTop": 717,
+      "fieldTop": 340
+    }
+  },
+  {
+    "name": "phone qty 0: strip text and visible",
+    "pass": true,
+    "detail": {
+      "strip": "Enter a quantity of 1 or more for line 1.",
+      "stripRect": {
+        "top": 730,
+        "bottom": 772,
+        "left": 16,
+        "right": 374
+      }
+    }
+  },
+  {
+    "name": "phone qty 0: no input has focus (no keyboard)",
+    "pass": true,
+    "detail": {
+      "active": "button",
+      "pointerFine": false
+    }
+  },
+  {
+    "name": "phone qty 0: scrollWidth == 390",
+    "pass": true,
+    "detail": 390
+  },
+  {
+    "name": "phone qty 0: no toast",
+    "pass": true,
+    "detail": 0
+  },
+  {
+    "name": "phone price -5: field outlined",
+    "pass": true,
+    "detail": "true"
+  },
+  {
+    "name": "phone price -5: message under field",
+    "pass": true,
+    "detail": {
+      "message": "Price can't be less than 0",
+      "gap": 12,
+      "field": {
+        "top": 340,
+        "bottom": 384,
+        "left": 54,
+        "right": 336
+      },
+      "messageRect": {
+        "top": 396,
+        "bottom": 415,
+        "left": 54,
+        "right": 336
+      }
+    }
+  },
+  {
+    "name": "phone price -5: message fully above fixed bar",
+    "pass": true,
+    "detail": {
+      "messageBottom": 415,
+      "barTop": 717,
+      "fieldTop": 340
+    }
+  },
+  {
+    "name": "phone price -5: strip text and visible",
+    "pass": true,
+    "detail": {
+      "strip": "Price can't be less than 0 for line 1.",
+      "stripRect": {
+        "top": 730,
+        "bottom": 772,
+        "left": 16,
+        "right": 374
+      }
+    }
+  },
+  {
+    "name": "phone price -5: no input has focus (no keyboard)",
+    "pass": true,
+    "detail": {
+      "active": "button",
+      "pointerFine": false
+    }
+  },
+  {
+    "name": "phone price -5: scrollWidth == 390",
+    "pass": true,
+    "detail": 390
+  },
+  {
+    "name": "phone price -5: no toast",
+    "pass": true,
+    "detail": 0
+  },
+  {
+    "name": "phone strip tap scrolls back to field",
+    "pass": true,
+    "detail": {
+      "field": {
+        "top": 340,
+        "bottom": 384,
+        "left": 54,
+        "right": 336
+      },
+      "barTop": 717,
+      "active": "body"
+    }
+  },
+  {
+    "name": "phone discount 120%: field outlined",
+    "pass": true,
+    "detail": "true"
+  },
+  {
+    "name": "phone discount 120%: message under field",
+    "pass": true,
+    "detail": {
+      "message": "Discount can't be more than 100%",
+      "gap": 12,
+      "field": {
+        "top": 340,
+        "bottom": 384,
+        "left": 54,
+        "right": 336
+      },
+      "messageRect": {
+        "top": 396,
+        "bottom": 416,
+        "left": 54,
+        "right": 336
+      }
+    }
+  },
+  {
+    "name": "phone discount 120%: message fully above fixed bar",
+    "pass": true,
+    "detail": {
+      "messageBottom": 416,
+      "barTop": 717,
+      "fieldTop": 340
+    }
+  },
+  {
+    "name": "phone discount 120%: strip text and visible",
+    "pass": true,
+    "detail": {
+      "strip": "Discount can't be more than 100% for line 1.",
+      "stripRect": {
+        "top": 730,
+        "bottom": 772,
+        "left": 16,
+        "right": 374
+      }
+    }
+  },
+  {
+    "name": "phone discount 120%: no input has focus (no keyboard)",
+    "pass": true,
+    "detail": {
+      "active": "button",
+      "pointerFine": false
+    }
+  },
+  {
+    "name": "phone discount 120%: scrollWidth == 390",
+    "pass": true,
+    "detail": 390
+  },
+  {
+    "name": "phone discount 120%: no toast",
+    "pass": true,
+    "detail": 0
+  },
+  {
+    "name": "phone no customer + no product: strip",
+    "pass": true,
+    "detail": "Choose a customer, and 1 more to fix."
+  },
+  {
+    "name": "phone no customer: message under field",
+    "pass": true,
+    "detail": "Choose or add a customer first"
+  },
+  {
+    "name": "desk line2 product: field outlined",
+    "pass": true,
+    "detail": "true"
+  },
+  {
+    "name": "desk line2 product: message in the row under the line, in its column",
+    "pass": true,
+    "detail": {
+      "message": "Pick a product from the list",
+      "field": {
+        "top": 624,
+        "bottom": 662,
+        "left": 328,
+        "right": 697
+      },
+      "messageRect": {
+        "top": 674,
+        "bottom": 694,
+        "left": 328,
+        "right": 697
+      }
+    }
+  },
+  {
+    "name": "desk line2 product: strip above the button",
+    "pass": true,
+    "detail": {
+      "strip": "Pick a product for line 2.",
+      "stripRect": {
+        "top": 807,
+        "bottom": 850,
+        "left": 311,
+        "right": 1369
+      },
+      "buttonRect": {
+        "top": 862,
+        "bottom": 900,
+        "left": 445,
+        "right": 575
+      }
+    }
+  },
+  {
+    "name": "desk line2 product: field, strip and button all in sight",
+    "pass": true,
+    "detail": {
+      "field": {
+        "top": 624,
+        "bottom": 662,
+        "left": 328,
+        "right": 697
+      },
+      "strip": {
+        "top": 807,
+        "bottom": 850,
+        "left": 311,
+        "right": 1369
+      },
+      "button": {
+        "top": 862,
+        "bottom": 900,
+        "left": 445,
+        "right": 575
+      },
+      "vh": 900
+    }
+  },
+  {
+    "name": "desk line2 product: focus",
+    "pass": true,
+    "detail": {
+      "active": "button",
+      "expected": "button"
+    }
+  },
+  {
+    "name": "desk line2 product: no toast",
+    "pass": true,
+    "detail": 0
+  },
+  {
+    "name": "desk line2 product: controls stay level",
+    "pass": true,
+    "detail": [
+      662,
+      662,
+      662,
+      662
+    ]
+  },
+  {
+    "name": "desk qty 0: field outlined",
+    "pass": true,
+    "detail": "true"
+  },
+  {
+    "name": "desk qty 0: message in the row under the line, in its column",
+    "pass": true,
+    "detail": {
+      "message": "Enter 1 or more",
+      "field": {
+        "top": 605,
+        "bottom": 643,
+        "left": 707,
+        "right": 795
+      },
+      "messageRect": {
+        "top": 655,
+        "bottom": 695,
+        "left": 707,
+        "right": 795
+      }
+    }
+  },
+  {
+    "name": "desk qty 0: strip above the button",
+    "pass": true,
+    "detail": {
+      "strip": "Enter a quantity of 1 or more for line 1.",
+      "stripRect": {
+        "top": 808,
+        "bottom": 850,
+        "left": 311,
+        "right": 1369
+      },
+      "buttonRect": {
+        "top": 862,
+        "bottom": 900,
+        "left": 445,
+        "right": 575
+      }
+    }
+  },
+  {
+    "name": "desk qty 0: field, strip and button all in sight",
+    "pass": true,
+    "detail": {
+      "field": {
+        "top": 605,
+        "bottom": 643,
+        "left": 707,
+        "right": 795
+      },
+      "strip": {
+        "top": 808,
+        "bottom": 850,
+        "left": 311,
+        "right": 1369
+      },
+      "button": {
+        "top": 862,
+        "bottom": 900,
+        "left": 445,
+        "right": 575
+      },
+      "vh": 900
+    }
+  },
+  {
+    "name": "desk qty 0: focus",
+    "pass": true,
+    "detail": {
+      "active": "input#invoice-quantity-1",
+      "expected": "input#invoice-quantity-1"
+    }
+  },
+  {
+    "name": "desk qty 0: no toast",
+    "pass": true,
+    "detail": 0
+  },
+  {
+    "name": "desk qty 0: controls stay level",
+    "pass": true,
+    "detail": [
+      643,
+      643,
+      643,
+      643
+    ]
+  },
+  {
+    "name": "desk price -5: field outlined",
+    "pass": true,
+    "detail": "true"
+  },
+  {
+    "name": "desk price -5: message in the row under the line, in its column",
+    "pass": true,
+    "detail": {
+      "message": "Price can't be less than 0",
+      "field": {
+        "top": 605,
+        "bottom": 643,
+        "left": 805,
+        "right": 929
+      },
+      "messageRect": {
+        "top": 655,
+        "bottom": 695,
+        "left": 805,
+        "right": 929
+      }
+    }
+  },
+  {
+    "name": "desk price -5: strip above the button",
+    "pass": true,
+    "detail": {
+      "strip": "Price can't be less than 0 for line 1.",
+      "stripRect": {
+        "top": 808,
+        "bottom": 850,
+        "left": 311,
+        "right": 1369
+      },
+      "buttonRect": {
+        "top": 862,
+        "bottom": 900,
+        "left": 445,
+        "right": 575
+      }
+    }
+  },
+  {
+    "name": "desk price -5: field, strip and button all in sight",
+    "pass": true,
+    "detail": {
+      "field": {
+        "top": 605,
+        "bottom": 643,
+        "left": 805,
+        "right": 929
+      },
+      "strip": {
+        "top": 808,
+        "bottom": 850,
+        "left": 311,
+        "right": 1369
+      },
+      "button": {
+        "top": 862,
+        "bottom": 900,
+        "left": 445,
+        "right": 575
+      },
+      "vh": 900
+    }
+  },
+  {
+    "name": "desk price -5: focus",
+    "pass": true,
+    "detail": {
+      "active": "input#invoice-price-1",
+      "expected": "input#invoice-price-1"
+    }
+  },
+  {
+    "name": "desk price -5: no toast",
+    "pass": true,
+    "detail": 0
+  },
+  {
+    "name": "desk no customer: strip",
+    "pass": true,
+    "detail": "Choose a customer, and 1 more to fix."
+  },
+  {
+    "name": "desk no customer: field scrolled into sight below header",
+    "pass": true,
+    "detail": {
+      "top": 96,
+      "bottom": 134,
+      "left": 847,
+      "right": 1369
+    }
+  },
+  {
+    "name": "desk no customer: combobox not focused",
+    "pass": true,
+    "detail": "button"
+  },
+  {
+    "name": "desk quotation qty 0: strip and message",
+    "pass": true,
+    "detail": {
+      "strip": "Enter a quantity of 1 or more for line 1.",
+      "message": "Enter 1 or more",
+      "toasts": 0
+    }
+  }
+]
