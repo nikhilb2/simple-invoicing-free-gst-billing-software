@@ -139,7 +139,7 @@ export default function RegisterPage() {
               autoComplete="email"
               required
             />
-            <small id="email-suggestion" className="field-hint" aria-live="polite">
+            <small id="email-suggestion" className="field-hint field-hint--live" aria-live="polite">
               {emailSuggestion ? (
                 <>
                   Did you mean{' '}
