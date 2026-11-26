@@ -117,6 +117,22 @@ describe('auth store and the native bridge', () => {
     expect(useAuthStore.getState()).toMatchObject({ token: 'a2', userRole: 'staff' });
   });
 
+  it('keeps the account name from /auth/me for the first-run Business name, and drops it on logout', async () => {
+    api.defaults.adapter = async (config): Promise<AxiosResponse> => ({
+      data: { role: 'admin', active_company_id: null, full_name: 'Ravi Kumar' },
+      status: 200,
+      statusText: 'OK',
+      headers: {},
+      config,
+    });
+
+    await useAuthStore.getState().setSession({ access_token: 'a4', refresh_token: 'r4', token_type: 'bearer' });
+    expect(useAuthStore.getState().fullName).toBe('Ravi Kumar');
+
+    useAuthStore.getState().logout();
+    expect(useAuthStore.getState().fullName).toBeNull();
+  });
+
   it('setSession clears a stale active company when the user has none', async () => {
     store.active_company_id = '99';
 

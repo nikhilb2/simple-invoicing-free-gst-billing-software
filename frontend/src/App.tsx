@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect } from 'react';
+import { Suspense, lazy, useEffect, useState } from 'react';
 import { Navigate, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { MotionConfig } from 'framer-motion';
@@ -9,7 +9,7 @@ import { ShortcutsProvider } from './context/ShortcutsContext';
 import axios from 'axios';
 import api, { setSessionEndedHandler } from './api/client';
 import type { CompanyProfile } from './types/api';
-import { isCompanyConfigured } from './utils/companySetup';
+import { COMPANY_SETUP_PATH, isCompanyConfigured, isCompanySetupRequired, setupRouteAction, type SetupRouteMode } from './utils/companySetup';
 import { SESSION_EXPIRED_REASON, loginPathWithNext, sanitizeNextPath } from './utils/nextPath';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
@@ -56,6 +56,7 @@ import SettingsLayout from './pages/settings/SettingsLayout';
 import SettingsOverviewPage from './pages/settings/SettingsOverviewPage';
 import { LEGACY_REDIRECTS } from './config/navigation';
 import Layout from './components/Layout';
+import SetupLayout from './components/SetupLayout';
 import WhatsAppSupportBubble from './components/WhatsAppSupportBubble';
 
 // Lazily loaded: these are the only routes that pull in recharts (~100kb gz),
@@ -130,8 +131,9 @@ function isCompanyRequiredError(error: unknown): boolean {
   );
 }
 
-function CompanyRequired({ children }: { children: React.ReactNode }) {
-  const companyQuery = useQuery({
+/** The active company, or the 409 that says there is none. Shared with the sidebar and the Get-started card. */
+function useCompanySetupQuery() {
+  return useQuery({
     queryKey: ['company-setup-required'],
     queryFn: async () => {
       const response = await api.get<CompanyProfile>('/company/');
@@ -139,6 +141,10 @@ function CompanyRequired({ children }: { children: React.ReactNode }) {
     },
     retry: false,
   });
+}
+
+function CompanyRequired({ children }: { children: React.ReactNode }) {
+  const companyQuery = useCompanySetupQuery();
 
   if (companyQuery.isLoading) {
     return <div className="empty-state">Loading company profile...</div>;
@@ -170,6 +176,36 @@ function CompanyRequired({ children }: { children: React.ReactNode }) {
 }
 
 /**
+ * A settings page that opens without a company, while there is none (#963).
+ *
+ * The company page is drawn in the setup-only frame rather than the app, and
+ * the settings overview and Appearance send people to it: from them a new user
+ * wandered off into Security, themes and the Company card that led back here.
+ */
+function CompanySetupAware({ mode, children }: { mode: SetupRouteMode; children: React.ReactNode }) {
+  const companyQuery = useCompanySetupQuery();
+  const setupRequired = isCompanySetupRequired(companyQuery.data, companyQuery.error, companyQuery.isLoading);
+  // Once in the setup frame, stay in it until the route changes. Saving the first
+  // company refreshes this query a moment before the page moves on to the
+  // composer, and swapping to the full app in between would flash the sidebar.
+  const [framed, setFramed] = useState(false);
+  if (setupRequired && !framed) setFramed(true);
+
+  if (companyQuery.isLoading) {
+    return <div className="empty-state">Loading company profile...</div>;
+  }
+
+  const action = setupRouteAction(mode, setupRequired || framed);
+  if (action === 'redirect') return <Navigate to={COMPANY_SETUP_PATH} replace />;
+  if (action === 'setup-frame') return <SetupLayout>{children}</SetupLayout>;
+  return (
+    <Layout>
+      <SettingsLayout>{children}</SettingsLayout>
+    </Layout>
+  );
+}
+
+/**
  * A settings page, framed by the settings sub-navigation.
  *
  * The guard combination is passed as props rather than nested by hand at each
@@ -180,15 +216,20 @@ function SettingsRoute({
   admin = false,
   platform = false,
   requireCompany = !platform,
+  setup,
   children,
 }: {
   admin?: boolean;
   /** Uses the platform capability rather than the active company's admin role. */
   platform?: boolean;
   requireCompany?: boolean;
+  /** For a page that opens without a company: what it does while there is none. */
+  setup?: SetupRouteMode;
   children: React.ReactNode;
 }) {
-  let node = (
+  let node = setup ? (
+    <CompanySetupAware mode={setup}>{children}</CompanySetupAware>
+  ) : (
     <Layout>
       <SettingsLayout>{children}</SettingsLayout>
     </Layout>
@@ -316,14 +357,14 @@ function AppRoutes() {
       <Route path="/marketplace/listings" element={<Protected><CompanyRequired><Layout><MyListingsPage /></Layout></CompanyRequired></Protected>} />
       <Route path="/marketplace/orders" element={<Protected><CompanyRequired><Layout><MarketplaceOrdersPage /></Layout></CompanyRequired></Protected>} />
       {/* ── Settings ───────────────────────────────────────────────── */}
-      <Route path="/settings" element={<SettingsRoute requireCompany={false}><SettingsOverviewPage /></SettingsRoute>} />
-      <Route path="/settings/company" element={<SettingsRoute requireCompany={false}><CompanyPage /></SettingsRoute>} />
+      <Route path="/settings" element={<SettingsRoute requireCompany={false} setup="redirect"><SettingsOverviewPage /></SettingsRoute>} />
+      <Route path="/settings/company" element={<SettingsRoute requireCompany={false} setup="frame"><CompanyPage /></SettingsRoute>} />
       <Route path="/settings/marketplace" element={<SettingsRoute admin><MarketplaceSettingsPage /></SettingsRoute>} />
       <Route path="/settings/email" element={<SettingsRoute platform><SmtpSettingsPage /></SettingsRoute>} />
       <Route path="/settings/email-history" element={<SettingsRoute admin><EmailHistoryPage /></SettingsRoute>} />
       <Route path="/settings/security" element={<SettingsRoute><ChangePasswordPage /></SettingsRoute>} />
       <Route path="/settings/shortcuts" element={<SettingsRoute><KeyboardShortcutsPage /></SettingsRoute>} />
-      <Route path="/settings/appearance" element={<SettingsRoute requireCompany={false}><AppearancePage /></SettingsRoute>} />
+      <Route path="/settings/appearance" element={<SettingsRoute requireCompany={false} setup="redirect"><AppearancePage /></SettingsRoute>} />
       <Route path="/settings/api-keys"element={<SettingsRoute admin><ApiKeysPage /></SettingsRoute>} />
       {/* Per-user, not admin-only: a user manages the connectors they themselves consented to. */}
       <Route path="/settings/connected-apps" element={<SettingsRoute><ConnectedAppsPage /></SettingsRoute>} />

@@ -1,6 +1,6 @@
 import { describe, expect, it, test } from 'vitest';
 import type { CompanyProfile } from '../types/api';
-import { clearSetupDraft, companyFormCurrency, hasCompanyAddress, isCompanyConfigured, missingCompanyFields, isCompanyFormDirty, isCompanySetupRequired, readSetupDraft, writeSetupDraft } from './companySetup';
+import { clearSetupDraft, companyFormCurrency, hasCompanyAddress, isCompanyConfigured, missingCompanyFields, isCompanyFormDirty, isCompanySetupRequired, pickSetupNamePrefill, readSetupDraft, setupRouteAction, writeSetupDraft } from './companySetup';
 
 describe('company form currency', () => {
   test.each([null, undefined, ''])('defaults a missing currency (%s) to INR', (currency) => {
@@ -149,4 +149,44 @@ test('address reminders only complete for a nonblank saved address', () => {
     expect(hasCompanyAddress(company)).toBe(false);
   }
   expect(hasCompanyAddress({ address: '  1 MG Road, Pune  ' })).toBe(true);
+});
+
+describe('pickSetupNamePrefill', () => {
+  it('starts with the account name (Google, or the name confirmed at email sign-up)', () => {
+    expect(pickSetupNamePrefill('Ravi Kumar', 'ravi@example.com', '')).toBe('Ravi Kumar');
+    expect(pickSetupNamePrefill('  Ravi Kumar ', 'ravi@example.com', null)).toBe('Ravi Kumar');
+    expect(pickSetupNamePrefill('Ravi Kumar', null, undefined)).toBe('Ravi Kumar');
+  });
+
+  it('leaves the field empty when there is no name', () => {
+    expect(pickSetupNamePrefill('', 'ravi@example.com', '')).toBe('');
+    expect(pickSetupNamePrefill('   ', 'ravi@example.com', '')).toBe('');
+    expect(pickSetupNamePrefill(null, 'ravi@example.com', '')).toBe('');
+  });
+
+  it('leaves the field empty when the name is only the email (the backend fallback)', () => {
+    expect(pickSetupNamePrefill('ravi@example.com', 'ravi@example.com', '')).toBe('');
+    expect(pickSetupNamePrefill(' Ravi@Example.com ', 'ravi@example.com', '')).toBe('');
+  });
+
+  it('never overwrites a name already in the saved setup draft', () => {
+    expect(pickSetupNamePrefill('Ravi Kumar', 'ravi@example.com', 'Kumar Mobiles')).toBe('Kumar Mobiles');
+    // A blank draft name is nothing to keep.
+    expect(pickSetupNamePrefill('Ravi Kumar', 'ravi@example.com', '  ')).toBe('Ravi Kumar');
+  });
+});
+
+describe('setupRouteAction (the setup-only frame)', () => {
+  it('draws the company page in the setup frame while there is no company', () => {
+    expect(setupRouteAction('frame', true)).toBe('setup-frame');
+  });
+
+  it('sends the settings overview and Appearance to setup while there is no company', () => {
+    expect(setupRouteAction('redirect', true)).toBe('redirect');
+  });
+
+  it('leaves every page in the normal app once a company exists', () => {
+    expect(setupRouteAction('frame', false)).toBe('app');
+    expect(setupRouteAction('redirect', false)).toBe('app');
+  });
 });
