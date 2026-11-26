@@ -36,6 +36,18 @@ export function isGetStartedComplete(status: GetStartedStatus): boolean {
   return status.address && status.customer && status.product && status.invoice;
 }
 
+/**
+ * The card's title. Once an invoice exists, "Set up your first invoice" reads as
+ * a bug to someone who has already made one (#996 UX check), so it says what is
+ * left instead: "One more step" when the address is the only required item still
+ * open, "Finish setting up" otherwise. The optional bank item does not count.
+ */
+export function getStartedTitle(status: GetStartedStatus): string {
+  if (!status.invoice) return 'Set up your first invoice';
+  const onlyAddressLeft = !status.address && status.customer && status.product;
+  return onlyAddressLeft ? 'One more step' : 'Finish setting up';
+}
+
 /** Whether the checklist (and the lookups behind it) should run at all. */
 export function shouldRunGetStarted(metrics: DashboardMetrics | null, dismissed: boolean, hasAddress: boolean | null = true): boolean {
   return metrics !== null && !dismissed && (!hasPostedInvoices(metrics) || hasAddress === false);

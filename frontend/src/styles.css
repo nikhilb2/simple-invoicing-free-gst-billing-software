@@ -9288,6 +9288,26 @@ a.ledger-chip:focus-visible {
   min-height: 48px;
 }
 
+/* E-way bill dialog: the company has no address yet. The way out is a real
+   button with a 44px target, on its own line under the message on phones. */
+.eway-address-warning {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.eway-address-warning__action {
+  min-height: 44px;
+}
+
+@media (min-width: 768px) {
+  .eway-address-warning {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+}
+
 /* Floating WhatsApp support link, bottom right on every screen. Below the
    sidebar, modals and the walkthrough card, so it never covers a dialog's
    own buttons. */

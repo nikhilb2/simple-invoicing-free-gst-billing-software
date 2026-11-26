@@ -11,6 +11,7 @@ import { COMPANY_ADDRESS_PATH, hasCompanyAddress } from '../utils/companySetup';
 import {
   activeCompanyId,
   getStartedStatus,
+  getStartedTitle,
   isGetStartedComplete,
   readGetStartedDismissed,
   shouldRunGetStarted,
@@ -65,7 +66,7 @@ export function GetStartedCard({ status, onDismiss, onStartTour }: Props) {
       <div className="panel__header">
         <div>
           <p className="eyebrow">Get started</p>
-          <h2 className="nav-panel__title" id="get-started-title">Set up your first invoice</h2>
+          <h2 className="nav-panel__title" id="get-started-title">{getStartedTitle(status)}</h2>
         </div>
         <button
           type="button"

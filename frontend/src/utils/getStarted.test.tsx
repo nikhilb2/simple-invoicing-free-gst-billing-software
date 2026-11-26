@@ -5,6 +5,7 @@ import { GetStartedCard } from '../components/GetStartedChecklist';
 import type { DashboardMetrics } from '../types/api';
 import {
   getStartedStatus,
+  getStartedTitle,
   isGetStartedComplete,
   readGetStartedDismissed,
   shouldRunGetStarted,
@@ -148,7 +149,43 @@ describe('GetStartedCard', () => {
     expect(html).toContain('Done');
   });
 
+  it('is titled for the first invoice until one exists', () => {
+    const html = render({ address: false, customer: true, product: false, invoice: false, bank: false });
+    expect(html).toContain('Set up your first invoice');
+  });
+
+  it('changes its title once an invoice exists', () => {
+    const onlyAddress = render({ address: false, customer: true, product: true, invoice: true, bank: false });
+    expect(onlyAddress).toContain('One more step');
+    expect(onlyAddress).not.toContain('Set up your first invoice');
+    // A customer lookup that failed leaves more than the address open.
+    const more = render({ address: false, customer: false, product: true, invoice: true, bank: true });
+    expect(more).toContain('Finish setting up');
+    expect(more).not.toContain('Set up your first invoice');
+  });
+
   it('renders nothing once every required step is done', () => {
     expect(render({ address: true, customer: true, product: true, invoice: true, bank: false })).toBe('');
+  });
+});
+
+describe('getStartedTitle', () => {
+  const status = (over: Partial<Record<'address' | 'customer' | 'product' | 'invoice' | 'bank', boolean>>) => ({
+    address: false, customer: false, product: false, invoice: false, bank: false, ...over,
+  });
+
+  it('asks for the first invoice before there is one', () => {
+    expect(getStartedTitle(status({}))).toBe('Set up your first invoice');
+    expect(getStartedTitle(status({ address: true, customer: true, product: true }))).toBe('Set up your first invoice');
+  });
+
+  it('says "One more step" when only the address is left, whatever the optional bank item says', () => {
+    expect(getStartedTitle(status({ customer: true, product: true, invoice: true }))).toBe('One more step');
+    expect(getStartedTitle(status({ customer: true, product: true, invoice: true, bank: true }))).toBe('One more step');
+  });
+
+  it('says "Finish setting up" when more than the address is open after an invoice', () => {
+    expect(getStartedTitle(status({ product: true, invoice: true }))).toBe('Finish setting up');
+    expect(getStartedTitle(status({ customer: true, invoice: true }))).toBe('Finish setting up');
   });
 });

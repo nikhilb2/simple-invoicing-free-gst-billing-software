@@ -187,13 +187,15 @@ export default function EwayBillModal({ invoice, challan, onClose }: Props) {
         const [preRes, transRes, companyRes] = await Promise.all([
           api.get<EwayBillPreCheckResult>(`${apiBase}/eway-bill/precheck`),
           api.get<TransporterProfile[]>('/eway-bill/transporters').catch(() => null),
-          api.get<CompanyProfile>('/company/'),
+          // Only for the address notice: if the profile can't load, the form still
+          // opens and the server's own check answers on Generate.
+          api.get<CompanyProfile>('/company/').catch(() => null),
         ]);
         if (cancelled) return;
         const transporterList: TransporterProfile[] = transRes?.data ?? [];
         setTransporters(transporterList);
         const result = preRes.data;
-        setMissingCompanyAddress(!hasCompanyAddress(companyRes.data));
+        setMissingCompanyAddress(companyRes !== null && !hasCompanyAddress(companyRes.data));
         setForm(result.form_data);
         setSubSupplyLabel(result.sub_supply_label ?? null);
         setInvoiceErrors(result.item_validation || []);
@@ -575,10 +577,12 @@ export default function EwayBillModal({ invoice, challan, onClose }: Props) {
 
         {/* ── Action buttons ── */}
         {missingCompanyAddress && (
-          <p className="field-warning" role="status">
-            Add your business address first.{' '}
-            <Link to={COMPANY_ADDRESS_PATH} onClick={onClose}>Add address</Link>
-          </p>
+          <div className="field-warning eway-address-warning" id="eway-missing-address" role="status">
+            <span>Add your business address first.</span>
+            <Link to={COMPANY_ADDRESS_PATH} onClick={onClose} className="button button--small button--secondary eway-address-warning__action">
+              Add address
+            </Link>
+          </div>
         )}
         <div className="button-row" style={{ marginTop: '20px', justifyContent: 'flex-end' }}>
           <button type="button" className="button button--ghost" onClick={onClose}>Cancel</button>
@@ -587,6 +591,7 @@ export default function EwayBillModal({ invoice, challan, onClose }: Props) {
             className="button button--primary"
             onClick={handleGenerate}
             disabled={!canGenerate}
+            aria-describedby={missingCompanyAddress ? 'eway-missing-address' : undefined}
           >
             {generating ? 'Generating...' : 'Generate JSON'}
           </button>
