@@ -1723,6 +1723,12 @@ input[type='radio'] {
   font-size: 0.95rem;
 }
 
+/* A fix offered inside a field hint reads as part of the sentence. */
+.field-hint .link-button {
+  font-size: inherit;
+  text-align: left;
+}
+
 /* An address the person has to check by eye, on a line of its own. */
 .sent-address {
   margin: 4px 0 0;
@@ -6864,6 +6870,10 @@ a.ledger-chip:focus-visible {
 
   .sidebar-toggle {
     min-height: 40px;
+  }
+
+  .field-hint .link-button {
+    min-height: 44px;
   }
 }
 
