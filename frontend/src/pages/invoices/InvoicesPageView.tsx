@@ -24,6 +24,7 @@ import { useShortcuts } from '../../context/ShortcutsContext';
 import { fetchInvoiceById, fetchInvoiceComposerData, fetchLedgerAddresses, fetchTcsSections } from '../../features/invoices/api';
 import { EMPTY_TCS_FORM, buildTcsPayload, findTcsSection, reconcileTcsSection, tcsFormForCopy, tcsFormFromDocument, tcsFormOnBuyerChange, tcsTotalsInput, type TcsFormState } from './tcsForm';
 import { editingInvoiceTitle } from './editingTitle';
+import { lineNeedsSerials, unserialedProductIds } from './serialLines';
 import TcsFields from './components/TcsFields';
 import { createQuotation, fetchConversionDraft, fetchQuotationById, updateQuotation } from '../../features/quotations/api';
 import { quotationQueryKeys } from '../../features/quotations/queryKeys';
@@ -124,6 +125,10 @@ export default function InvoicesPage() {
   const [scanTargetItemId, setScanTargetItemId] = useState<number | null>(null);
   const [editingInvoiceId, setEditingInvoiceId] = useState<number | null>(null);
   const [editingInvoiceNumber, setEditingInvoiceNumber] = useState<string | null>(null);
+  /** Products the invoice being edited billed without serials (#1104). Read only while editing. */
+  const [editUnserialedProductIds, setEditUnserialedProductIds] = useState<number[]>([]);
+  /** The form follows the backend: on an edit, a product the invoice billed without serials takes none. */
+  const unserialedOnEdit = editingInvoiceId ? editUnserialedProductIds : undefined;
   /* Quotation and proforma modes. The voucher select is locked in both of these:
      a saved document's type is fixed, and a conversion can only make a sale. */
   const [editingQuotation, setEditingQuotation] = useState<Quotation | null>(null);
@@ -403,7 +408,7 @@ export default function InvoicesPage() {
     const product = products.find((entry) => entry.id === Number(item.productId));
     if (!product) return [];
     // A quote names no physical units yet; an invoice uses its selected serials.
-    const quantity = !isQuote && product.track_serials ? item.serials.length : Number(item.quantity);
+    const quantity = lineNeedsSerials(item, product, { isQuote, unserialed: unserialedOnEdit }) ? item.serials.length : Number(item.quantity);
     return [{
       quantity,
       unitPrice: item.unit_price ? Number(item.unit_price) : product.price || 0,
@@ -501,7 +506,7 @@ export default function InvoicesPage() {
   }
 
   function isTrackedLine(item: InvoiceFormItem) {
-    return !isQuote && Boolean(findProduct(Number(item.productId))?.track_serials);
+    return lineNeedsSerials(item, findProduct(Number(item.productId)), { isQuote, unserialed: unserialedOnEdit });
   }
 
   function lineQuantity(item: InvoiceFormItem) {
@@ -662,7 +667,7 @@ export default function InvoicesPage() {
 
     if (resolution.kind === 'product') {
       adoptProduct(resolution.product);
-      if (!resolution.product.track_serials) {
+      if (!resolution.product.track_serials || unserialedOnEdit?.includes(resolution.product.id)) {
         return addProductUnit(resolution.product);
       }
       // A tracked product's own barcode cannot add a unit — a unit is a serial.
@@ -1042,6 +1047,7 @@ export default function InvoicesPage() {
     setDueDate(dueDateState.exactDate);
     setDueDateDays(dueDateState.daysFromInvoice);
 
+    setEditUnserialedProductIds(unserialedProductIds(invoice.items));
     const nextItems = invoice.items.map((line, index) => ({
       id: index + 1,
       productId: String(line.product_id),
@@ -2051,7 +2057,7 @@ export default function InvoicesPage() {
                   const selectedProduct = products.find((product) => product.id === Number(item.productId));
                   const selectedUnit = selectedProduct?.unit || 'Pieces';
                   const allowDecimalQuantity = Boolean(selectedProduct?.allow_decimal);
-                  const tracked = !isQuote && Boolean(selectedProduct?.track_serials);
+                  const tracked = lineNeedsSerials(item, selectedProduct, { isQuote, unserialed: unserialedOnEdit });
                   const quantityValue = tracked ? String(item.serials.length) : item.quantity;
                   const unitPrice = item.unit_price ? Number(item.unit_price) : (selectedProduct?.price || 0);
                   const gstRate = selectedProduct?.gst_rate || 0;

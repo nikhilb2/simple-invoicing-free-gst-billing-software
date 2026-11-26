@@ -26,7 +26,7 @@ Turning tracking off is allowed, and the serial records stay for your history.
 
 An invoice or return saved while the product was not serial-tracked has no serials for it, and never asks for any. Cancelling it, restoring it or returning goods against it works without serials, as long as the units it takes off the shelf are units that have no serial.
 
-When every unit on the shelf has a serial, restoring such a sale, or cancelling such a purchase or return, is refused: the app cannot tell which serials leave. Turn serial tracking off for the product, restore or cancel, then turn it back on and enter the serials of the units still on the shelf. Do the same to edit such an invoice, since the invoice form asks for serials on the line.
+When every unit on the shelf has a serial, restoring such a sale, or cancelling such a purchase or return, is refused: the app cannot tell which serials leave. Turn serial tracking off for the product, restore or cancel, then turn it back on and enter the serials of the units still on the shelf. Editing such an invoice needs no serials either: its line shows no serial picker, and you can save it as it is.
 
 ## Scan on an invoice
 

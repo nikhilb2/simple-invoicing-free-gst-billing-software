@@ -481,6 +481,8 @@ export type InvoiceItem = {
   discount_type?: string | null;
   discount_value?: number | null;
   serial_numbers?: string[];
+  /** false: billed before serial tracking was on, so an edit takes no serials for it. null: no record. */
+  serials_applied?: boolean | null;
 };
 
 export type QuotationDocumentType = 'quotation' | 'proforma';

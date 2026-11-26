@@ -198,6 +198,32 @@ def test_a_line_records_whether_it_carried_serials(client, db_session):
     assert _line_record(db_session, sale["id"], untracked) == {False}
 
 
+def test_the_invoice_returns_whether_each_line_carried_serials(client, db_session):
+    """The invoice form needs it to know which lines take no serials on an edit (#1104)."""
+    from src.models.invoice import InvoiceItem
+
+    supplier = _create_ledger(client, name="Out Supplier")
+    tracked = _create_product(client, db_session, sku="SER-OUT-T")
+    purchase = _stock_of(client, supplier, tracked, ["O1"])
+    assert [line["serials_applied"] for line in purchase["items"]] == [True]
+
+    customer, untracked, sale = _untracked_sale(client, db_session, "SER-OUT-U", stock=2, sold=1)
+    assert [line["serials_applied"] for line in sale["items"]] == [False]
+    # Turning tracking on later does not change what the line recorded.
+    _set_tracking(client, untracked, True, ["U1"])
+    fetched = client.get(f"/api/invoices/{sale['id']}")
+    assert fetched.status_code == 200, fetched.text
+    assert [line["serials_applied"] for line in fetched.json()["items"]] == [False]
+
+    # A line saved before the record existed has none.
+    db_session.query(InvoiceItem).filter(InvoiceItem.invoice_id == sale["id"]).update(
+        {InvoiceItem.serials_applied: None}
+    )
+    db_session.commit()
+    fetched = client.get(f"/api/invoices/{sale['id']}")
+    assert [line["serials_applied"] for line in fetched.json()["items"]] == [None]
+
+
 def test_restoring_an_untracked_sale_after_tracking_is_on_is_refused_with_the_way_out(client, db_session):
     """The issue's case: the refusal must not claim the units went out on another invoice."""
     _, product, sale = _untracked_sale(client, db_session, "SER-ON-RESTORE", stock=3, sold=2)
