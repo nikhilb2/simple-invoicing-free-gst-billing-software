@@ -9341,7 +9341,7 @@ a.ledger-chip:focus-visible {
 
 /* First setup: a one-row sketch of the top of a bill, under the business name
    (#1097). The meta follows the name with a 12px gap rather than sitting at the
-   far edge, and shows in full at every width, as in the mockup. */
+   far edge. Under 420px it reads only "TAX INVOICE", so a shop name fits (#1114). */
 .bill-header-preview {
   display: flex;
   align-items: center;
@@ -9370,6 +9370,12 @@ a.ledger-chip:focus-visible {
 .bill-header-preview__meta {
   flex: 0 0 auto;
   white-space: nowrap;
+}
+
+@media (max-width: 419.98px) {
+  .bill-header-preview__number {
+    display: none;
+  }
 }
 
 /* Fields that are made read-only together while a save is on its way, without

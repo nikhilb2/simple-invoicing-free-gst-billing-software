@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { renderToString } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import BillHeaderPreview, { BILL_HEADER_META } from './BillHeaderPreview';
+import BillHeaderPreview, { BILL_HEADER_NUMBER, BILL_HEADER_TITLE } from './BillHeaderPreview';
 
 const css = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
 
@@ -31,13 +31,13 @@ describe('BillHeaderPreview', () => {
     expect(renderToString(<BillHeaderPreview name="A" />)).toContain('aria-hidden="true"');
   });
 
-  it('shows "TAX INVOICE · Bill 1" in full, as one piece, after the name', () => {
+  it('shows "TAX INVOICE · Bill 1" after the name, with "· Bill 1" in its own span', () => {
     const html = renderToString(<BillHeaderPreview name="Ravi Kumar" />);
-    expect(BILL_HEADER_META).toBe('TAX INVOICE · Bill 1');
-    expect(html).toContain(`<span class="field-hint bill-header-preview__meta">${BILL_HEADER_META}</span>`);
+    expect(BILL_HEADER_TITLE + BILL_HEADER_NUMBER).toBe('TAX INVOICE · Bill 1');
+    expect(html).toContain(
+      `<span class="field-hint bill-header-preview__meta">${BILL_HEADER_TITLE}<span class="bill-header-preview__number">${BILL_HEADER_NUMBER}</span></span>`,
+    );
     expect(html.indexOf('Ravi Kumar')).toBeLessThan(html.indexOf('TAX INVOICE'));
-    // Nothing a phone-width rule could hide on its own.
-    expect(html).not.toContain('bill-header-preview__number');
   });
 
   it('keeps the meta next to the name at every width (styles)', () => {
@@ -48,7 +48,12 @@ describe('BillHeaderPreview', () => {
     expect(name).toMatch(/min-width:\s*0/);
     expect(rule('.bill-header-preview')).toMatch(/gap:\s*12px/);
     expect(rule('.bill-header-preview__meta')).toMatch(/flex:\s*0 0 auto/);
-    // The unapproved "hide · Bill 1 under 420px" rule is gone.
-    expect(css).not.toMatch(/bill-header-preview[^{]*\{[^}]*display:\s*none/);
+    // Only the bill number hides, and only under 420px (Naina's must on #1114).
+    expect(css).toMatch(
+      /@media \(max-width: 419\.98px\) \{\s*\.bill-header-preview__number \{\s*display: none;\s*\}\s*\}/,
+    );
+    for (const selector of ['.bill-header-preview', '.bill-header-preview__name', '.bill-header-preview__meta']) {
+      expect(rule(selector)).not.toMatch(/display:\s*none/);
+    }
   });
 });
