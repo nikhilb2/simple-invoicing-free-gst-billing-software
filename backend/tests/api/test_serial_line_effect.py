@@ -8,6 +8,8 @@ sends them back out, and an edit that drops the product puts them back in stock.
 
 from datetime import date
 
+import pytest
+
 from test_serials import (
     _create_invoice,
     _create_ledger,
@@ -364,3 +366,101 @@ def test_returning_an_untracked_purchase_after_tracking_is_on_is_refused(client,
     assert response.status_code == 400, response.text
     assert TURN_OFF in response.json()["detail"]
     assert assert_serial_invariant(db_session, product) == 2
+
+
+# ---------------------------------------------------------------------------
+# Several lines of one product on one note (review of #1105)
+# ---------------------------------------------------------------------------
+# Production sessions run with autoflush=False (src/db/session.py), so the spare
+# units check must flush the stock moved by the note's earlier lines before it
+# reads the shelf. The test sessions autoflush by default, which hid this.
+
+@pytest.fixture
+def no_autoflush(client, db_session):
+    """Serve requests from sessions configured like production's SessionLocal."""
+    from sqlalchemy.orm import sessionmaker
+
+    from src.db.session import get_db
+
+    factory = sessionmaker(bind=db_session.get_bind(), autoflush=False)
+
+    def override_get_db():
+        db = factory()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    overrides = client.app.dependency_overrides
+    previous = overrides[get_db]
+    overrides[get_db] = override_get_db
+    yield
+    overrides[get_db] = previous
+
+
+def _two_line_invoice(client, ledger, voucher_type, product, quantity):
+    line = {"product_id": product, "quantity": quantity, "unit_price": 100}
+    response = client.post("/api/invoices/", json={
+        "ledger_id": ledger,
+        "voucher_type": voucher_type,
+        "tax_inclusive": False,
+        "apply_round_off": False,
+        "items": [dict(line), dict(line)],
+    })
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def test_a_supplier_return_of_two_untracked_lines_counts_both(client, db_session, no_autoflush):
+    supplier = _create_ledger(client, name="Two Line Supplier")
+    customer = _create_ledger(client, name="Two Line Customer", gst="27ABCDE9999F1ZW")
+    product = _create_product(client, db_session, sku="SER-ON-TWO-PUR", track_serials=False)
+    purchase = _two_line_invoice(client, supplier, "purchase", product, 2)
+    sale = _create_invoice(client, customer, "sales", product, 2)
+    _set_tracking(client, product, True, ["N1", "N2"])
+    # The sale's 2 units come back with no serial: shelf 4, 2 in-stock serials.
+    assert client.delete(f"/api/invoices/{sale['id']}").status_code == 200
+
+    response = client.post("/api/credit-notes/", json={
+        "ledger_id": supplier,
+        "invoice_ids": [purchase["id"]],
+        "credit_note_type": "return",
+        "direction": "inward",
+        "supplier_credit_note_number": "SUP-CN-2",
+        "supplier_credit_note_date": date.today().isoformat(),
+        "items": [
+            {"invoice_id": purchase["id"], "invoice_item_id": item["id"], "quantity": 2}
+            for item in purchase["items"]
+        ],
+    })
+    assert response.status_code == 400, response.text
+    assert TURN_OFF in response.json()["detail"]
+    for code in ("N1", "N2"):
+        assert _serial_row(db_session, code).status == STATUS_IN_STOCK
+
+
+def test_cancelling_a_return_of_two_untracked_lines_counts_both(client, db_session, no_autoflush):
+    customer = _create_ledger(client, name="Two Line Return Customer", gst="27ABCDE9999F1ZW")
+    product = _create_product(client, db_session, sku="SER-ON-TWO-RET", track_serials=False, initial_quantity=4)
+    sale = _two_line_invoice(client, customer, "sales", product, 1)
+    response = client.post("/api/credit-notes/", json={
+        "ledger_id": customer,
+        "invoice_ids": [sale["id"]],
+        "credit_note_type": "return",
+        "items": [
+            {"invoice_id": sale["id"], "invoice_item_id": item["id"], "quantity": 1}
+            for item in sale["items"]
+        ],
+    })
+    assert response.status_code == 201, response.text
+    note = response.json()
+    later = _create_invoice(client, customer, "sales", product, 1)
+    _set_tracking(client, product, True, ["Q1", "Q2", "Q3"])
+    # The later sale's unit comes back with no serial: shelf 4, 3 in-stock serials.
+    assert client.delete(f"/api/invoices/{later['id']}").status_code == 200
+
+    response = client.post(f"/api/credit-notes/{note['id']}/cancel")
+    assert response.status_code == 400, response.text
+    assert TURN_OFF in response.json()["detail"]
+    for code in ("Q1", "Q2", "Q3"):
+        assert _serial_row(db_session, code).status == STATUS_IN_STOCK

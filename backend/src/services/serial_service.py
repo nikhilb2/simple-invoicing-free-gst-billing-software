@@ -707,6 +707,11 @@ class SerialManager:
         """
         if quantity <= 0:
             return
+        # The app's sessions don't autoflush (src/db/session.py), and a note's
+        # earlier lines change stock without flushing, so send those changes
+        # before reading the shelf or each line would see the stock from before
+        # the note.
+        self.db.flush()
         query = self.db.query(Inventory.quantity).filter(Inventory.product_id == product.id)
         if company_id is not None:
             query = query.filter(company_scope(Inventory.company_id, company_id))
