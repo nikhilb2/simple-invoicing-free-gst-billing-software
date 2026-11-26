@@ -3349,6 +3349,7 @@ a.invoice-row {
 }
 
 .ledger-quick-create__form {
+  grid-auto-rows: max-content;
   min-height: 0;
   padding: 20px;
   overflow-y: auto;
@@ -3386,6 +3387,13 @@ a.invoice-row {
   min-height: 44px;
   justify-self: start;
   align-self: flex-start;
+}
+
+/* The coarse-pointer .button rule below sets 42px and comes later, so it beats
+   the 44px above; the toggle's two lines need 58px, and this wins on both. */
+.ledger-quick-create .ledger-quick-create__toggle,
+.ledger-quick-create .ledger-quick-create__use-existing {
+  min-height: 44px;
 }
 
 /* The body scrolls independently so saving and request errors stay in reach. */
@@ -9533,6 +9541,10 @@ a.ledger-chip:focus-visible {
   .serial-line__stock-action { width: 100%; }
   .invoice-composer-page .composer-hide-phone { display: none; }
   .invoice-composer-page .composer-show-phone { display: block; }
+  /* A long name ends with an ellipsis; the GSTIN sits on its own line below (#1101). */
+  .invoice-composer-page #invoice-ledger { text-overflow: ellipsis; }
+  .composer-ledger-gstin { margin: 0; }
+  .invoice-composer-page .line-item textarea.input { min-height: 64px; }
   .composer-billing-line { margin: 0; }
   .composer-first-run p { display: none; }
 

@@ -1624,6 +1624,7 @@ export default function InvoicesPage() {
                   emptyPlaceholder={counterparty.emptyPlaceholder}
                   keepEnabledWhenEmpty
                 />
+                {selectedLedger?.gst ? <p className="field-hint composer-show-phone composer-ledger-gstin">GSTIN {selectedLedger.gst}</p> : null}
                 <FieldError id="invoice-ledger" errors={fieldErrors.errors} />
                 {fieldErrors.errors['invoice-ledger'] ? (
                   <button type="button" className="button button--secondary" style={{ width: '100%', minHeight: 44 }} onClick={openLedgerCreateModal}>
