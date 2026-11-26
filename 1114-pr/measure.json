@@ -1,0 +1,325 @@
+{
+ "nameValue": "Ravi Kumar",
+ "phone_closed": {
+  "submit": {
+   "top": 425.14,
+   "bottom": 473.14,
+   "left": 37,
+   "right": 353,
+   "width": 316,
+   "height": 48
+  },
+  "input": {
+   "top": 219.14,
+   "bottom": 263.14,
+   "left": 37,
+   "right": 353,
+   "width": 316,
+   "height": 44
+  },
+  "strip": {
+   "top": 279.14,
+   "bottom": 321.14,
+   "left": 37,
+   "right": 353,
+   "width": 316,
+   "height": 42
+  },
+  "card": {
+   "top": 166.06,
+   "bottom": 496.14,
+   "left": 14,
+   "right": 376,
+   "width": 362,
+   "height": 330.08
+  },
+  "gap": {
+   "nameTextRight": 135.8,
+   "metaLeft": 147.8,
+   "gap": 12,
+   "nameBoxRight": 135.8
+  },
+  "docScrollW": 390,
+  "innerW": 390,
+  "innerH": 844
+ },
+ "phone_gstin": {
+  "submit": {
+   "top": 501.59,
+   "bottom": 549.59,
+   "left": 37,
+   "right": 353,
+   "width": 316,
+   "height": 48
+  },
+  "input": {
+   "top": 219.14,
+   "bottom": 263.14,
+   "left": 37,
+   "right": 353,
+   "width": 316,
+   "height": 44
+  },
+  "strip": {
+   "top": 279.14,
+   "bottom": 321.14,
+   "left": 37,
+   "right": 353,
+   "width": 316,
+   "height": 42
+  },
+  "card": {
+   "top": 166.06,
+   "bottom": 572.59,
+   "left": 14,
+   "right": 376,
+   "width": 362,
+   "height": 406.53
+  },
+  "gap": {
+   "nameTextRight": 135.8,
+   "metaLeft": 147.8,
+   "gap": 12,
+   "nameBoxRight": 135.8
+  },
+  "docScrollW": 390,
+  "innerW": 390,
+  "innerH": 844
+ },
+ "keyboard": {
+  "submit": {
+   "top": 425.14,
+   "bottom": 473.14,
+   "left": 37,
+   "right": 353,
+   "width": 316,
+   "height": 48
+  },
+  "input": {
+   "top": 219.14,
+   "bottom": 263.14,
+   "left": 37,
+   "right": 353,
+   "width": 316,
+   "height": 44
+  },
+  "strip": {
+   "top": 279.14,
+   "bottom": 321.14,
+   "left": 37,
+   "right": 353,
+   "width": 316,
+   "height": 42
+  },
+  "card": {
+   "top": 166.06,
+   "bottom": 496.14,
+   "left": 14,
+   "right": 376,
+   "width": 362,
+   "height": 330.08
+  },
+  "gap": {
+   "nameTextRight": 199.69,
+   "metaLeft": 207.36,
+   "gap": 7.67,
+   "nameBoxRight": 195.36
+  },
+  "docScrollW": 390,
+  "innerW": 390,
+  "innerH": 508
+ },
+ "desktop": {
+  "submit": {
+   "top": 443.94,
+   "bottom": 491.94,
+   "left": 511,
+   "right": 929,
+   "width": 418,
+   "height": 48
+  },
+  "input": {
+   "top": 243.94,
+   "bottom": 281.94,
+   "left": 511,
+   "right": 929,
+   "width": 418,
+   "height": 38
+  },
+  "strip": {
+   "top": 297.94,
+   "bottom": 339.94,
+   "left": 511,
+   "right": 929,
+   "width": 418,
+   "height": 42
+  },
+  "card": {
+   "top": 190.86,
+   "bottom": 514.94,
+   "left": 488,
+   "right": 952,
+   "width": 464,
+   "height": 324.08
+  },
+  "gap": {
+   "nameTextRight": 609.8,
+   "metaLeft": 621.8,
+   "gap": 12,
+   "nameBoxRight": 609.8
+  },
+  "docScrollW": 1440,
+  "innerW": 1440,
+  "innerH": 900
+ },
+ "empty_error": {
+  "submit": {
+   "top": 424.14,
+   "bottom": 472.14,
+   "left": 37,
+   "right": 353,
+   "width": 316,
+   "height": 48
+  },
+  "input": {
+   "top": 219.14,
+   "bottom": 263.14,
+   "left": 37,
+   "right": 353,
+   "width": 316,
+   "height": 44
+  },
+  "strip": {
+   "top": 279.14,
+   "bottom": 321.14,
+   "left": 37,
+   "right": 353,
+   "width": 316,
+   "height": 42
+  },
+  "card": {
+   "top": 166.06,
+   "bottom": 496.14,
+   "left": 14,
+   "right": 376,
+   "width": 362,
+   "height": 330.08
+  },
+  "gap": {
+   "nameTextRight": 196.75,
+   "metaLeft": 207.36,
+   "gap": 10.61,
+   "nameBoxRight": 195.36
+  },
+  "docScrollW": 390,
+  "innerW": 390,
+  "innerH": 844
+ },
+ "saving": {
+  "submit": {
+   "top": 425.14,
+   "bottom": 473.14,
+   "left": 37,
+   "right": 353,
+   "width": 316,
+   "height": 48
+  },
+  "input": {
+   "top": 219.14,
+   "bottom": 263.14,
+   "left": 37,
+   "right": 353,
+   "width": 316,
+   "height": 44
+  },
+  "strip": {
+   "top": 279.14,
+   "bottom": 321.14,
+   "left": 37,
+   "right": 353,
+   "width": 316,
+   "height": 42
+  },
+  "card": {
+   "top": 166.06,
+   "bottom": 496.14,
+   "left": 14,
+   "right": 376,
+   "width": 362,
+   "height": 330.08
+  },
+  "gap": {
+   "nameTextRight": 135.8,
+   "metaLeft": 147.8,
+   "gap": 12,
+   "nameBoxRight": 135.8
+  },
+  "docScrollW": 390,
+  "innerW": 390,
+  "innerH": 844
+ },
+ "failed": {
+  "submit": {
+   "top": 424.14,
+   "bottom": 472.14,
+   "left": 37,
+   "right": 353,
+   "width": 316,
+   "height": 48
+  },
+  "input": {
+   "top": 219.14,
+   "bottom": 263.14,
+   "left": 37,
+   "right": 353,
+   "width": 316,
+   "height": 44
+  },
+  "strip": {
+   "top": 279.14,
+   "bottom": 321.14,
+   "left": 37,
+   "right": 353,
+   "width": 316,
+   "height": 42
+  },
+  "card": {
+   "top": 166.06,
+   "bottom": 560.14,
+   "left": 14,
+   "right": 376,
+   "width": 362,
+   "height": 394.08
+  },
+  "gap": {
+   "nameTextRight": 135.8,
+   "metaLeft": 147.8,
+   "gap": 12,
+   "nameBoxRight": 135.8
+  },
+  "docScrollW": 390,
+  "innerW": 390,
+  "innerH": 844
+ },
+ "failedText": "Couldn’t save. Check your internet and try again.",
+ "settings_phone": {
+  "url": "http://localhost:15200/settings/company?setup=required",
+  "sidebar": 0,
+  "hamburger": 0,
+  "theme": 0
+ },
+ "settings_desktop": {
+  "url": "http://localhost:15200/settings/company?setup=required",
+  "sidebar": 0,
+  "hamburger": 0,
+  "theme": 0
+ },
+ "company_url": "http://localhost:15200/settings/company",
+ "exitCount": 1,
+ "composer": {
+  "labelTop": 455.88,
+  "inputTop": 485.95,
+  "hint": "Next: pick your customer, add an item, then tap Create invoice.\n\nShow me how",
+  "url": "/invoices"
+ }
+}
