@@ -6011,6 +6011,13 @@ a.invoice-row {
   gap: 8px;
 }
 
+/* The ghost border (--line) is about 1.3:1 on the note's teal tint, and the
+   input border is lower still. This denser --line-strong hue keeps the helper
+   button's edge at least 3:1 against the note in light and dark (Naina, #1121). */
+.in-app-notice__copy {
+  border-color: rgb(var(--rgb-info) / 0.8);
+}
+
 .in-app-notice__title {
   font-size: 0.9rem;
   line-height: 1.5;
