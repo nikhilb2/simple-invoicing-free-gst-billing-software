@@ -1,6 +1,7 @@
 import axios, { AxiosRequestConfig, InternalAxiosRequestConfig } from 'axios';
 import { getSessionId } from '../lib/analytics';
 import { postToNative } from '../lib/nativeBridge';
+import { SESSION_EXPIRED_REASON, loginPathWithNext } from '../utils/nextPath';
 
 const baseURL = import.meta.env.VITE_API_BASE_URL || '/api';
 
@@ -13,6 +14,59 @@ const api = axios.create({
 });
 
 let refreshPromise: Promise<string | null> | null = null;
+
+/**
+ * What client.ts needs from the app to end a dead session. Handed over by the
+ * app (see SessionEndedBridge in App.tsx) rather than imported: the auth store
+ * imports this module, and this module sits outside the router.
+ */
+export type SessionEndedHandler = {
+  /** The signed-in session as the auth store holds it; null once there is none. */
+  getSession: () => { email: string | null } | null;
+  /** The store's logout, without the server call and the native message. */
+  logout: (options: { remote: false; notifyNative: false; sessionEnded: { email: string | null } }) => void;
+  /** The router's navigate: keeps the email in router state instead of the URL. */
+  navigate: (path: string, state: { email: string | null }) => void;
+};
+
+let sessionEndedHandler: SessionEndedHandler | null = null;
+
+export function setSessionEndedHandler(handler: SessionEndedHandler | null) {
+  sessionEndedHandler = handler;
+}
+
+/**
+ * The server has rejected this session and it cannot be renewed: clear all of
+ * it (the auth store as well as localStorage, or `Protected` still thinks the
+ * visitor is signed in) and send them to sign in again, coming back here after.
+ *
+ * Only called for a 401 that survived the refresh. A network error or a 5xx says
+ * nothing about the session and never gets here. Concurrent 401s are collapsed
+ * by the store: once it has no session the later calls do nothing.
+ */
+function endSession() {
+  const here = typeof window !== 'undefined' && window.location ? `${window.location.pathname}${window.location.search}` : '/';
+  const path = loginPathWithNext(here, SESSION_EXPIRED_REASON);
+  const handler = sessionEndedHandler;
+  if (!handler) {
+    if (typeof window !== 'undefined' && window.location) {
+      window.location.assign(path);
+    }
+    return;
+  }
+  const session = handler.getSession();
+  if (!session) {
+    return;
+  }
+  // There is no session left to tell the server about, and the native app is
+  // told by the caller, and only when it was the refresh token that was refused.
+  //
+  // The store records that the session ended (and whose it was) so that
+  // `Protected`, which redirects the moment the store has no token and can beat
+  // this navigation to it, sends the visitor to the same place.
+  handler.logout({ remote: false, notifyNative: false, sessionEnded: { email: session.email } });
+  handler.navigate(path, { email: session.email });
+}
 
 type RetryableRequestConfig = InternalAxiosRequestConfig & {
   _retry?: boolean;
@@ -118,6 +172,7 @@ api.interceptors.response.use(
     const refreshToken = localStorage.getItem('refresh_token');
     if (!refreshToken) {
       localStorage.removeItem('token');
+      endSession();
       return Promise.reject(error);
     }
 
@@ -142,19 +197,25 @@ api.interceptors.response.use(
           return nextAccessToken;
         })
         .catch((refreshError) => {
-          localStorage.removeItem('token');
-          localStorage.removeItem('refresh_token');
-          // The mobile app is sent back to its native login only when the
-          // server actually rejected the refresh token. A network error, timeout
-          // or 5xx says nothing about the token, and the app re-injects its
-          // stored pair on the next launch, which is what should happen then.
-          // Concurrent 401s share this one refresh, so this posts once. The
-          // no-refresh-token branch above deliberately does not post: it is only
-          // reached once a session has already ended, and would repeat for
-          // every later 401.
           const refreshStatus = axios.isAxiosError(refreshError) ? refreshError.response?.status : undefined;
-          if (refreshStatus === 401 || refreshStatus === 403) {
-            postToNative({ type: 'logout' });
+          // A network error, timeout or 5xx on the refresh call says nothing
+          // about the session: the tokens stay and nobody is signed out, so the
+          // next request can try again. (The app re-injects its stored pair on
+          // the next launch too.)
+          const refused = refreshStatus === 401 || refreshStatus === 403;
+          const malformed = !axios.isAxiosError(refreshError);
+          if (refused || malformed) {
+            localStorage.removeItem('token');
+            localStorage.removeItem('refresh_token');
+            // The mobile app is sent back to its native login only when the
+            // server actually rejected the refresh token. Concurrent 401s share
+            // this one refresh, so this posts once. The no-refresh-token branch
+            // above deliberately does not post: it is only reached once a
+            // session has already ended, and would repeat for every later 401.
+            if (refused) {
+              postToNative({ type: 'logout' });
+            }
+            endSession();
           }
           return null;
         })

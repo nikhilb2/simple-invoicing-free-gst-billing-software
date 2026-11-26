@@ -1,15 +1,16 @@
 import { Suspense, lazy, useEffect } from 'react';
-import { Navigate, Route, Routes, useLocation, useParams, useSearchParams } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { MotionConfig } from 'framer-motion';
+import { useAuthStore } from './store/useAuthStore';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { FYProvider } from './context/FYContext';
 import { ShortcutsProvider } from './context/ShortcutsContext';
 import axios from 'axios';
-import api from './api/client';
+import api, { setSessionEndedHandler } from './api/client';
 import type { CompanyProfile } from './types/api';
 import { isCompanyConfigured } from './utils/companySetup';
-import { loginPathWithNext, sanitizeNextPath } from './utils/nextPath';
+import { SESSION_EXPIRED_REASON, loginPathWithNext, sanitizeNextPath } from './utils/nextPath';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import VerifyEmailPage from './pages/VerifyEmailPage';
@@ -78,9 +79,16 @@ const MarketplaceBrowsePage = lazy(() => import('./pages/marketplace/Marketplace
 function Protected({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuth();
   const location = useLocation();
+  const sessionEnded = useAuthStore((s) => s.sessionEnded);
 
   if (!isAuthenticated) {
-    return <Navigate to={loginPathWithNext(`${location.pathname}${location.search}`)} replace />;
+    const from = `${location.pathname}${location.search}`;
+    // A session the server ended says so on the sign-in page, and hands over the email.
+    return sessionEnded ? (
+      <Navigate to={loginPathWithNext(from, SESSION_EXPIRED_REASON)} state={{ email: sessionEnded.email }} replace />
+    ) : (
+      <Navigate to={loginPathWithNext(from)} replace />
+    );
   }
 
   return children;
@@ -134,6 +142,13 @@ function CompanyRequired({ children }: { children: React.ReactNode }) {
 
   if (companyQuery.isLoading) {
     return <div className="empty-state">Loading company profile...</div>;
+  }
+
+  // A 401 means the session ended: client.ts has already cleared it and is
+  // sending the visitor to sign in. Neither the company-setup redirect nor
+  // "Loading..." belongs here, and a 401 must not be mistaken for "no company".
+  if (axios.isAxiosError(companyQuery.error) && companyQuery.error.response?.status === 401) {
+    return null;
   }
 
   // A 409 company_required is the server saying this user has no company yet
@@ -218,6 +233,29 @@ function PublicShareRedirect() {
 function LegacyRedirect({ to }: { to: string }) {
   const { search, hash } = useLocation();
   return <Navigate to={`${to}${search}${hash}`} replace />;
+}
+
+/**
+ * Lets api/client.ts, which lives outside the router, send a visitor whose
+ * session ended to the sign-in page. Rendered before the routes so it is
+ * registered before any page's first request can come back 401.
+ */
+function SessionEndedBridge() {
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    setSessionEndedHandler({
+      getSession: () => {
+        const { token, userEmail } = useAuthStore.getState();
+        return token ? { email: userEmail } : null;
+      },
+      logout: (options) => useAuthStore.getState().logout(options),
+      navigate: (path, state) => navigate(path, { replace: true, state }),
+    });
+    return () => setSessionEndedHandler(null);
+  }, [navigate]);
+
+  return null;
 }
 
 function AppRoutes() {
@@ -317,6 +355,7 @@ export default function App() {
       <AuthProvider>
         <FYProvider>
           <ShortcutsProvider>
+            <SessionEndedBridge />
             <AppRoutes />
             <WhatsAppSupportBubble />
           </ShortcutsProvider>

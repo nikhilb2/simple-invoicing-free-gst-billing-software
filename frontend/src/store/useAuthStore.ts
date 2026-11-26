@@ -22,6 +22,8 @@ function decodeEmailFromToken(token: string | null) {
 type AuthState = {
   token: string | null;
   userEmail: string | null;
+  /** Set by logout() when the server ended the session; cleared by the next sign-in. */
+  sessionEnded: { email: string | null } | null;
   userRole: UserProfile['role'] | null;
   /** Role in the active company; null until /auth/me answers or without one. */
   companyRole: UserProfile['role'] | null;
@@ -37,12 +39,25 @@ type AuthState = {
   /** Stores a token pair however it was obtained (password login, OAuth exchange). */
   setSession: (tokens: AuthToken) => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
-  logout: () => void;
+  /**
+   * `remote: false` skips the server's /auth/logout and `notifyNative: false`
+   * skips the app's logout message: both are for a session the server already
+   * rejected (see api/client.ts), where there is nothing to tell either.
+   */
+  logout: (options?: LogoutOptions) => void;
+};
+
+export type LogoutOptions = {
+  remote?: boolean;
+  notifyNative?: boolean;
+  /** Set when the server ended the session; `Protected` then sends the visitor to sign in with a notice. */
+  sessionEnded?: { email: string | null };
 };
 
 export const useAuthStore = create<AuthState>((set, get) => ({
   token: localStorage.getItem('token'),
   userEmail: decodeEmailFromToken(localStorage.getItem('token')),
+  sessionEnded: null,
   userRole: null,
   companyRole: null,
   canManagePlatform: false,
@@ -93,6 +108,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({
       token: tokens.access_token,
       userEmail: identifiedEmail,
+      sessionEnded: null,
     });
 
     // Login, verified email sign-up and Google sign-up all establish identity
@@ -113,22 +129,26 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     await get().setSession(res.data);
   },
 
-  logout: () => {
+  logout: ({ remote = true, notifyNative = true, sessionEnded = undefined } = {}) => {
     // Fire-and-forget, and before the token is cleared: the endpoint exists so
     // that signing out is counted on the server like every other event. Nothing
     // waits on it and a failure is not worth surfacing -- the sign-out itself is
     // local, and happens either way.
-    void api.post('/auth/logout').catch(() => undefined);
+    if (remote) {
+      void api.post('/auth/logout').catch(() => undefined);
+    }
     resetAnalyticsUser();
     localStorage.removeItem('token');
     localStorage.removeItem('refresh_token');
     localStorage.removeItem('active_company_id');
     // The mobile app holds its own copy of the tokens; this is what sends it
     // back to its native login screen instead of reloading us signed in.
-    postToNative({ type: 'logout' });
+    if (notifyNative) {
+      postToNative({ type: 'logout' });
+    }
     // Cached figures belong to the user who fetched them. The tab is not reloaded,
     // so without this the next login would show them until they went stale.
     queryClient.clear();
-    set({ token: null, userEmail: null, userRole: null, companyRole: null, canManagePlatform: false, profileLoaded: false, firstInvoiceTourStatus: undefined });
+    set({ token: null, userEmail: null, sessionEnded: sessionEnded ?? null, userRole: null, companyRole: null, canManagePlatform: false, profileLoaded: false, firstInvoiceTourStatus: undefined });
   },
 }));

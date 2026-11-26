@@ -9,8 +9,12 @@ vi.mock('../hooks/useAuthConfig', () => ({
 
 import LoginPage from './LoginPage';
 
-function render(path = '/login') {
-  return renderToStaticMarkup(<MemoryRouter initialEntries={[path]}><LoginPage /></MemoryRouter>);
+function render(path = '/login', state?: unknown) {
+  return renderToStaticMarkup(
+    <MemoryRouter initialEntries={[{ pathname: path.split('?')[0], search: path.includes('?') ? `?${path.split('?')[1]}` : '', state }]}>
+      <LoginPage />
+    </MemoryRouter>,
+  );
 }
 
 describe('LoginPage confirmation guidance', () => {
@@ -28,5 +32,42 @@ describe('LoginPage confirmation guidance', () => {
     expect(html).not.toContain('Resend verification email');
     expect(html).toContain('Forgot password?');
     expect(html).toContain('Create account');
+  });
+});
+
+describe('LoginPage after a session ended', () => {
+  const reasonPath = '/login?next=%2Finvoices-view&reason=session_expired';
+
+  it('says the visitor was signed out, in the page header', () => {
+    const html = render(reasonPath);
+    expect(html).toContain('Session ended');
+    expect(html).toContain('Sign in again');
+    expect(html).toContain('You were signed out. Sign in again to continue.');
+    expect(html).not.toContain('Welcome back');
+  });
+
+  it('keeps the normal header with no reason or an unknown one', () => {
+    for (const path of ['/login', '/login?reason=other', '/login?reason=oauth_failed']) {
+      const html = render(path);
+      expect(html).toContain('Welcome back');
+      expect(html).not.toContain('Session ended');
+    }
+  });
+
+  it('fills the email from router state and puts focus in Password', () => {
+    const html = render(reasonPath, { email: 'owner@example.com' });
+    expect(html).toContain('value="owner@example.com"');
+    expect(html).toMatch(/<input[^>]*id="password"[^>]*autoFocus|<input[^>]*autoFocus[^>]*id="password"/i);
+  });
+
+  it('leaves the email empty and focus alone when no email is known', () => {
+    const html = render(reasonPath);
+    expect(html).not.toContain('owner@example.com');
+    expect(html).not.toMatch(/autoFocus/i);
+  });
+
+  it('does not take the email from the URL', () => {
+    const html = render('/login?reason=session_expired&email=owner@example.com');
+    expect(html).not.toContain('value="owner@example.com"');
   });
 });

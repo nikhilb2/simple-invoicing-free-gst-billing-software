@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import axios from 'axios';
 import { useQuery } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'framer-motion';
 import api, { getApiErrorMessage } from '../api/client';
@@ -57,7 +58,9 @@ export default function CompanySelector({ onDialogOpen, onDialogClose }: {
   const companyList = companiesQuery.data?.companies ?? [];
   const canCreateCompany = companiesQuery.data?.canCreateCompany ?? false;
   const activeCompany = companyList.find((company) => company.is_active) ?? null;
-  const queryError = companiesQuery.error
+  // A 401 means the session ended and the visitor is being sent to sign in;
+  // the API's "Not authenticated" is not something to show them.
+  const queryError = companiesQuery.error && !(axios.isAxiosError(companiesQuery.error) && companiesQuery.error.response?.status === 401)
     ? getApiErrorMessage(companiesQuery.error, 'Failed to load companies')
     : '';
   const effectiveCompanyError = companyError || queryError;
