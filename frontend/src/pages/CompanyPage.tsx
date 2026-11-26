@@ -21,6 +21,7 @@ import { buildSeriesPreview, clampNextSequenceInput, gstr1SeriesFormatError, MAX
 import { purchaseTdsSetting } from '../utils/tds';
 import { companyIdentityErrors, firstIdentityErrorField, type CompanyIdentityErrors } from '../utils/companyFieldErrors';
 import { GSTIN_LENGTH, gstinError, normalizeGstinInput } from '../utils/gstin';
+import BillHeaderPreview from '../components/BillHeaderPreview';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -1226,6 +1227,10 @@ export default function CompanyPage() {
                   />
                   {missingFields.name
                     ? <p className="field-error" id="company-name-error" role="alert">{missingFields.name}</p>
+                    : null}
+                  {noCompany ? <BillHeaderPreview name={form.name} /> : null}
+                  {missingFields.name ? null : noCompany
+                    ? <small className="field-hint" id="company-name-hint">Top of your bills. You can change it later.</small>
                     : <small className="field-hint" id="company-name-hint">As it should appear on your invoices, e.g. Sharma Traders.</small>}
                 </div>
 

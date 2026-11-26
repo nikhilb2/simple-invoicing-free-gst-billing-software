@@ -9250,6 +9250,45 @@ a.ledger-chip:focus-visible {
   max-width: 640px;
 }
 
+/* First setup: a one-row sketch of the top of a bill, under the business name. */
+.bill-header-preview {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 8px 12px;
+  border: 1px dashed var(--color-border);
+  border-radius: 10px;
+}
+
+.bill-header-preview__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.bill-header-preview__name--empty {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.bill-header-preview__meta {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+/* On a phone the name matters more than the bill number: "Ravi Kumar Mobiles"
+   fits at 390px only without " · Bill 1". */
+@media (max-width: 420px) {
+  .bill-header-preview__number {
+    display: none;
+  }
+}
+
 /* Floating WhatsApp support link, bottom right on every screen. Below the
    sidebar, modals and the walkthrough card, so it never covers a dialog's
    own buttons. */
