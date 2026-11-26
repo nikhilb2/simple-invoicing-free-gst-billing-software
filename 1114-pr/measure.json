@@ -129,6 +129,18 @@
   "innerW": 390,
   "innerH": 508
  },
+ "keyboard_gstin": {
+  "focused": "company-gst",
+  "scrollY": 50,
+  "submitBottom": 499.59375,
+  "gstTop": 345.21875
+ },
+ "keyboard_gstin_name": {
+  "focused": "company-name",
+  "scrollY": 50,
+  "submitBottom": 499.59375,
+  "nameTop": 169.140625
+ },
  "desktop": {
   "submit": {
    "top": 443.94,
@@ -317,8 +329,8 @@
  "company_url": "http://localhost:15200/settings/company",
  "exitCount": 1,
  "composer": {
-  "labelTop": 455.88,
-  "inputTop": 485.95,
+  "labelTop": 446.88,
+  "inputTop": 476.95,
   "hint": "Next: pick your customer, add an item, then tap Create invoice.\n\nShow me how",
   "url": "/invoices"
  }
