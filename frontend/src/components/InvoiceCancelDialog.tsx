@@ -5,11 +5,17 @@ import ConfirmDialog from './ConfirmDialog';
 import StatusToasts from './StatusToasts';
 import { useInvoiceCancelStore } from '../store/useInvoiceCancelStore';
 import { invoiceQueryKeys } from '../features/invoices/queryKeys';
-import { invoiceToastMessage } from '../utils/invoiceToast';
+import { invoiceCancelConfirmMessage, invoiceToastMessage } from '../utils/invoiceToast';
 
 export default function InvoiceCancelDialog() {
-  const { pendingCancelId, pendingCancelNumber, pendingCancelLines, pendingCancelProducts, dismissCancel } =
-    useInvoiceCancelStore();
+  const {
+    pendingCancelId,
+    pendingCancelNumber,
+    pendingCancelLines,
+    pendingCancelProducts,
+    pendingCancelVoucherType,
+    dismissCancel,
+  } = useInvoiceCancelStore();
   const queryClient = useQueryClient();
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
@@ -30,6 +36,7 @@ export default function InvoiceCancelDialog() {
       id: pendingCancelId,
       message: invoiceToastMessage({
         action: 'cancel',
+        voucherType: pendingCancelVoucherType ?? undefined,
         number: pendingCancelNumber,
         lines: pendingCancelLines,
         products: pendingCancelProducts,
@@ -37,14 +44,19 @@ export default function InvoiceCancelDialog() {
     });
   }
 
-  const label = pendingCancelNumber ?? (pendingCancelId ? `#${pendingCancelId}` : '');
+  const label = pendingCancelNumber ?? (pendingCancelId ? `#${pendingCancelId}` : null);
 
   return (
     <>
       {pendingCancelId !== null && (
         <ConfirmDialog
           title="Cancel invoice"
-          message={`Are you sure you want to cancel invoice ${label}? Inventory will be reversed. The invoice will remain visible when showing cancelled invoices.`}
+          message={invoiceCancelConfirmMessage({
+            number: label,
+            voucherType: pendingCancelVoucherType,
+            lines: pendingCancelLines,
+            products: pendingCancelProducts,
+          })}
           confirmText="Cancel invoice"
           onConfirm={handleConfirm}
           onCancel={dismissCancel}

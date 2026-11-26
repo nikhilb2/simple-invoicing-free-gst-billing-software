@@ -121,7 +121,11 @@ export default function InvoicesAdvancedView() {
   }
 
   function handleCancelRequest(invoice: Invoice) {
-    requestCancel(invoice.id, invoice.invoice_number, { lines: invoice.items, products });
+    requestCancel(invoice.id, invoice.invoice_number, {
+      lines: invoice.items,
+      products,
+      voucherType: invoice.voucher_type,
+    });
   }
 
   function handleRestore(invoice: Invoice) {
@@ -129,6 +133,7 @@ export default function InvoicesAdvancedView() {
       id: invoice.id,
       message: invoiceToastMessage({
         action: 'restore',
+        voucherType: invoice.voucher_type,
         number: invoice.invoice_number,
         lines: invoice.items,
         products,

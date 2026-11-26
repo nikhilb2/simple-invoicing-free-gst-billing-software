@@ -10,10 +10,12 @@ type InvoiceCancelState = {
   /* What the cancelled invoice billed, so the toast only says stock was put back when it was. */
   pendingCancelLines: StockLine[] | null;
   pendingCancelProducts: StockProduct[] | null;
+  /* Sale or purchase: cancelling moves stock in opposite directions. */
+  pendingCancelVoucherType: 'sales' | 'purchase' | null;
   requestCancel: (
     invoiceId: number,
     invoiceNumber?: string | null,
-    stock?: { lines: StockLine[]; products: StockProduct[] },
+    stock?: { lines: StockLine[]; products: StockProduct[]; voucherType?: 'sales' | 'purchase' },
   ) => void;
   dismissCancel: () => void;
 };
@@ -23,13 +25,21 @@ export const useInvoiceCancelStore = create<InvoiceCancelState>((set) => ({
   pendingCancelNumber: null,
   pendingCancelLines: null,
   pendingCancelProducts: null,
+  pendingCancelVoucherType: null,
   requestCancel: (invoiceId, invoiceNumber, stock) =>
     set({
       pendingCancelId: invoiceId,
       pendingCancelNumber: invoiceNumber ?? null,
       pendingCancelLines: stock?.lines ?? null,
       pendingCancelProducts: stock?.products ?? null,
+      pendingCancelVoucherType: stock?.voucherType ?? null,
     }),
   dismissCancel: () =>
-    set({ pendingCancelId: null, pendingCancelNumber: null, pendingCancelLines: null, pendingCancelProducts: null }),
+    set({
+      pendingCancelId: null,
+      pendingCancelNumber: null,
+      pendingCancelLines: null,
+      pendingCancelProducts: null,
+      pendingCancelVoucherType: null,
+    }),
 }));
