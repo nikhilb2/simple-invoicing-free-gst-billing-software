@@ -26,7 +26,7 @@ describe('InAppBrowserNotice', () => {
     expect(html).toContain('Google sign-in doesn’t work inside Instagram.');
     expect(html).toContain('Tap ⋮ at the top right and choose “Open in Chrome”, or sign up with your email below.');
     expect(html).toContain('marketplace-note marketplace-note--emphasis');
-    expect(html).toContain('button button--primary button--small');
+    expect(html).toContain('button button--ghost button--small');
     expect(html).toContain('Copy link');
   });
 
