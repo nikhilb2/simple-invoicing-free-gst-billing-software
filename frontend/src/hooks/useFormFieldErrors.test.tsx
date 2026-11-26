@@ -13,6 +13,15 @@ describe('FieldError', () => {
     expect(html).toContain('role="alert"');
     expect(html).toContain('Pick a ledger from the list.');
   });
+
+  it('words a failed field in its own terms, and only while it has failed', () => {
+    const html = renderToString(
+      <FieldError id="invoice-price-1" errors={{ 'invoice-price-1': 'Value must be greater than or equal to 0.' }} text="Price can't be less than 0" className="line-item__error" />,
+    );
+    expect(html).toContain('Price can&#x27;t be less than 0');
+    expect(html).toContain('class="field-error field-error--block line-item__error"');
+    expect(renderToString(<FieldError id="invoice-price-1" errors={{}} text="Price can't be less than 0" />)).toBe('');
+  });
 });
 
 const valid = { customError: false, valueMissing: false, rangeUnderflow: false, rangeOverflow: false, stepMismatch: false, badInput: false };

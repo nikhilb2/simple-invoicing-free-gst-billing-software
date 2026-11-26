@@ -871,6 +871,22 @@ input[type='radio'] {
   margin-top: 0;
 }
 
+/* The composer's line messages (#1100) follow their own fields. On a phone the
+   line is one column, so each sits right under its field. Wider, the fields
+   sit side by side and the messages share one row under them, each in its
+   field's column, so the controls stay level with their neighbours. */
+.line-item > .line-item__error {
+  margin-top: 0;
+}
+
+@media (min-width: 721px) {
+  .line-item > .line-item__error { grid-row: 2; }
+  .line-item > .line-item__error--product { grid-column: 1; }
+  .line-item > .line-item__error--quantity { grid-column: 2; }
+  .line-item > .line-item__error--price { grid-column: 3; }
+  .line-item > .line-item__error--discount { grid-column: 4; }
+}
+
 /* A field that stopped a save. See useFormFieldErrors. */
 .input[aria-invalid='true'],
 .select[aria-invalid='true'],
@@ -9523,13 +9539,17 @@ a.ledger-chip:focus-visible {
 
 .composer-submit { display: contents; }
 .composer-submit__total { display: none; }
-.composer-submit__reason { flex: 1 1 100%; order: -1; margin: 0; }
+.composer-submit__reason { flex: 1 1 100%; order: -1; margin: 0; cursor: pointer; }
+/* A field a save stopped at is scrolled to with its label clear of the sticky header. */
+.invoice-composer-page :is(input, select, textarea):invalid { scroll-margin-block: 96px 16px; }
 .serial-line__stock-action { min-height: 44px; }
 
 @media (max-width: 767px) {
   .invoice-composer-page { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
   .invoice-composer-page:has(.composer-submit__reason) { padding-bottom: calc(200px + env(safe-area-inset-bottom)); }
   .invoice-composer-page .serial-line { scroll-margin-block: 24px 180px; }
+  /* On a phone, clear of the fixed bar as well. */
+  .invoice-composer-page :is(input, select, textarea):invalid { scroll-margin-block: 80px 200px; }
   .serial-line__stock-action { width: 100%; }
   .invoice-composer-page .composer-hide-phone { display: none; }
   .invoice-composer-page .composer-show-phone { display: block; }

@@ -59,10 +59,29 @@ import StockUpdateModal from './components/StockUpdateModal';
 import ReceiptModal from '../../components/ReceiptModal';
 import { counterpartyFor } from './counterparty';
 import { COMPOSER_PHONE_DESCRIPTION, billingAsLine, savedDocumentsLabel, savedDocumentsRoute, totalBarLabel } from './composerMobile';
-import { FieldError, LineFieldErrors, useFormFieldErrors } from '../../hooks/useFormFieldErrors';
+import { FieldError, useFormFieldErrors } from '../../hooks/useFormFieldErrors';
 import { createItem, type InvoiceFormItem } from './types';
 import { defaultPaymentAccountId } from '../../utils/cashBank';
-import { missingSerialsMessage } from '../../utils/missingSerialsMessage';
+import {
+  checkProblem,
+  composerSubmitReason,
+  discountProblem,
+  fieldProblemMessage,
+  priceProblem,
+  quantityProblem,
+  type ComposerProblem,
+  type ComposerProblemKind,
+  type LineField,
+} from './composerProblems';
+
+const LINE_FIELDS: LineField[] = ['product', 'quantity', 'price', 'discount'];
+
+function lineFieldId(field: LineField, itemId: number): string {
+  if (field === 'product') return `invoice-product-${itemId}`;
+  if (field === 'quantity') return `invoice-quantity-${itemId}`;
+  if (field === 'price') return `invoice-price-${itemId}`;
+  return `item-disc-value-${itemId}`;
+}
 
 /**
  * Publishes the fixed Create invoice bar's rendered height as --composer-bar-height
@@ -192,8 +211,10 @@ export default function InvoicesPage() {
   const showCancelled = false;
   const [previewInvoice, setPreviewInvoice] = useState<Invoice | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  /* The save buttons stay enabled; a click on one marks what is missing. */
-  const fieldErrors = useFormFieldErrors();
+  /* The save buttons stay enabled; a click on one marks what is missing.
+     The composer scrolls to its first problem itself: serials count too. */
+  const fieldErrors = useFormFieldErrors({ revealFirst: false });
+  const composerFormRef = useRef<HTMLFormElement>(null);
   const counterparty = counterpartyFor(voucherType);
   const [error, setError] = useState('');
   /* Adding stock from the "not enough stock" notice is the answer to that error,
@@ -543,9 +564,66 @@ export default function InvoicesPage() {
     return isTrackedLine(item) ? item.serials.length : Number(item.quantity);
   }
 
-  const serialSubmitMessage = missingSerialsMessage(items.flatMap((item, index) =>
-    serialBlockIds.includes(item.id) && isTrackedLine(item) && item.serials.length === 0 ? [index + 1] : [],
-  ));
+  /** What is wrong with one field of a line, read from the form state. */
+  function lineFieldProblem(item: InvoiceFormItem, field: LineField): ComposerProblemKind | null {
+    const product = findProduct(Number(item.productId));
+    if (field === 'product') return item.productId ? null : 'product';
+    if (field === 'quantity') return isTrackedLine(item) ? null : quantityProblem(item.quantity, Boolean(product?.allow_decimal));
+    if (field === 'price') return priceProblem(item.unit_price, product ? Number(product.price) : null);
+    return discountProblem(item.discount_value, item.discount_type);
+  }
+
+  /** A field's problem once a save was refused for it, for as long as it lasts. */
+  function shownLineProblem(item: InvoiceFormItem, field: LineField): ComposerProblemKind | null {
+    if (!fieldErrors.errors[lineFieldId(field, item.id)]) return null;
+    return lineFieldProblem(item, field) ?? checkProblem(field);
+  }
+
+  /* Every reason the last save was refused that still holds, in one list
+     (#1100). It is worked out from the state on each render, so fixing a field
+     moves the strip on to the next problem, and the strip goes with the last. */
+  const submitProblems: ComposerProblem[] = [];
+  if (fieldErrors.errors['invoice-ledger']) submitProblems.push({ kind: 'customer' });
+  items.forEach((item, index) => {
+    LINE_FIELDS.forEach((field) => {
+      const kind = shownLineProblem(item, field);
+      if (kind) submitProblems.push({ kind, line: index + 1 });
+    });
+    if (serialBlockIds.includes(item.id) && isTrackedLine(item) && item.serials.length === 0) {
+      submitProblems.push({ kind: 'serial', line: index + 1 });
+    }
+  });
+  const submitReason = composerSubmitReason(submitProblems, counterparty.noun);
+
+  /**
+   * Scrolls to the first problem in page order, clear of the header and the
+   * phone's fixed bar (scroll-margin in styles.css). On wider screens a field
+   * already in sight is left where it is, so the strip above the button stays
+   * in sight too. Only a fine pointer gets focus: on a phone the keyboard would
+   * cover the message and the strip. A combobox is only scrolled to, as its
+   * list would open over the message.
+   */
+  function revealFirstProblem() {
+    const first = composerFormRef.current?.querySelector<HTMLElement>(
+      'input:invalid, select:invalid, textarea:invalid, .serial-line[data-blocked]',
+    );
+    if (!first) return;
+    const phone = window.matchMedia('(max-width: 767px)').matches;
+    /* The strip pushed the button down; bring it back before going to the field. */
+    if (!phone) composerFormRef.current?.querySelector('.composer-submit > .button--primary')?.scrollIntoView({ block: 'nearest' });
+    first.scrollIntoView({ block: phone ? 'center' : 'nearest', behavior: 'smooth' });
+    const serialLine = first.classList.contains('serial-line');
+    if (serialLine) {
+      const lineId = Number(first.closest('.line-item')?.id.replace('invoice-line-', ''));
+      if (lineId) flashLine(lineId);
+    }
+    if (!window.matchMedia('(pointer: fine)').matches) return;
+    if (serialLine) {
+      first.querySelector<HTMLInputElement>('input[id$="-serial-input"]')?.focus({ preventScroll: true });
+    } else if (first.getAttribute('role') !== 'combobox' || first.dataset.focusOnError) {
+      first.focus({ preventScroll: true });
+    }
+  }
 
   /** Writes to the ref first so the next queued scan reads the new lines. */
   function commitItems(next: InvoiceFormItem[]) {
@@ -1181,6 +1259,20 @@ export default function InvoicesPage() {
   async function handleSubmitInvoice(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
+    /* The form has noValidate, so one tap checks the fields and the serials
+       together and every reason shows at once, with no browser bubble. */
+    const fieldsValid = event.currentTarget.checkValidity();
+    fieldErrors.flush();
+    const missingSerials = voucherType === 'sales' || voucherType === 'purchase'
+      ? items.filter((item) => isTrackedLine(item) && item.serials.length === 0)
+      : [];
+    setSerialBlockIds(missingSerials.map((item) => item.id));
+    if (!fieldsValid || missingSerials.length > 0) {
+      /* Once the messages, the serial notices and the strip are drawn. */
+      window.setTimeout(revealFirstProblem, 0);
+      return;
+    }
+
     if (voucherType === 'receipt') {
       if (!selectedLedgerId) {
         setError('Please select a ledger to record a receipt against.');
@@ -1222,33 +1314,10 @@ export default function InvoicesPage() {
       return;
     }
 
-    /* A product name typed but never picked from the list leaves the line with
-       no product; sending it posts product_id 0. */
-    const unpickedIndex = items.findIndex((item) => !item.productId);
-    if (unpickedIndex >= 0) {
-      const unpicked = items[unpickedIndex];
-      setError(`Pick a product from the list on line ${unpickedIndex + 1}.`);
-      flashLine(unpicked.id);
-      document.getElementById(`invoice-product-${unpicked.id}`)?.focus();
-      return;
-    }
-
-    /* A tracked line with no serials is not an incomplete form, it is an
-       invoice for units nobody has identified. The block is stated on the line
-       itself — a toast at the top of a six-line invoice does not say which. */
-    const missingSerials = items.filter((item) => isTrackedLine(item) && item.serials.length === 0);
-    if (missingSerials.length > 0) {
-      setSerialBlockIds(missingSerials.map((item) => item.id));
-      flashLine(missingSerials[0].id);
-      window.requestAnimationFrame(() => {
-        const firstId = missingSerials[0].id;
-        document.getElementById(`invoice-line-${firstId}`)?.querySelector('.serial-line')?.scrollIntoView({ block: 'center' });
-        if (window.matchMedia('(pointer: fine)').matches) {
-          document.getElementById(`invoice-line-${firstId}-serial-input`)?.focus({ preventScroll: true });
-        }
-      });
-      return;
-    }
+    /* A line with no product, and a tracked line with no serials, were stopped
+       above: the product combobox is invalid until a product is picked, and a
+       tracked line with no serials is an invoice for units nobody has
+       identified. Both are stated on the line and in the strip, never a toast. */
 
     try {
       setSubmitting(true);
@@ -1582,7 +1651,7 @@ export default function InvoicesPage() {
             </p>
           ) : null}
 
-          <form className="stack" onSubmit={handleSubmitInvoice} onInvalidCapture={fieldErrors.onInvalidCapture}>
+          <form ref={composerFormRef} className="stack" noValidate onSubmit={handleSubmitInvoice} onInvalidCapture={fieldErrors.onInvalidCapture}>
             <div className="field-grid">
               <div className="field">
                 <label htmlFor="invoice-voucher-type">Voucher type</label>
@@ -2104,6 +2173,21 @@ export default function InvoicesPage() {
                     discountValue: Number(item.discount_value),
                     interstateSupply: composerInterstateSupply,
                   });
+                  /* Each message follows its own field: right under it on a phone, and
+                     in one row under the line's fields, column by column, on wider
+                     screens (styles.css, .line-item__error). */
+                  const lineError = (field: LineField) => {
+                    const kind = shownLineProblem(item, field);
+                    return (
+                      <FieldError
+                        id={lineFieldId(field, item.id)}
+                        errors={fieldErrors.errors}
+                        text={kind ? fieldProblemMessage(kind) : null}
+                        className={`line-item__error line-item__error--${field}`}
+                      />
+                    );
+                  };
+                  const serialBlocked = serialBlockIds.includes(item.id);
 
                   return (
                     <div
@@ -2126,6 +2210,7 @@ export default function InvoicesPage() {
                           required
                         />
                       </div>
+                      {lineError('product')}
 
                       <div className="field">
                         <label htmlFor={`invoice-quantity-${item.id}`}>
@@ -2145,6 +2230,7 @@ export default function InvoicesPage() {
                           required
                         />
                       </div>
+                      {lineError('quantity')}
 
                       <div className="field">
                         <label htmlFor={`invoice-price-${item.id}`}>{priceColumnLabel(taxInclusive)}</label>
@@ -2157,8 +2243,11 @@ export default function InvoicesPage() {
                           value={item.unit_price}
                           onChange={(event) => updateItem(item.id, 'unit_price', event.target.value)}
                           placeholder={selectedProduct ? String(selectedProduct.price) : '0.00'}
+                          /* A blank price saves at the catalogue price, and at ₹0 when that is 0. */
+                          ref={(input) => input?.setCustomValidity(lineFieldProblem(item, 'price') === 'price-missing' ? 'Enter a price' : '')}
                         />
                       </div>
+                      {lineError('price')}
 
                       <div className="field line-item__discount">
                         <label htmlFor={`item-disc-value-${item.id}`}>Discount</label>
@@ -2194,6 +2283,7 @@ export default function InvoicesPage() {
                           placeholder="0"
                         />
                       </div>
+                      {lineError('discount')}
 
                       <div className="line-item__price">
                         <span className="line-item__label">Line total</span>
@@ -2219,15 +2309,8 @@ export default function InvoicesPage() {
                       >
                         <Trash2 size={15} />
                       </button>
-                      <LineFieldErrors
-                        errors={fieldErrors.errors}
-                        fields={[
-                          { id: `invoice-product-${item.id}`, label: 'Product' },
-                          { id: `invoice-quantity-${item.id}`, label: 'Qty' },
-                        ]}
-                      />
                       {tracked ? (
-                        <div className="field field--full serial-line">
+                        <div className="field field--full serial-line" data-blocked={serialBlocked && item.serials.length === 0 ? 'true' : undefined}>
                           <SerialChips
                             value={item.serials}
                             onChange={(next) => setLineSerials(item.id, next)}
@@ -2238,8 +2321,8 @@ export default function InvoicesPage() {
                           />
                           {item.serials.length === 0 ? (
                             <div
-                              className={serialBlockIds.includes(item.id) ? 'form-error stock-shortage' : 'field-warning field-warning--action'}
-                              role={serialBlockIds.includes(item.id) ? 'alert' : 'status'}
+                              className={serialBlocked ? 'form-error stock-shortage' : 'field-warning field-warning--action'}
+                              role={serialBlocked ? 'alert' : 'status'}
                             >
                               {voucherType === 'purchase' ? (
                                 <span>This product is serial tracked — scan or add at least one serial before saving.</span>
@@ -2346,7 +2429,9 @@ export default function InvoicesPage() {
                 </button>
               ) : null}
               <div className="composer-submit" ref={composerBarRef}>
-                {serialSubmitMessage ? <p className="form-error composer-submit__reason" role="alert">{serialSubmitMessage}</p> : null}
+                {/* Tapping the strip goes back to the first problem. The fields keep their
+                    own messages, so it needs no keyboard stop of its own. */}
+                {submitReason ? <p className="form-error composer-submit__reason" role="alert" onClick={revealFirstProblem}>{submitReason}</p> : null}
                 <span className="composer-submit__total">{totalBarLabel(formatCurrency(projectedTotalAmount, activeCurrencyCode))}</span>
               {voucherType === 'payment' ? (
                 <button className="button button--primary" disabled={submitting} title="Create payment voucher" aria-label="Create payment voucher">
