@@ -475,7 +475,7 @@ function Gstr1SummaryView({
               <Metric label="Active invoices" value={docs.total_invoices} />
               <Metric label="Cancelled invoices" value={docs.cancelled_invoices} />
               <Metric label="Active credit notes" value={docs.total_credit_notes} />
-              <Metric label="Cancelled credit notes" value={docs.cancelled_credit_notes ?? 0} />
+              <Metric label="Cancelled credit notes" value={docs.cancelled_credit_notes} />
               <Metric label="Debit notes" value={docs.total_debit_notes} />
             </div>
           </div>

@@ -1030,7 +1030,7 @@ export type Gstr1DocSummary = {
   total_credit_notes: number;
   total_debit_notes: number;
   cancelled_invoices: number;
-  cancelled_credit_notes?: number;
+  cancelled_credit_notes: number;
 };
 
 export type Gstr1Summary = {
