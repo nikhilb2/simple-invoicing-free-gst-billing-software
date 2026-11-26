@@ -1722,6 +1722,13 @@ input[type='radio'] {
   font-size: 0.95rem;
 }
 
+@media (max-width: 767px) {
+  .invoice-composer-page .field__label-row { align-items: center; }
+  .invoice-composer-page .field__label-row .link-button,
+  .invoice-composer-page .line-items__tools .link-button { min-height: 44px; min-width: 44px; }
+  .invoice-composer-page .line-item > .button--icon { width: 44px; height: 44px; }
+}
+
 /* An address the person has to check by eye, on a line of its own. */
 .sent-address {
   margin: 4px 0 0;
