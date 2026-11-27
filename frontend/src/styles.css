@@ -8255,6 +8255,11 @@ a.ledger-chip:focus-visible {
 }
 
 /* ── The table ───────────────────────────────────────────────────────── */
+/* Hidden on desktop: only phones need to be told the list swipes. */
+.catalogue-scroll-hint {
+  display: none;
+}
+
 /* The scroller lives on the wrapper, never on the page: a table wide enough to
    need it must not push the whole layout sideways. */
 .catalogue-table-wrap {
@@ -8639,9 +8644,19 @@ a.ledger-chip:focus-visible {
      the invoice filters take. */
   .catalogue-panel > .panel__header > .button-row {
     width: auto;
+    flex: 1 1 100%;
+    min-width: 0;
+    max-width: 100%;
     flex-direction: row;
     flex-wrap: wrap;
     align-items: center;
+    gap: 8px;
+  }
+
+  .catalogue-scroll-hint {
+    display: block;
+    margin: 0;
+    font-size: 0.82rem;
   }
 
   .catalogue-toolbar__count {

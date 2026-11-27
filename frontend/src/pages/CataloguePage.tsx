@@ -500,6 +500,10 @@ export default function CataloguePage() {
             ) : null}
           </div>
 
+          <p className="muted-text catalogue-scroll-hint">
+            Swipe the list sideways to see price, stock and actions →
+          </p>
+
           {loading ? (
             <LoadingState message="Loading the catalogue..." />
           ) : null}
@@ -686,5 +690,3 @@ export default function CataloguePage() {
     </div>
   );
 }
-
-// branch seed
