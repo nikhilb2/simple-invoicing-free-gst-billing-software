@@ -59,6 +59,37 @@ export function showBillTypeRow({
   return isFirstRun(hasInvoice) && !urlPicksDocument && voucherType === 'sales' && !locked && !changeChosen;
 }
 
+export type VoucherTypeOption = { value: string; label: string };
+
+/**
+ * Options of the composer's type dropdown. After "Change" on a first run (#1145)
+ * only bills and offers are listed, with "Sales invoice" to match the row it
+ * replaces. Otherwise today's list: Quotation and proforma only when making a
+ * new document (`allowOffers`).
+ */
+export function voucherTypeOptions({
+  firstRunChange,
+  allowOffers = true,
+}: {
+  firstRunChange: boolean;
+  allowOffers?: boolean;
+}): VoucherTypeOption[] {
+  const offers: VoucherTypeOption[] = [
+    { value: 'quotation', label: 'Quotation' },
+    { value: 'proforma', label: 'Proforma invoice' },
+  ];
+  if (firstRunChange) {
+    return [{ value: 'sales', label: 'Sales invoice' }, { value: 'purchase', label: 'Purchase' }, ...offers];
+  }
+  return [
+    { value: 'sales', label: 'Sales' },
+    { value: 'purchase', label: 'Purchase' },
+    { value: 'payment', label: 'Payment' },
+    { value: 'receipt', label: 'Receipt' },
+    ...(allowOffers ? offers : []),
+  ];
+}
+
 export function getStartedStatus(metrics: DashboardMetrics, facts: GetStartedFacts): GetStartedStatus {
   const { catalog, inventory } = metrics;
   return {

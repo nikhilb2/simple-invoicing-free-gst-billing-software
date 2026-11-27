@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { hasComposerDocumentParam, isFirstRun, showBillTypeRow } from './getStarted';
+import { hasComposerDocumentParam, isFirstRun, showBillTypeRow, voucherTypeOptions } from './getStarted';
 
 const base = { hasInvoice: false, urlPicksDocument: false, voucherType: 'sales', locked: false, changeChosen: false } as const;
 
@@ -53,5 +53,31 @@ describe('showBillTypeRow', () => {
 
   it('keeps the dropdown after Change', () => {
     expect(showBillTypeRow({ ...base, changeChosen: true })).toBe(false);
+  });
+});
+
+describe('voucherTypeOptions', () => {
+  it('after Change on a first run lists only bills and offers', () => {
+    expect(voucherTypeOptions({ firstRunChange: true })).toEqual([
+      { value: 'sales', label: 'Sales invoice' },
+      { value: 'purchase', label: 'Purchase' },
+      { value: 'quotation', label: 'Quotation' },
+      { value: 'proforma', label: 'Proforma invoice' },
+    ]);
+  });
+
+  it('normally lists today\'s six choices', () => {
+    expect(voucherTypeOptions({ firstRunChange: false })).toEqual([
+      { value: 'sales', label: 'Sales' },
+      { value: 'purchase', label: 'Purchase' },
+      { value: 'payment', label: 'Payment' },
+      { value: 'receipt', label: 'Receipt' },
+      { value: 'quotation', label: 'Quotation' },
+      { value: 'proforma', label: 'Proforma invoice' },
+    ]);
+  });
+
+  it('leaves out quotation and proforma when editing or converting', () => {
+    expect(voucherTypeOptions({ firstRunChange: false, allowOffers: false }).map((o) => o.value)).toEqual(['sales', 'purchase', 'payment', 'receipt']);
   });
 });

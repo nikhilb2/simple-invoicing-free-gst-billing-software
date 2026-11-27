@@ -31,7 +31,7 @@ import { createQuotation, fetchConversionDraft, fetchQuotationById, updateQuotat
 import { quotationQueryKeys } from '../../features/quotations/queryKeys';
 import { convertDeliveryChallan, fetchChallanConversionDraft } from '../../features/deliveryChallans/api';
 import { deliveryChallanQueryKeys } from '../../features/deliveryChallans/queryKeys';
-import { hasComposerDocumentParam, showBillTypeRow } from '../../utils/getStarted';
+import { hasComposerDocumentParam, isFirstRun, showBillTypeRow, voucherTypeOptions } from '../../utils/getStarted';
 import { challanQuantityNotes, challanReferenceText, readChallanAlreadyInvoiced } from '../../utils/challanConversion';
 import {
   composerDocumentName,
@@ -1500,11 +1500,12 @@ export default function InvoicesPage() {
   }, [composerLoaded, ledgers.length, products.length, selectedLedgerId, productChosen, voucherType, stockShortage, ledgerFormOpen, productFormOpen, stockFormOpen, reportToTour]);
   useEffect(() => () => reportToTour(null), [reportToTour]);
 
+  const composerLocked = conversion !== null || challanConversion !== null || editingQuotation !== null || editingInvoiceId !== null;
   const billTypeRow = showBillTypeRow({
     hasInvoice: companyHasInvoice,
     urlPicksDocument,
     voucherType,
-    locked: conversion !== null || challanConversion !== null || editingQuotation !== null || editingInvoiceId !== null,
+    locked: composerLocked,
     changeChosen: billTypeChanged,
   });
   const documentName = composerDocumentName(voucherType);
@@ -1708,19 +1709,15 @@ export default function InvoicesPage() {
                 <VoucherTypeSelect
                   afterChange={billTypeChanged}
                   value={voucherType}
-                  disabled={conversion !== null || challanConversion !== null || editingQuotation !== null || editingInvoiceId !== null}
+                  disabled={composerLocked}
                   onChange={(value) => changeVoucherType(value as ComposerVoucherType)}
                 >
-                  <option value="sales">Sales</option>
-                  <option value="purchase">Purchase</option>
-                  <option value="payment">Payment</option>
-                  <option value="receipt">Receipt</option>
-                  {!editingInvoiceId && !conversion && !challanConversion ? (
-                    <>
-                      <option value="quotation">Quotation</option>
-                      <option value="proforma">Proforma invoice</option>
-                    </>
-                  ) : null}
+                  {voucherTypeOptions({
+                    firstRunChange: billTypeChanged && isFirstRun(companyHasInvoice) && !urlPicksDocument && !composerLocked,
+                    allowOffers: !editingInvoiceId && !conversion && !challanConversion,
+                  }).map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
                 </VoucherTypeSelect>
               )}
 
