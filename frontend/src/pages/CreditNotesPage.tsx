@@ -48,8 +48,8 @@ type SelectedLineItem = {
 };
 
 const createCreditNoteTypeLabels: Record<'return' | 'discount', string> = {
-  return: 'Return',
-  discount: 'Discount',
+  return: 'Goods came back',
+  discount: 'Discount after billing',
 };
 
 function createQuantityKey(invoiceId: number, invoiceItemId: number) {
@@ -534,7 +534,9 @@ export default function CreditNotesPage() {
     event.preventDefault();
 
     if (!selectedLedgerId) {
-      setError('Select a ledger before creating a credit note.');
+      setError(direction === 'inward'
+        ? 'Pick a supplier before creating a credit note.'
+        : 'Pick a customer before creating a credit note.');
       return;
     }
     if (selectedInvoiceIds.length === 0) {
@@ -542,7 +544,7 @@ export default function CreditNotesPage() {
       return;
     }
     if (payloadItems.length === 0) {
-      setError(creditNoteType === 'discount' ? 'Enter at least one discount amount.' : 'Enter at least one credited quantity.');
+      setError(creditNoteType === 'discount' ? 'Enter at least one discount amount.' : 'Enter at least one quantity to give back.');
       return;
     }
     if (direction === 'inward' && (!supplierNoteNumber.trim() || !supplierNoteDate)) {
@@ -724,15 +726,15 @@ export default function CreditNotesPage() {
             {showMoreFilters ? (
               <div className="field-grid">
                 <label>
-                  <span>Voucher</span>
+                  <span>Type</span>
                   <select
                     className="select"
                     value={directionFilter}
                     onChange={(event) => { setDirectionFilter(event.target.value); setListPage(1); }}
                   >
                     <option value="">All</option>
-                    <option value="outward">Sales</option>
-                    <option value="inward">Purchase</option>
+                    <option value="outward">Customer notes</option>
+                    <option value="inward">Supplier notes</option>
                   </select>
                 </label>
                 <label>
@@ -781,20 +783,20 @@ export default function CreditNotesPage() {
               </div>
               <div className="panel__header-actions">
                 <div style={{ textAlign: 'right' }}>
-                  <p className="eyebrow">Preview total</p>
+                  <p className="eyebrow">Credit total</p>
                   <strong>{formatCurrency(previewTotal, currencyCode)}</strong>
                 </div>
                 <ModalCloseButton onClick={closeForm} label="Close credit note form" disabled={submitting} />
               </div>
             </div>
 
-          {loadingBootstrap ? <LoadingState message="Loading ledgers, invoices, and products..." /> : null}
+          {loadingBootstrap ? <LoadingState message="Loading customers, invoices, and products..." /> : null}
 
           {!loadingBootstrap ? (
             <form className="stack" onSubmit={handleSubmit}>
               <div className="field-grid">
                 <label>
-                  <span>Voucher *</span>
+                  <span>This note is for *</span>
                   <select
                     id="credit-note-direction"
                     className="select"
@@ -808,12 +810,12 @@ export default function CreditNotesPage() {
                       setSupplierNoteDate('');
                     }}
                   >
-                    <option value="outward">Sales — credit note we issue</option>
-                    <option value="inward">Purchase — credit note from a supplier</option>
+                    <option value="outward">A customer (we give a credit)</option>
+                    <option value="inward">A supplier (they gave us a credit)</option>
                   </select>
                 </label>
                 <label>
-                  <span>Ledger *</span>
+                  <span>{direction === 'inward' ? 'Supplier *' : 'Customer *'}</span>
                   <LedgerCombobox
                     id="credit-note-ledger"
                     ledgers={ledgers}
@@ -823,7 +825,7 @@ export default function CreditNotesPage() {
                   />
                 </label>
                 <label>
-                  <span>Type *</span>
+                  <span>What happened? *</span>
                   <select
                     className="select"
                     value={creditNoteType}
@@ -840,7 +842,7 @@ export default function CreditNotesPage() {
                   </select>
                 </label>
                 <label>
-                  <span>Credit note date *</span>
+                  <span>Date *</span>
                   <input
                     id="credit-note-date"
                     className="input"
@@ -888,13 +890,13 @@ export default function CreditNotesPage() {
               ) : null}
 
               <label>
-                <span>Reason</span>
+                <span>Note (optional)</span>
                 <textarea
                   className="textarea"
                   rows={3}
                   value={reason}
                   onChange={(event) => setReason(event.target.value)}
-                  placeholder="Optional narrative for return or discount"
+                  placeholder="For example: damaged goods"
                 />
               </label>
 
@@ -903,15 +905,17 @@ export default function CreditNotesPage() {
                   <div className="panel__header">
                     <div>
                       <p className="eyebrow">Step 1</p>
-                      <h3 className="nav-panel__title" style={{ fontSize: '1rem' }}>Select invoice set</h3>
+                      <h3 className="nav-panel__title" style={{ fontSize: '1rem' }}>Pick the invoices</h3>
                     </div>
                     <span style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-                      {filteredInvoices.length} active {expectedVoucherType} {filteredInvoices.length === 1 ? 'invoice' : 'invoices'} for this ledger
+                      {direction === 'inward'
+                        ? `${filteredInvoices.length} purchase ${filteredInvoices.length === 1 ? 'bill' : 'bills'} from this supplier`
+                        : `${filteredInvoices.length} ${filteredInvoices.length === 1 ? 'invoice' : 'invoices'} for this customer`}
                     </span>
                   </div>
 
                   {filteredInvoices.length === 0 ? (
-                    <EmptyState message={`No active ${expectedVoucherType} invoices found for the selected ledger.`} />
+                    <EmptyState message={direction === 'inward' ? 'This supplier has no bills to credit yet.' : 'This customer has no invoices to credit yet.'} />
                   ) : null}
 
                   <div className="stack" style={{ gap: '10px' }}>
@@ -969,7 +973,7 @@ export default function CreditNotesPage() {
                     <div>
                       <p className="eyebrow">Step 2</p>
                       <h3 className="nav-panel__title" style={{ fontSize: '1rem' }}>
-                        {creditNoteType === 'discount' ? 'Enter discount amount (tax inclusive)' : 'Choose credited quantities'}
+                        {creditNoteType === 'discount' ? 'Discount to give (incl. GST)' : 'How much to give back'}
                       </h3>
                     </div>
                     <span style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>{plural(payloadItems.length, 'line')} selected</span>
@@ -981,7 +985,7 @@ export default function CreditNotesPage() {
                     </p>
                   ) : null}
 
-                  {selectedLineItems.length === 0 ? <EmptyState message="Pick one or more invoices to expose their line items." /> : null}
+                  {selectedLineItems.length === 0 ? <EmptyState message="Tick an invoice above to see its items." /> : null}
 
                   <div className="stack" style={{ gap: '10px' }}>
                     {selectedLineItems.map((line) => {
@@ -1058,8 +1062,8 @@ export default function CreditNotesPage() {
                 <button type="submit" className="button button--primary" disabled={submitting || !selectedLedgerId || payloadItems.length === 0}>
                   <FilePlus2 size={16} />
                   {submitting
-                    ? (direction === 'inward' ? 'Recording...' : 'Creating...')
-                    : (direction === 'inward' ? 'Record Supplier Credit Note' : 'Create Credit Note')}
+                    ? (direction === 'inward' ? 'Saving...' : 'Creating...')
+                    : (direction === 'inward' ? 'Save supplier credit note' : 'Create credit note')}
                 </button>
                 <button
                   type="button"
@@ -1106,7 +1110,7 @@ export default function CreditNotesPage() {
           title={`Cancel ${cancelTarget.credit_note_number}?`}
           message={creditNoteCancelMessage(
             cancelTarget,
-            ledgers.find((ledger) => ledger.id === cancelTarget.ledger_id)?.name || `Ledger #${cancelTarget.ledger_id}`,
+            ledgers.find((ledger) => ledger.id === cancelTarget.ledger_id)?.name || (cancelTarget.direction === 'inward' ? 'this supplier' : 'this customer'),
             creditNoteInvoiceLabels(cancelTarget.invoice_ids, allInvoices),
             currencyCode,
           )}
@@ -1121,5 +1125,3 @@ export default function CreditNotesPage() {
     </>
   );
 }
-
-// branch seed

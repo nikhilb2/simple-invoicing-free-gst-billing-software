@@ -122,7 +122,7 @@ test.describe('GSTR-1 filing', () => {
     await page.locator('input[type="number"]').first().fill('1');
     const [response] = await Promise.all([
       page.waitForResponse((r) => /\/api\/credit-notes\/$/.test(new URL(r.url()).pathname) && r.request().method() === 'POST'),
-      page.getByRole('button', { name: 'Create Credit Note' }).click(),
+      page.getByRole('button', { name: 'Create credit note' }).click(),
     ]);
     expect(response.status()).toBe(201);
     const note = await response.json();

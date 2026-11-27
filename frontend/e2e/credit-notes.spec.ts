@@ -95,7 +95,7 @@ test.describe('Credit notes', () => {
     await page.locator('label:has(input[type="checkbox"])').first().click();
     await page.locator('input[type="number"]').first().fill('4');
 
-    await page.click('button:has-text("Record Supplier Credit Note")');
+    await page.click('button:has-text("Save supplier credit note")');
     await expectSuccess(page, 'SUP/CN/E2E recorded as');
 
     // Our own DN number, kept out of the outward credit note series.
@@ -115,10 +115,10 @@ test.describe('Credit notes', () => {
     await selectComboboxOption(page, 'credit-note-ledger', ledgerName);
 
     // Sales tab: one invoice, the sale.
-    await expect(page.getByText(/1 active sales invoice for this ledger/)).toBeVisible({ timeout });
+    await expect(page.getByText(/1 invoice for this customer/)).toBeVisible({ timeout });
 
     await page.selectOption('#credit-note-direction', 'inward');
-    await expect(page.getByText(/1 active purchase invoice for this ledger/)).toBeVisible({ timeout });
+    await expect(page.getByText(/1 purchase bill from this supplier/)).toBeVisible({ timeout });
   });
 
   test('cancelling a note from its preview moves it to the Cancelled count', async ({ authedPage: page }) => {
@@ -131,7 +131,7 @@ test.describe('Credit notes', () => {
     await selectComboboxOption(page, 'credit-note-ledger', ledgerName);
     await page.locator('label:has(input[type="checkbox"])').first().click();
     await page.locator('input[type="number"]').first().fill('1');
-    await page.getByRole('button', { name: 'Create Credit Note' }).click();
+    await page.getByRole('button', { name: 'Create credit note' }).click();
     // "Credit note CN-… created." The list search matches note numbers, not ledgers.
     const toast = page.locator('.toast--success').filter({ hasText: /Credit note \S+ created/ }).last();
     await expect(toast).toBeVisible({ timeout });

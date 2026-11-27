@@ -748,11 +748,11 @@ export default function LedgerViewPage() {
                     type="button"
                     className="action-dropdown__item"
                     role="menuitem"
-                    aria-label="Create Credit Note"
+                    aria-label="New credit note"
                     onClick={() => { setShowActionsDropdown(false); navigate(`/credit-notes?ledger=${ledgerId}`); }}
                   >
                     <FileText size={16} />
-                    Create Credit Note
+                    New credit note
                   </button>
                   <button
                     type="button"
