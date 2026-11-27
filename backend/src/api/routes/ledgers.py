@@ -2325,6 +2325,11 @@ def _hsn_desc(value: str | None, hsn: str) -> str:
     return text[:HSN_DESC_LIMIT].strip() or hsn
 
 
+def _joined_hsns(codes) -> str:
+    """The distinct HSN/SAC codes of a document, in first-seen order, comma-separated."""
+    return ", ".join(dict.fromkeys(code.strip() for code in codes if code and code.strip()))
+
+
 def _doc_number_sort_key(number: str) -> tuple[list[int | str], str]:
     """Natural sort key for a document number: digit runs compare as integers."""
     # A counter can outgrow its zero padding (INV-999 -> INV-1000), so a plain
@@ -2482,11 +2487,11 @@ def _hsn_section(
     product_ids = {item.product_id for inv in sales for item in inv.items if item.product_id}
     product_ids |= {item.product_id for cn in credit_notes for item in cn.items if item.product_id}
     units_by_product: dict[int, str] = {}
+    names_by_product: dict[int, str] = {}
     if product_ids:
-        units_by_product = {
-            pid: unit
-            for pid, unit in db.query(Product.id, Product.unit).filter(Product.id.in_(product_ids)).all()
-        }
+        for pid, unit, name in db.query(Product.id, Product.unit, Product.name).filter(Product.id.in_(product_ids)).all():
+            units_by_product[pid] = unit
+            names_by_product[pid] = name or ""
 
     b2b_map: dict[tuple[str, float, str], dict] = {}
     b2c_map: dict[tuple[str, float, str], dict] = {}
@@ -2504,9 +2509,10 @@ def _hsn_section(
             agg["iamt"] += float(item.igst_amount or 0)
             agg["camt"] += float(item.cgst_amount or 0)
             agg["samt"] += float(item.sgst_amount or 0)
-            # Carry the first non-empty item description as the HSN desc.
-            if not agg["desc"] and (item.description or "").strip():
-                agg["desc"] = item.description.strip()
+            # Carry the first non-empty item description as the HSN desc; a
+            # line with none falls back to its product's name (not the HSN).
+            if not agg["desc"]:
+                agg["desc"] = (item.description or "").strip() or names_by_product.get(item.product_id, "").strip()
 
     for cn in credit_notes:
         for item in cn.items:
@@ -2523,8 +2529,9 @@ def _hsn_section(
             agg["iamt"] -= iamt
             agg["camt"] -= camt
             agg["samt"] -= samt
-            if not agg["desc"] and item.invoice_item and (item.invoice_item.description or "").strip():
-                agg["desc"] = item.invoice_item.description.strip()
+            if not agg["desc"]:
+                original_line = (item.invoice_item.description or "").strip() if item.invoice_item else ""
+                agg["desc"] = original_line or names_by_product.get(item.product_id, "").strip()
 
     def rows_of(hsn_map: dict[tuple[str, float, str], dict]) -> list[dict]:
         rows: list[dict] = []
@@ -3344,7 +3351,7 @@ def gstr1_export_csv(
         section = gstr1_section(inv, company_pos)
         pos = invoice_filing_pos(inv, company_pos)
 
-        hsns = ", ".join(item.hsn_sac or "" for item in inv.items if item.hsn_sac)
+        hsns = _joined_hsns(item.hsn_sac for item in inv.items)
         writer.writerow([
             "Table 13 only (zero value)" if _is_zero_value_invoice(inv) else section,
             inv.invoice_date.date().isoformat() if inv.invoice_date else "",
@@ -3372,7 +3379,7 @@ def gstr1_export_csv(
             cn.credit_note_number or f"CN-{cn.id}",
             (original.ledger_name if original else "") or "",
             ctin,
-            ", ".join(_note_item_hsn(item) for item in cn.items if _note_item_hsn(item)),
+            _joined_hsns(_note_item_hsn(item) for item in cn.items),
             f"{_round_amount(-float(cn.taxable_amount or 0)):.2f}",
             f"{_round_amount(-float(cn.cgst_amount or 0)):.2f}",
             f"{_round_amount(-float(cn.sgst_amount or 0)):.2f}",
