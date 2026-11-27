@@ -110,6 +110,12 @@ def test_normalize_gstin_bad_14th_character():
         normalize_gstin("27ABCDE1234F1A5")
 
 
+def test_normalize_gstin_zero_entity_number():
+    # 13th character (entity number) must be 1-9 or A-Z, never 0
+    with pytest.raises(ValueError, match="Invalid GSTIN format"):
+        normalize_gstin("29AAACQ1111A0Z9")
+
+
 def test_normalize_hsn_sac_valid_4():
     assert normalize_hsn_sac("1234") == "1234"
 

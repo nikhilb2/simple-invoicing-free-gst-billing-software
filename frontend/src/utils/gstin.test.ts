@@ -35,7 +35,13 @@ describe('gstinError — accepted values', () => {
 });
 
 describe('gstinError — rejected values, with the backend message', () => {
-  test.each(['27ABCDE1234F1Z', '27ABCDE1234F1A5', '2XABCDE1234F1Z0', '27ABCD01234F1Z0'])(
+  test.each([
+    '27ABCDE1234F1Z',
+    '27ABCDE1234F1A5',
+    '2XABCDE1234F1Z0',
+    '27ABCD01234F1Z0',
+    '29AAACQ1111A0Z9',
+  ])(
     'format: %s',
     (gstin) => {
       expect(gstinError(gstin)).toBe(
