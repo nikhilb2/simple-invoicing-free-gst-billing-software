@@ -30,4 +30,17 @@ describe('OAuthButtons', () => {
     expect(html.replace(/<!-- -->/g, '')).toContain('Continue with Other');
     expect(html).not.toContain('<img');
   });
+
+  it('shows the Google hint and a custom divider only when asked', () => {
+    const html = renderToString(
+      <OAuthButtons providers={[google]} next="/" googleHint="Works for new and existing Google accounts." divider="or sign up with your email" />,
+    ).replace(/<!-- -->/g, '');
+    expect(html).toContain('Continue with Google');
+    expect(html).toContain('Works for new and existing Google accounts.');
+    expect(html).toContain('or sign up with your email');
+
+    const plain = renderToString(<OAuthButtons providers={[google]} next="/" />);
+    expect(plain).toContain('or use your email');
+    expect(plain).not.toContain('field-hint');
+  });
 });

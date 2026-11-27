@@ -81,6 +81,12 @@ export default function LoginPage() {
         <p className="section-copy">
           {notice?.copy ?? 'Enter your email and password to see your invoices, stock and payments.'}
         </p>
+        {config.password_signup_enabled || config.providers.length > 0 ? (
+          <p className="section-copy">
+            New here?{' '}
+            <Link to="/register" style={{ fontWeight: 700, textDecoration: 'underline', color: 'var(--accent)' }}>Create a free account</Link>
+          </p>
+        ) : null}
       </div>
 
       <OAuthButtons providers={config.providers} next={next} />

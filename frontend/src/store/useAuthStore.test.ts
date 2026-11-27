@@ -117,6 +117,15 @@ describe('auth store and the native bridge', () => {
     expect(useAuthStore.getState()).toMatchObject({ token: 'a2', userRole: 'staff' });
   });
 
+  it('setSession marks the browser as signed in before, and logout keeps the mark', async () => {
+    await useAuthStore.getState().setSession({ access_token: 'a5', refresh_token: 'r5', token_type: 'bearer' });
+    expect(store.si_signed_in_before).toBe('1');
+
+    useAuthStore.getState().logout();
+    expect(store.token).toBeUndefined();
+    expect(store.si_signed_in_before).toBe('1');
+  });
+
   it('keeps the account name from /auth/me for the first-run Business name, and drops it on logout', async () => {
     api.defaults.adapter = async (config): Promise<AxiosResponse> => ({
       data: { role: 'admin', active_company_id: null, full_name: 'Ravi Kumar' },

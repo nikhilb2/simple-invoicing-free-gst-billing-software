@@ -10,7 +10,8 @@ import axios from 'axios';
 import api, { setSessionEndedHandler } from './api/client';
 import type { CompanyProfile } from './types/api';
 import { COMPANY_SETUP_PATH, isCompanyConfigured, isCompanySetupRequired, setupRouteAction, type SetupRouteMode } from './utils/companySetup';
-import { SESSION_EXPIRED_REASON, loginPathWithNext, sanitizeNextPath } from './utils/nextPath';
+import { hasSignedInBefore, sanitizeNextPath, signedOutLandingPath } from './utils/nextPath';
+import { useAuthConfig } from './hooks/useAuthConfig';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import VerifyEmailPage from './pages/VerifyEmailPage';
@@ -79,20 +80,37 @@ const MarketplaceBrowsePage = lazy(() => import('./pages/marketplace/Marketplace
  */
 function Protected({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuth();
+
+  return isAuthenticated ? children : <SignedOutRedirect />;
+}
+
+/**
+ * Sends a signed-out visitor to Create account or Sign in (see signedOutLandingPath).
+ *
+ * Only a first-time visitor on `/` depends on the sign-up config, so only they
+ * wait for it (rendering nothing, not the wrong page). If the config request
+ * fails, useAuthConfig reports sign-up as off and they get Sign in.
+ */
+function SignedOutRedirect() {
   const location = useLocation();
   const sessionEnded = useAuthStore((s) => s.sessionEnded);
+  const config = useAuthConfig();
+  const [signedInBefore] = useState(hasSignedInBefore);
 
-  if (!isAuthenticated) {
-    const from = `${location.pathname}${location.search}`;
-    // A session the server ended says so on the sign-in page, and hands over the email.
-    return sessionEnded ? (
-      <Navigate to={loginPathWithNext(from, SESSION_EXPIRED_REASON)} state={{ email: sessionEnded.email }} replace />
-    ) : (
-      <Navigate to={loginPathWithNext(from)} replace />
-    );
+  const firstTimeHome = location.pathname === '/' && !sessionEnded && !signedInBefore;
+  if (firstTimeHome && config.isLoading) {
+    return null;
   }
 
-  return children;
+  const to = signedOutLandingPath({
+    pathname: location.pathname,
+    search: location.search,
+    sessionEnded: !!sessionEnded,
+    signedInBefore,
+    signupEnabled: config.password_signup_enabled || config.providers.length > 0,
+  });
+  // A session the server ended says so on the sign-in page, and hands over the email.
+  return <Navigate to={to} state={sessionEnded ? { email: sessionEnded.email } : undefined} replace />;
 }
 
 function PublicOnly({ children }: { children: React.ReactNode }) {

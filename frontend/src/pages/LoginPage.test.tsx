@@ -71,3 +71,12 @@ describe('LoginPage after a session ended', () => {
     expect(html).not.toContain('value="owner@example.com"');
   });
 });
+
+describe('LoginPage sign-up nudge', () => {
+  it('invites a visitor to create an account when sign-up is on', () => {
+    const html = render().replace(/<!-- -->/g, '');
+    expect(html).toContain('New here?');
+    expect(html).toContain('href="/register"');
+    expect(html).toContain('Create a free account');
+  });
+});

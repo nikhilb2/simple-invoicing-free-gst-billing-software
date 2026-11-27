@@ -9,6 +9,8 @@ import { suggestEmailDomain } from '../utils/emailDomainSuggestion';
 import CheckEmailNotice from '../components/CheckEmailNotice';
 import StatusToasts from '../components/StatusToasts';
 
+const SIGN_IN_LINK_STYLE = { fontWeight: 700, textDecoration: 'underline', color: 'var(--accent)' } as const;
+
 export default function RegisterPage() {
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
@@ -104,9 +106,18 @@ export default function RegisterPage() {
         <p className="eyebrow">Create account</p>
         <h2 className="page-title">Start invoicing</h2>
         <p className="section-copy">We will email you a link to choose your password, then you can set up your company.</p>
+        <p className="section-copy">
+          Already have an account? <Link to="/login" style={SIGN_IN_LINK_STYLE}>Sign in</Link>
+        </p>
       </div>
 
-      <OAuthButtons providers={config.providers} next="/" label="Sign up with" emailAction="sign up" />
+      <OAuthButtons
+        providers={config.providers}
+        next="/"
+        emailAction="sign up"
+        googleHint="Works for new and existing Google accounts."
+        divider="or sign up with your email"
+      />
 
       {config.password_signup_enabled ? (
         <form onSubmit={onSubmit} className="stack">
@@ -169,10 +180,6 @@ export default function RegisterPage() {
       ) : (
         toasts
       )}
-
-      <p className="muted-text" style={{ margin: 0 }}>
-        Already have an account? <Link to="/login">Sign in</Link>
-      </p>
     </AuthLayout>
   );
 }

@@ -68,3 +68,55 @@ export function loginPathWithNext(from: string | null | undefined, reason?: stri
   const query = params.toString();
   return query ? `${LOGIN_PATH}?${query}` : LOGIN_PATH;
 }
+
+export const REGISTER_PATH = '/register';
+/** localStorage flag: this browser has held a session at least once. Never cleared on sign-out. */
+export const SIGNED_IN_BEFORE_KEY = 'si_signed_in_before';
+
+/** Records that this browser has signed in. Storage that cannot be written is ignored. */
+export function markSignedInBefore(): void {
+  try {
+    localStorage.setItem(SIGNED_IN_BEFORE_KEY, '1');
+  } catch {
+    /* private mode or blocked storage: the visitor just counts as first-time */
+  }
+}
+
+/**
+ * Whether this browser has signed in before: the flag, or tokens left in storage
+ * by a build that predates the flag. Unreadable storage counts as first-time.
+ */
+export function hasSignedInBefore(): boolean {
+  try {
+    return (
+      localStorage.getItem(SIGNED_IN_BEFORE_KEY) === '1' ||
+      !!localStorage.getItem('token') ||
+      !!localStorage.getItem('refresh_token')
+    );
+  } catch {
+    return false;
+  }
+}
+
+type LandingInput = {
+  pathname: string;
+  search: string;
+  sessionEnded: boolean;
+  signedInBefore: boolean;
+  signupEnabled: boolean;
+};
+
+/**
+ * Where a signed-out visitor goes.
+ *
+ * Someone who opens the bare home page (`/`, any query string, so UTM tags
+ * survive) in a browser that has never signed in, on a deployment that accepts
+ * sign-ups, wants Create account. Every other case (deep links, ended sessions,
+ * returning users, sign-up off) goes to /login with the return path, as before.
+ */
+export function signedOutLandingPath({ pathname, search, sessionEnded, signedInBefore, signupEnabled }: LandingInput): string {
+  if (pathname === '/' && !sessionEnded && !signedInBefore && signupEnabled) {
+    return `${REGISTER_PATH}${search}`;
+  }
+  return loginPathWithNext(`${pathname}${search}`, sessionEnded ? SESSION_EXPIRED_REASON : undefined);
+}

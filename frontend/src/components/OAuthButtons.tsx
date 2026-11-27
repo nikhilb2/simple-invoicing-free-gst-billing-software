@@ -1,3 +1,4 @@
+import { Fragment } from 'react';
 import type { AuthProvider } from '../types/api';
 import { oauthLoginUrl } from '../utils/authFlow';
 import InAppBrowserNotice from './InAppBrowserNotice';
@@ -9,6 +10,10 @@ type OAuthButtonsProps = {
   label?: string;
   /** Used in the in-app browser notice: "or sign up with your email below". */
   emailAction?: 'sign up' | 'sign in';
+  /** Small centred line under a Google button (only shown when Google is enabled). */
+  googleHint?: string;
+  /** The text of the "or" divider above the email form. */
+  divider?: string;
   /** Injected by tests. */
   userAgent?: string;
 };
@@ -20,7 +25,7 @@ const PROVIDER_LOGOS: Record<string, string> = {
 };
 
 /** One "Continue with …" button per enabled provider, then an "or" divider. */
-export default function OAuthButtons({ providers, next, label = 'Continue with', emailAction = 'sign in', userAgent }: OAuthButtonsProps) {
+export default function OAuthButtons({ providers, next, label = 'Continue with', emailAction = 'sign in', googleHint, divider = 'or use your email', userAgent }: OAuthButtonsProps) {
   if (providers.length === 0) {
     return null;
   }
@@ -30,8 +35,8 @@ export default function OAuthButtons({ providers, next, label = 'Continue with',
       <InAppBrowserNotice emailAction={emailAction} userAgent={userAgent} />
       {providers.map((provider) => (
         // A plain link: the browser must leave the SPA for the provider.
+        <Fragment key={provider.id}>
         <a
-          key={provider.id}
           className={`button button--ghost oauth-button oauth-button--${provider.id}`}
           href={oauthLoginUrl(provider.id, next)}
           data-testid={`oauth-${provider.id}`}
@@ -45,8 +50,12 @@ export default function OAuthButtons({ providers, next, label = 'Continue with',
           ) : null}
           <span>{label} {provider.name}</span>
         </a>
+        {provider.id === 'google' && googleHint ? (
+          <small className="field-hint" style={{ textAlign: 'center' }}>{googleHint}</small>
+        ) : null}
+        </Fragment>
       ))}
-      <p className="muted-text" style={{ textAlign: 'center', margin: 0 }}>or use your email</p>
+      <p className="muted-text" style={{ textAlign: 'center', margin: 0 }}>{divider}</p>
     </div>
   );
 }

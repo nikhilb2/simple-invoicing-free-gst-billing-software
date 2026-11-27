@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import api from '../api/client';
 import { identifyUser, resetAnalyticsUser } from '../lib/analytics';
 import { postToNative } from '../lib/nativeBridge';
+import { markSignedInBefore } from '../utils/nextPath';
 import { queryClient } from '../lib/queryClient';
 import type { AuthToken, UserProfile } from '../types/api';
 
@@ -107,6 +108,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   setSession: async (tokens: AuthToken) => {
     localStorage.setItem('token', tokens.access_token);
     localStorage.setItem('refresh_token', tokens.refresh_token);
+    markSignedInBefore();
     postToNative({ type: 'tokens', accessToken: tokens.access_token, refreshToken: tokens.refresh_token });
     const identifiedEmail = decodeEmailFromToken(tokens.access_token);
     set({
