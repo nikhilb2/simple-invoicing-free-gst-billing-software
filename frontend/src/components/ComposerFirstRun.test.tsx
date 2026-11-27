@@ -36,6 +36,8 @@ describe('VoucherTypeSelect', () => {
     const html = render(true);
     expect(html).toContain('id="invoice-voucher-type"');
     expect(html).toContain(BILL_TYPE_HINT);
+    expect(html).toContain('>Bill type</label>');
+    expect(html).not.toContain('Voucher type');
     expect(BILL_TYPE_HINT).toBe('Purchase: a bill you got from a supplier. Quotation and proforma: offers, not bills.');
     expect(html).toContain('aria-describedby="invoice-voucher-type-hint"');
     expect(html.indexOf('<select')).toBeLessThan(html.indexOf('field-hint'));

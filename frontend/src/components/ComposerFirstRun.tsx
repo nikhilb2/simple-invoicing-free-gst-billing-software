@@ -43,7 +43,7 @@ export function VoucherTypeSelect({
   }, [afterChange]);
   return (
     <div className="field">
-      <label htmlFor="invoice-voucher-type">Voucher type</label>
+      <label htmlFor="invoice-voucher-type">{afterChange ? 'Bill type' : 'Voucher type'}</label>
       <select
         ref={ref}
         id="invoice-voucher-type"
