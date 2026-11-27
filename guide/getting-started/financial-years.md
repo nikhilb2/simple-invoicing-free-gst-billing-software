@@ -33,6 +33,8 @@ If your series use the **FY** year format and the new label would make numbers t
 
 If you enter an invoice, receipt or payment dated outside the active year, you see a warning that the date is outside the active financial year, but the document is still saved. It takes its number from the year containing its date. This lets you enter a late invoice for last year without switching.
 
+A date in a year you have not added, before your first year or after your last, is not saved: its number would belong to the wrong year. The message names the missing year. Add it with **+ New FY**, or pick a date in a year you have. This applies to every numbered document: invoices, purchases, credit and debit notes, quotations, proformas, delivery challans, receipts and payments. Opening balances are not affected.
+
 ## There is no year-end closing
 
 The app has no "close year" step and does not lock old years. Balances carry forward because statements add up everything dated before your chosen period. Opening balances entered on a ledger are dated at the start of the active year.

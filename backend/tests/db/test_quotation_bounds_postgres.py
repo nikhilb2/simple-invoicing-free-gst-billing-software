@@ -111,6 +111,10 @@ def test_the_largest_values_that_fit_are_stored(tenant):
     assert discounted["discount_value"] == 99_999_999.99
     assert discounted["total_amount"] == 0
 
+    # A date needs a financial year that covers it (#1132).
+    iso._ok(client.post("/api/financial-years/", json={
+        "label": "2099-00", "start_date": "2099-04-01", "end_date": "2100-03-31",
+    }), 201)
     far = iso._ok(client.post("/api/quotations/", json=_body(tenant, quotation_date="2099-12-31", valid_until="2099-12-31")))
     assert far["valid_until"] == "2099-12-31"
 

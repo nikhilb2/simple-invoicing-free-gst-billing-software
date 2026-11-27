@@ -17,7 +17,7 @@ from src.models.payment import Payment, PaymentInvoiceAllocation
 from src.models.user import User, UserRole
 from src.schemas.payment import PaymentCreate, PaymentOut, PaymentUpdate
 from src.services.series import generate_next_number
-from src.services.financial_year import get_active_fy, get_fy_for_date
+from src.services.financial_year import get_active_fy, get_fy_for_date, require_financial_year_for_date
 from src.services.invoice_payments import sync_payment_allocations
 from src.services.pdf_paper import Paper, page_css, resolve_paper
 from src.services.pdf_templates.builders import _fmt_inr
@@ -324,12 +324,19 @@ def update_payment(
     # The payment's financial year and number series are fixed at creation
     # and are not regenerated on edit, so a date change that would move the
     # payment into a different financial year is blocked instead of leaving
-    # it filed under the old year (same rule as invoice date edits). A date
-    # that no financial year covers keeps the previous behaviour (allowed).
+    # it filed under the old year (same rule as invoice date edits). So is a
+    # numbered voucher's date that no financial year covers (#1132); an
+    # opening balance has no number and may sit before the first year.
     if payload.date is not None and getattr(payment, "financial_year_id", None) is not None:
         new_day = payload.date.date() if hasattr(payload.date, "date") else payload.date
         current_day = payment.date.date() if payment.date else None
         date_fy = get_fy_for_date(db, new_day, company_id=company_id) if new_day != current_day else None
+        if (
+            date_fy is None
+            and new_day != current_day
+            and payload.voucher_type != "opening_balance"
+        ):
+            require_financial_year_for_date(db, new_day, company_id=company_id)
         if date_fy is not None and date_fy.id != payment.financial_year_id:
             current_fy = (
                 db.query(FinancialYear)

@@ -12,6 +12,7 @@ from src.core.validation import (
 )
 from src.models.invoice_series import InvoiceSeries
 from src.services.company_access import company_scope
+from src.services.financial_year import require_financial_year_for_date
 
 
 def _format_number(
@@ -156,11 +157,18 @@ def generate_next_number(
     same kind (e.g. due to a previous rolled-back transaction or cross-FY series
     overlap), the counter is advanced until a free number is found. Numbers are
     unique per company, so another company's documents never cause a skip.
+
+    A dated document is refused (400) when the company has financial years but
+    none covers the date, so it can never take a number in a year that does not
+    contain it (#1132).
     """
     if company_id is None and settings.is_shared_hosting:
         # Without a company every lookup below would pick any tenant's series
         # and advance its counter.
         raise ValueError("generate_next_number requires a company_id in shared hosting")
+
+    if invoice_date is not None:
+        require_financial_year_for_date(db, invoice_date, company_id=company_id)
 
     series = None
 

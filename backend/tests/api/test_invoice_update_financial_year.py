@@ -2,11 +2,13 @@
 
 The financial year (and the number series that comes with it) is chosen at
 creation and never recalculated on edit, so a cross-year date change is
-blocked with a 400. Same-year changes, and dates no financial year covers,
-keep working as before.
+blocked with a 400. So is a date no financial year covers (#1132). Same-year
+changes keep working as before.
 """
 
 from datetime import date, datetime
+
+import pytest
 
 from src.models.company import CompanyProfile
 from src.models.financial_year import FinancialYear
@@ -147,19 +149,26 @@ def test_update_invoice_date_into_other_fy_is_blocked(client, db_session):
     assert after.json()["invoice_date"].startswith("2026-03-28")
 
 
-def test_update_invoice_date_without_covering_fy_still_works(client, db_session):
+@pytest.mark.parametrize("new_date,fy_label", [("2028-05-01", "FY 2028-29"), ("2025-03-31", "FY 2024-25")])
+def test_update_invoice_date_without_covering_fy_is_blocked(client, db_session, new_date, fy_label):
     _seed_company_and_years(db_session)
     ledger_id = _create_ledger(client)
     product_id = _create_product(client)
     invoice = _create_invoice_in_old_fy(client, ledger_id, product_id)
 
-    # No financial year covers 2028-05-01: previous behaviour is kept.
+    # No financial year covers the new date, after the last year or before the first.
     response = client.put(
         f"/api/invoices/{invoice['id']}",
-        json=_payload(ledger_id, product_id, "2028-05-01"),
+        json=_payload(ledger_id, product_id, new_date),
     )
 
-    assert response.status_code == 200, response.text
+    assert response.status_code == 400, response.text
+    assert response.json()["detail"] == (
+        f"This date is in {fy_label}, which isn't set up yet. Add it from Financial Year "
+        "in the sidebar (+ New FY, admins only), or pick a date in FY 2025-26."
+    )
+    after = client.get(f"/api/invoices/{invoice['id']}").json()
+    assert after["invoice_date"].startswith("2026-03-28")
 
 
 def test_update_existing_mismatched_invoice_keeps_same_date_and_edits_price(client, db_session):

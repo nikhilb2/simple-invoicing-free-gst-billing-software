@@ -502,6 +502,23 @@ class TestIdempotencyAndFailures:
         assert order.posting_attempts == 1
         assert db_session.query(Invoice).count() == 0
 
+    def test_an_order_dated_outside_every_financial_year_is_not_posted_in_the_active_one(self, db_session):
+        """#1132: the active year must not number an order its dates don't cover."""
+        company = make_company(db_session)
+        user = make_user(db_session)
+        make_fy(db_session, company.id, start=date(2025, 4, 1), end=date(2026, 3, 31))
+        product = make_product(db_session, company.id)
+        connection = make_connection(db_session, company.id, user.id)
+        make_listing(db_session, company.id, product.id)
+        order = make_order(db_session, company.id)  # placed 22 Aug 2026
+        db_session.commit()
+
+        assert posting_service.post_order(db_session, connection, order.id) == "failed"
+
+        db_session.refresh(order)
+        assert "no_financial_year" in order.posting_error
+        assert db_session.query(Invoice).count() == 0
+
     def test_a_financial_year_is_never_auto_created(self, db_session):
         company = make_company(db_session)
         user = make_user(db_session)

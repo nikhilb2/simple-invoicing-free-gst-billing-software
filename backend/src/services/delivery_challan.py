@@ -56,7 +56,12 @@ from src.schemas.delivery_challan import (
 from src.schemas.invoice import InvoiceItemCreate
 from src.services.company_access import company_scope
 from src.services.document_totals import require_money_fits, snapshot_company_fields
-from src.services.financial_year import get_active_fy, get_fy_for_date, require_same_financial_year
+from src.services.financial_year import (
+    get_active_fy,
+    get_fy_for_date,
+    require_financial_year_for_date,
+    require_same_financial_year,
+)
 from src.services.gst_tax_service import (
     assign_invoice_tax_totals,
     assign_item_tax_split,
@@ -405,6 +410,9 @@ def create_challan(
     fy_id = fy.id if fy else None
 
     if payload.challan_number is not None:
+        # A typed number skips the series, which refuses a date no financial
+        # year covers; the challan would still be filed in the wrong year (#1132).
+        require_financial_year_for_date(db, challan_date, company_id=company.id)
         _require_number_format(payload.challan_number)
         _require_number_free(db, company.id, payload.challan_number)
         number = payload.challan_number

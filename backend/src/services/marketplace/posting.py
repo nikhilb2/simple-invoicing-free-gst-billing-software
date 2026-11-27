@@ -415,7 +415,9 @@ def _resolve_posting_user(db: Session, connection: MarketplaceConnection) -> int
 def _resolve_financial_year(db: Session, company_id: int, when: date):
     """Never auto-create a financial year — that is an accounting decision."""
     active_fy = get_active_fy(db, company_id=company_id)
-    fy = get_fy_for_date(db, when, company_id=company_id) or active_fy
+    # Only the year that contains the date: falling back to the active one would
+    # number an order in a year it doesn't belong to (#1132).
+    fy = get_fy_for_date(db, when, company_id=company_id)
     if fy is None:
         raise PostingError(
             "no_financial_year", f"No financial year covers {when.isoformat()}"

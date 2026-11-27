@@ -274,6 +274,11 @@ def _make_db_for_generate(
             inner = MagicMock()
             inner.first.return_value = linked_fy
             mock_q.filter.return_value = inner
+            # The company's years, for the "no year covers this date" check:
+            # just linked_fy when given, else none (year-less numbering).
+            years = [linked_fy] if linked_fy is not None else []
+            mock_q.order_by.return_value.all.return_value = years
+            inner.order_by.return_value.all.return_value = years
 
         elif model is Invoice.id or model is Payment.id or model is CreditNote.id:
             # Duplicate check. The generated number is the right-hand side of

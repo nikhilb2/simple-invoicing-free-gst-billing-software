@@ -41,6 +41,20 @@ def fake():
     client_module.set_transport_override(None)
 
 
+def _current_financial_year(company_id: int) -> FinancialYear:
+    """The April-to-March year containing today: the fake dates its orders now,
+    and posting needs the year that covers the order's date (#1132)."""
+    today = date.today()
+    start = today.year if today.month >= 4 else today.year - 1
+    return FinancialYear(
+        company_id=company_id,
+        label=f"{start}-{str(start + 1)[-2:]}",
+        start_date=date(start, 4, 1),
+        end_date=date(start + 1, 3, 31),
+        is_active=True,
+    )
+
+
 class Party:
     """One company on this instance, connected to the marketplace."""
 
@@ -62,13 +76,7 @@ def _make_party(db, fake, *, name, gst, email, auto_post=True) -> Party:
     db.add_all([company, user])
     db.flush()
     db.add(
-        FinancialYear(
-            company_id=company.id,
-            label="2026-27",
-            start_date=date(2026, 4, 1),
-            end_date=date(2027, 3, 31),
-            is_active=True,
-        )
+        _current_financial_year(company.id)
     )
     db.flush()
 
@@ -435,13 +443,7 @@ class TestFailures:
 
         # Operator adds the FY and the retry posts exactly once.
         db_session.add(
-            FinancialYear(
-                company_id=seller.company_id,
-                label="2026-27",
-                start_date=date(2026, 4, 1),
-                end_date=date(2027, 3, 31),
-                is_active=True,
-            )
+            _current_financial_year(seller.company_id)
         )
         db_session.commit()
 
