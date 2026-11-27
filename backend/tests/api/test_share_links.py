@@ -361,7 +361,7 @@ def test_security_headers_on_html_and_pdf(client, db_session):
     for response in (client.get(f"/s/{token}"), client.get(f"/s/{token}/pdf")):
         assert response.headers["x-robots-tag"] == "noindex, nofollow, noarchive"
         assert response.headers["cache-control"] == "no-store"
-        # Without this the ad link hands the token to simpleinvoicings.com in Referer.
+        # Without this the ad link hands the token to gstbill.in in Referer.
         assert response.headers["referrer-policy"] == "no-referrer"
         assert response.headers["x-content-type-options"] == "nosniff"
 
@@ -379,7 +379,7 @@ def test_ad_links_carry_noreferrer(client, db_session):
     token = _create_link(client, company, "invoice", invoice.id).json()["token"]
 
     body = client.get(f"/s/{token}").text
-    assert "simpleinvoicings.com" in body
+    assert "gstbill.in" in body
     assert 'rel="noopener noreferrer nofollow"' in body
 
 
@@ -400,11 +400,10 @@ def test_ad_link_carries_campaign_tags(client, db_session):
     tags = "utm_source=share_page&amp;utm_medium=referral&amp;utm_campaign=document_share"
 
     body = client.get(f"/s/{token}").text
-    assert f"https://simpleinvoicings.com?{tags}&amp;utm_content=invoice" in body
+    assert f"https://gstbill.in?{tags}&amp;utm_content=invoice" in body
     # The visible label stays the bare domain -- the tags belong in the href only.
-    # It is split so the trailing "s" can flash, but the pieces still spell the
-    # domain with nothing between them, which is what a reader copies.
-    assert '>simpleinvoicing<span class="flash-s">s</span>.com</a>' in body
+    # gstbill.in does not end in "s", so it renders as flat text.
+    assert '>gstbill.in<span class="flash-s"></span></a>' in body
 
     # utm_content names the document, so an invoice recipient and a receipt
     # recipient are distinguishable on the other side.
@@ -428,9 +427,12 @@ def test_the_panel_flashes_only_the_trailing_s(client, db_session, monkeypatch):
     invoice = _invoice(db_session, company, ledger)
     token = _create_link(client, company, "invoice", invoice.id).json()["token"]
 
+    # The flashing "s" only shows for a domain ending in "s", so pin the old
+    # domain here to keep the case covered now the default is gstbill.in.
+    monkeypatch.setattr(settings, "SHARE_AD_WEBSITE", "https://simpleinvoicings.com")
     body = client.get(f"/s/{token}").text
     assert "Powered by " in body
-    assert '<span class="flash-s">s</span>' in body
+    assert '>simpleinvoicing<span class="flash-s">s</span>.com</a>' in body
     # CSS does the flashing, because script-src is 'none' on this response.
     assert "@keyframes flash-s" in body
     # And it stops for anyone who asked the OS for less motion.
@@ -492,7 +494,7 @@ def test_the_panel_restates_the_document(client, db_session):
     assert 'class="recap"' not in missing
     assert "The document above" not in missing
     # The panel itself still renders there -- that page is a real arrival too.
-    assert "simpleinvoicings.com" in missing
+    assert "gstbill.in" in missing
 
 
 def test_a_pre_tagged_ad_website_keeps_its_own_tags(client, db_session, monkeypatch):
@@ -500,7 +502,7 @@ def test_a_pre_tagged_ad_website_keeps_its_own_tags(client, db_session, monkeypa
     from src.core.config import settings
 
     monkeypatch.setattr(
-        settings, "SHARE_AD_WEBSITE", "https://simpleinvoicings.com/?utm_source=mine"
+        settings, "SHARE_AD_WEBSITE", "https://gstbill.in/?utm_source=mine"
     )
 
     company = _company(db_session, "Alpha Ltd")
@@ -822,8 +824,8 @@ def test_ad_block_degrades_field_by_field(client, db_session, monkeypatch):
     token = _create_link(client, company, "invoice", invoice.id).json()["token"]
 
     body = client.get(f"/s/{token}").text
-    assert "Simple Invoicings" in body
-    assert "simpleinvoicings.com" in body
+    assert "Simple Invoicing" in body
+    assert "gstbill.in" in body
     # The published number renders as a tel: link, not as plain text.
     assert 'href="tel:+919871052105"' in body
     # The WhatsApp button goes through this app so the press can be counted --
@@ -841,7 +843,7 @@ def test_ad_block_degrades_field_by_field(client, db_session, monkeypatch):
     monkeypatch.setattr(settings, "SHARE_AD_WHATSAPP", "")
     body = client.get(f"/s/{token}").text
     assert "/whatsapp" not in body
-    assert "simpleinvoicings.com" in body
+    assert "gstbill.in" in body
 
     # Blank chips drop the row entirely.
     monkeypatch.setattr(settings, "SHARE_AD_CHIPS", "")
@@ -850,8 +852,8 @@ def test_ad_block_degrades_field_by_field(client, db_session, monkeypatch):
     # And the whole block can be switched off.
     monkeypatch.setattr(settings, "SHARE_AD_ENABLED", False)
     body = client.get(f"/s/{token}").text
-    assert "simpleinvoicings.com" not in body
-    assert "Simple Invoicings" not in body
+    assert "gstbill.in" not in body
+    assert "Simple Invoicing" not in body
 
 
 def test_promo_never_reaches_the_pdf(client, db_session):

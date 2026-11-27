@@ -301,7 +301,7 @@ def _share_route(request: Request) -> str:
 # Campaign tags on the ad's outbound link. This page sends
 # `Referrer-Policy: no-referrer` and marks the link `rel="noreferrer"` on purpose,
 # so the share token never reaches the marketing site in a Referer header — which
-# also means simpleinvoicings.com would otherwise log every one of these arrivals
+# also means the marketing site would otherwise log every one of these arrivals
 # as direct traffic. These tags are the only thing that identifies a visitor who
 # came from a shared document; utm_content says which kind of document it was.
 _AD_UTM = (
@@ -332,7 +332,7 @@ def _tag_ad_website(website: str, placement: str, source: str = "share_page") ->
 
 
 def _split_domain_label(label: str) -> tuple[str, str, str]:
-    """Splits ``simpleinvoicings.com`` into ``("simpleinvoicing", "s", ".com")``.
+    """Splits ``invoices.example.com`` into ``("invoice", "s", ".example.com")``.
 
     The middle piece is the one the panel flashes. The trailing "s" is the
     character people drop when they type the domain from memory, so the panel
@@ -353,7 +353,7 @@ def ad_context(
     whatsapp_click_url: str | None = None,
     source: str = "share_page",
 ) -> dict:
-    """Everything the Simple Invoicings block renders.
+    """Everything the Simple Invoicing block renders.
 
     `placement` is what the reader was looking at — the resource type, or
     "unavailable" on the dead-link page — and rides out on the link as

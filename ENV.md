@@ -351,8 +351,8 @@ this feature without touching its secret and the feature simply works.
 |----------|---------|---------|
 | `SHARE_LINKS_ENABLED` | `true` | Master switch. With this off, `POST /api/share/` returns `403` and every `/s/<token>` URL returns the same uniform `404` an unknown token gets. Existing rows are left alone, so turning it back on restores every live link. |
 | `UPI_QR_ENABLED` | `true` | Master switch for the pay-by-UPI block on share pages. Kept separate from `SHARE_LINKS_ENABLED` because a deployment outside India wants the share pages and has no use for the payment offer. With this off, no `upi://` link or QR is produced and `/s/<token>/upi` returns the uniform `404`. |
-| `SHARE_AD_ENABLED` | `true` | Renders the Simple Invoicings panel at the bottom of the public page — brand, pitch, price, call-to-action, a restatement of the document above, and the "Powered by" line. Set to `false` for a white-label deployment: with it off the brand name appears nowhere in the response. The panel is **never** stamped into the PDF under any setting. |
-| `SHARE_AD_BRAND_NAME` | `Simple Invoicings` | Wordmark shown beside the brand mark. |
+| `SHARE_AD_ENABLED` | `true` | Renders the Simple Invoicing panel at the bottom of the public page — brand, pitch, price, call-to-action, a restatement of the document above, and the "Powered by" line. Set to `false` for a white-label deployment: with it off the brand name appears nowhere in the response. The panel is **never** stamped into the PDF under any setting. |
+| `SHARE_AD_BRAND_NAME` | `Simple Invoicing` | Wordmark shown beside the brand mark. |
 | `SHARE_AD_HEADLINE` | `Invoices this clean, in two minutes.` | Headline, rendered in the lime→pink brand gradient. Deliberately contextual: the reader has just looked at a clean invoice. |
 | `SHARE_AD_TAGLINE` | `GST-ready invoicing, inventory and ledgers — built for small businesses and freelancers.` | Supporting line under the headline. |
 | `SHARE_AD_CHIPS` | `Free hosted plan,No credit card,GST-ready` | Comma-separated trust chips. Blank hides the row. |
@@ -361,8 +361,8 @@ this feature without touching its secret and the feature simply works.
 | `SHARE_AD_PRICE` | `Free` | The amount, set large in the lime→magenta gradient. Blank removes the whole price line, prefix and period with it. |
 | `SHARE_AD_PRICE_PERIOD` | _(blank)_ | Set small and muted, tight against the amount, for example `/month`. Blank hides it. |
 | `SHARE_AD_PRICE_PREFIX` | _(blank)_ | Uppercase lead-in on the price baseline, for example `only`. Blank hides it. |
-| `SHARE_AD_WEBSITE` | `https://simpleinvoicings.com` | Link target for the ad. Rendered with `rel="noopener noreferrer nofollow"`, and every public response sends `Referrer-Policy: no-referrer`, so the share token is never handed to this site in a `Referer` header. Because of that the destination sees no referrer, so the link is tagged `utm_source=share_page&utm_medium=referral&utm_campaign=document_share&utm_content=<invoice\|ledger_statement\|payment\|unavailable>` — set this to a URL that already carries `utm_` params to keep your own tags instead. |
-| `SHARE_AD_PHONE` | `+91 98710 52105` | Sales number, rendered as a `tel:` button. Published on simpleinvoicings.com. Blank removes the button rather than leaving an empty `tel:`. |
+| `SHARE_AD_WEBSITE` | `https://gstbill.in` | Link target for the ad. Rendered with `rel="noopener noreferrer nofollow"`, and every public response sends `Referrer-Policy: no-referrer`, so the share token is never handed to this site in a `Referer` header. Because of that the destination sees no referrer, so the link is tagged `utm_source=share_page&utm_medium=referral&utm_campaign=document_share&utm_content=<invoice\|ledger_statement\|payment\|unavailable>` — set this to a URL that already carries `utm_` params to keep your own tags instead. |
+| `SHARE_AD_PHONE` | `+91 98710 52105` | Sales number, rendered as a `tel:` button. Published on gstbill.in. Blank removes the button rather than leaving an empty `tel:`. |
 | `SHARE_AD_WHATSAPP` | `919871052105` | Digits for the `https://wa.me/<n>` primary CTA. Blank falls back to making the website the primary CTA. |
 
 **`/s/` must be routed to the backend.** The share URL is deliberately short so it survives

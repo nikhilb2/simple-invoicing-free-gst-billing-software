@@ -412,11 +412,11 @@
 {% block content %}{% endblock %}
 
 {% if ad.enabled %}
-  <section class="promo" aria-label="About Simple Invoicings">
+  <section class="promo" aria-label="About {{ ad.brand_name }}">
     <div class="promo-id">
       {# Inline SVG, not an <img>: the CSP forbids third-party images and this
          costs no extra request on a two-bar connection. #}
-      <svg class="promo-mark" width="30" height="30" viewBox="0 0 32 32" role="img" aria-label="Simple Invoicings">
+      <svg class="promo-mark" width="30" height="30" viewBox="0 0 32 32" role="img" aria-label="{{ ad.brand_name }}">
         <defs>
           <linearGradient id="siMark" x1="0" y1="0" x2="1" y2="1">
             <stop offset="0%" stop-color="#ffcc33"/>

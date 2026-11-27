@@ -42,7 +42,7 @@ A simple page with your company name, the total and a **Download PDF** button. I
 
 ![The public page a customer sees](/screens/share-page.webp)
 
-Below the document, the page shows a short Simple Invoicings promotion. You cannot change or remove it from your account. Invoice and reminder emails carry a similar block at the foot. The PDF itself has no promotion.
+Below the document, the page shows a short Simple Invoicing promotion. You cannot change or remove it from your account. Invoice and reminder emails carry a similar block at the foot. The PDF itself has no promotion.
 
 A revoked or cancelled document shows "This document is no longer available".
 
@@ -57,7 +57,7 @@ Only admins and managers can send email. On a self-hosted copy, it needs [mail s
 
 When the send succeeds, the dialog says **Invoice emailed to** *the address*. Click **Done**. Sent emails are also listed in [Email History](../settings/email#email-history).
 
-On the hosted version, emails come from "*Your company* via Simple Invoicings", replies go to your company email, and each company can send 50 emails in any 24 hours.
+On the hosted version, emails come from "*Your company* via Simple Invoicing", replies go to your company email, and each company can send 50 emails in any 24 hours.
 
 ## Pay by UPI
 
