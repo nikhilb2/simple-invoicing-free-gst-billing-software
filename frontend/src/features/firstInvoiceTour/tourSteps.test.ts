@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { COMPOSER_NEXT_STEP, forPointer, guideFor, mayNeedFirstInvoiceHelp, pickTarget, showComposerNextStep, tourOffer, type ComposerFacts, type FieldState, type Guide } from './tourSteps';
+import { composerNextStep, forPointer, guideFor, mayNeedFirstInvoiceHelp, pickTarget, showComposerNextStep, tourOffer, type ComposerFacts, type FieldState, type Guide } from './tourSteps';
 
 const EMPTY: ComposerFacts = {
   ledgerCount: 0,
@@ -209,8 +209,14 @@ describe('tourOffer', () => {
 });
 
 describe('after "Exit walkthrough": the next step on the composer', () => {
-  test('uses the wording from the addendum', () => {
-    expect(COMPOSER_NEXT_STEP).toBe('Next: pick your customer, add an item, then tap Create invoice.');
+  test('follows the form: customer, then the first item, then the total', () => {
+    expect(composerNextStep({ ledgerChosen: false, productChosen: false })).toBe('Next: pick your customer or add a new one.');
+    expect(composerNextStep({ ledgerChosen: true, productChosen: false })).toBe('Next: add the first item.');
+    expect(composerNextStep({ ledgerChosen: true, productChosen: true })).toBe('Next: check the total, then tap Create invoice.');
+  });
+
+  test('goes back a step when the customer or the item is cleared', () => {
+    expect(composerNextStep({ ledgerChosen: false, productChosen: true })).toBe('Next: pick your customer or add a new one.');
   });
 
   test('only looks for an invoice while the walkthrough is unanswered or skipped', () => {

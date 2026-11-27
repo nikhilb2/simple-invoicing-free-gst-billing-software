@@ -282,8 +282,16 @@ export function canStartTour(companyRole: UserProfile['role'] | null): boolean {
  */
 export const FIRST_INVOICE_QUERY_KEY = ['first-invoice-tour', 'company-has-invoice'] as const;
 
-/** The composer's line for someone who left the walkthrough before their first invoice (#963). */
-export const COMPOSER_NEXT_STEP = 'Next: pick your customer, add an item, then tap Create invoice.';
+/**
+ * The composer's line for someone who left the walkthrough before their first
+ * invoice (#963). It follows the form (#1127): customer first, then the first
+ * item, then the total.
+ */
+export function composerNextStep({ ledgerChosen, productChosen }: { ledgerChosen: boolean; productChosen: boolean }): string {
+  if (!ledgerChosen) return 'Next: pick your customer or add a new one.';
+  if (!productChosen) return 'Next: add the first item.';
+  return 'Next: check the total, then tap Create invoice.';
+}
 
 /**
  * Whether it is worth asking the server if the company has an invoice yet, so

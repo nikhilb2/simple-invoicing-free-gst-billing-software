@@ -1,6 +1,6 @@
 import {
   canStartTour,
-  COMPOSER_NEXT_STEP,
+  composerNextStep,
   mayNeedFirstInvoiceHelp,
   showComposerNextStep,
 } from '../features/firstInvoiceTour/tourSteps';
@@ -9,10 +9,18 @@ import { useCompanyHasInvoice } from '../features/firstInvoiceTour/useCompanyHas
 import { useFirstInvoiceTourStore } from '../store/useFirstInvoiceTourStore';
 
 /** The line itself, and "Show me how" for people who can finish the walkthrough. */
-export function ComposerNextStepHint({ onShowMeHow }: { onShowMeHow?: () => void }) {
+export function ComposerNextStepHint({
+  ledgerChosen,
+  productChosen,
+  onShowMeHow,
+}: {
+  ledgerChosen: boolean;
+  productChosen: boolean;
+  onShowMeHow?: () => void;
+}) {
   return (
     <div className="composer-next-step" data-testid="composer-next-step">
-      <p className="field-hint composer-next-step__line">{COMPOSER_NEXT_STEP}</p>
+      <p className="field-hint composer-next-step__line">{composerNextStep({ ledgerChosen, productChosen })}</p>
       {onShowMeHow ? (
         <button type="button" className="link-button link-button--tap composer-next-step__action" onClick={onShowMeHow}>
           Show me how
@@ -28,7 +36,15 @@ export function ComposerNextStepHint({ onShowMeHow }: { onShowMeHow?: () => void
  * company has no invoice and the walkthrough is not running, this says what is
  * next and offers to start it again.
  */
-export default function ComposerNextStep({ isNewSalesInvoice }: { isNewSalesInvoice: boolean }) {
+export default function ComposerNextStep({
+  isNewSalesInvoice,
+  ledgerChosen,
+  productChosen,
+}: {
+  isNewSalesInvoice: boolean;
+  ledgerChosen: boolean;
+  productChosen: boolean;
+}) {
   const status = useAuthStore((state) => state.firstInvoiceTourStatus);
   const companyRole = useAuthStore((state) => state.companyRole);
   const userEmail = useAuthStore((state) => state.userEmail);
@@ -46,5 +62,5 @@ export default function ComposerNextStep({ isNewSalesInvoice }: { isNewSalesInvo
   });
   if (!show) return null;
 
-  return <ComposerNextStepHint onShowMeHow={canStartTour(companyRole) ? start : undefined} />;
+  return <ComposerNextStepHint ledgerChosen={ledgerChosen} productChosen={productChosen} onShowMeHow={canStartTour(companyRole) ? start : undefined} />;
 }

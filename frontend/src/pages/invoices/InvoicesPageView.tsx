@@ -1574,7 +1574,11 @@ export default function InvoicesPage() {
 
           <p className="muted-text composer-show-phone composer-billing-line">{billingAsLine(company?.name)}</p>
 
-          <ComposerNextStep isNewSalesInvoice={!isQuote && voucherType === 'sales' && isDefaultEntryTitle} />
+          <ComposerNextStep
+            isNewSalesInvoice={!isQuote && voucherType === 'sales' && isDefaultEntryTitle}
+            ledgerChosen={Boolean(selectedLedgerId)}
+            productChosen={Boolean(items[0]?.productId)}
+          />
 
           <div className="summary-box composer-hide-phone">
             <p className="eyebrow">Billing company</p>
