@@ -1,4 +1,4 @@
-import { test, expect, expectSuccess, uniqueSku, uniqueGstin, createProduct, adjustInventory, clickNavLink, selectComboboxOption, localToday, localStartOfMonth, localYearAgo } from './fixtures';
+import { test, expect, expectSuccess, uniqueSku, uniqueGstin, createProduct, adjustInventory, clickNavLink, selectComboboxOption, localToday, localStartOfMonth, localYearAgo, chooseVoucherType } from './fixtures';
 
 test.describe('Day Book', () => {
   test('displays day book heading', async ({ authedPage: page }) => {
@@ -61,7 +61,7 @@ test.describe('Day Book', () => {
     // Create a sales invoice
     await clickNavLink(page, '/invoices');
     await page.waitForTimeout(500);
-    await page.selectOption('#invoice-voucher-type', 'sales');
+    await chooseVoucherType(page, 'sales');
 
     await selectComboboxOption(page, 'invoice-ledger', ledgerName);
     await selectComboboxOption(page, 'invoice-product-1', sku);

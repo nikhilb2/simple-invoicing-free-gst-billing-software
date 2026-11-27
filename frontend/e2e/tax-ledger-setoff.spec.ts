@@ -1,4 +1,4 @@
-import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption, clickNavLink, createProduct, adjustInventory } from './fixtures';
+import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption, clickNavLink, createProduct, adjustInventory, chooseVoucherType } from './fixtures';
 
 /**
  * GST set-off on the Tax Ledger page (s.49A/49B, r.88A).
@@ -59,8 +59,7 @@ test.describe('Tax ledger set-off', () => {
     async function createInvoice(voucher: 'sales' | 'purchase', ledgerName: string, quantity: string) {
       // The previous invoice's preview dialog covers the sidebar, so navigate directly.
       await page.goto('/invoices');
-      await expect(page.locator('#invoice-voucher-type')).toBeVisible();
-      await page.selectOption('#invoice-voucher-type', voucher);
+      await chooseVoucherType(page, voucher);
       await selectComboboxOption(page, 'invoice-ledger', ledgerName);
       await page.fill('#invoice-date', DAY);
       const productInputId =

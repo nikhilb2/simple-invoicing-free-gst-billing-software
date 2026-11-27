@@ -9,8 +9,7 @@ import {
   selectComboboxOption,
   clickNavLink,
   openNewCreditNote,
-  createProduct,
-} from './fixtures';
+  createProduct, chooseVoucherType } from './fixtures';
 
 /**
  * GSTR-1 from the invoice form to the file the portal receives.
@@ -90,7 +89,7 @@ test.describe('GSTR-1 filing', () => {
   async function openInvoiceForm(page: Page, ledger: string, sku: string) {
     await clickNavLink(page, '/invoices');
     await page.waitForTimeout(500);
-    await page.selectOption('#invoice-voucher-type', 'sales');
+    await chooseVoucherType(page, 'sales');
     await selectComboboxOption(page, 'invoice-ledger', ledger);
     const productInputId =
       (await page.locator('[id^="invoice-product-"]').first().getAttribute('id')) || 'invoice-product-1';
@@ -260,7 +259,7 @@ test.describe('GSTR-1 filing', () => {
     await selectComboboxOption(page, 'invoice-ledger', registered);
     await expect(placeOfSupply).toHaveValue('27');
 
-    await page.selectOption('#invoice-voucher-type', 'purchase');
+    await chooseVoucherType(page, 'purchase');
     await expect(placeOfSupply).toBeHidden();
   });
 });

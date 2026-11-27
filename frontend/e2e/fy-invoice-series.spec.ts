@@ -6,7 +6,7 @@
  *
  * We use the far-future years 2031/2032 to avoid conflicts with real data.
  */
-import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption, clickNavLink, createProduct, adjustInventory } from './fixtures';
+import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption, clickNavLink, createProduct, adjustInventory, chooseVoucherType } from './fixtures';
 
 test.use({ timezoneId: 'Asia/Kolkata' });
 
@@ -153,7 +153,7 @@ async function createInvoiceOnDate(
   await clickNavLink(page, '/invoices');
   await page.waitForTimeout(500);
 
-  await page.selectOption('#invoice-voucher-type', 'sales');
+  await chooseVoucherType(page, 'sales');
   await selectComboboxOption(page, 'invoice-ledger', ledgerName);
 
   const productInputId =

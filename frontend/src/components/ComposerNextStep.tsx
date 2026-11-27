@@ -1,14 +1,11 @@
-import { useQuery } from '@tanstack/react-query';
-import api from '../api/client';
 import {
   canStartTour,
   COMPOSER_NEXT_STEP,
-  FIRST_INVOICE_QUERY_KEY,
   mayNeedFirstInvoiceHelp,
   showComposerNextStep,
 } from '../features/firstInvoiceTour/tourSteps';
 import { useAuthStore } from '../store/useAuthStore';
-import { activeCompanyId } from '../utils/getStarted';
+import { useCompanyHasInvoice } from '../features/firstInvoiceTour/useCompanyHasInvoice';
 import { useFirstInvoiceTourStore } from '../store/useFirstInvoiceTourStore';
 
 /** The line itself, and "Show me how" for people who can finish the walkthrough. */
@@ -40,20 +37,11 @@ export default function ComposerNextStep({ isNewSalesInvoice }: { isNewSalesInvo
   const start = useFirstInvoiceTourStore((state) => state.start);
   const tourRunning = phase === 'running' && owner === userEmail;
 
-  const hasInvoiceQuery = useQuery({
-    queryKey: [...FIRST_INVOICE_QUERY_KEY, activeCompanyId()],
-    queryFn: async () => {
-      const response = await api.get<{ total: number }>('/invoices/', {
-        params: { page: 1, page_size: 1, show_cancelled: true },
-      });
-      return response.data.total > 0;
-    },
-    enabled: isNewSalesInvoice && mayNeedFirstInvoiceHelp(status),
-  });
+  const hasInvoice = useCompanyHasInvoice(isNewSalesInvoice && mayNeedFirstInvoiceHelp(status));
 
   const show = showComposerNextStep({
     tourRunning,
-    hasInvoice: hasInvoiceQuery.data ?? null,
+    hasInvoice: hasInvoice ?? null,
     isNewSalesInvoice,
   });
   if (!show) return null;

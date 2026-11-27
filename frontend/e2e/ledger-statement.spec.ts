@@ -1,4 +1,4 @@
-import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption, clickNavLink, createProduct, adjustInventory, localToday, localStartOfMonth } from './fixtures';
+import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption, clickNavLink, createProduct, adjustInventory, localToday, localStartOfMonth, chooseVoucherType } from './fixtures';
 
 test.describe('Ledger Statement', () => {
   test('shows period statement for a ledger', async ({ authedPage: page }) => {
@@ -65,7 +65,7 @@ test.describe('Ledger Statement', () => {
     // 4. Create a sales invoice for this ledger
     await clickNavLink(page, '/invoices');
     await expect(page.locator('#invoice-ledger')).not.toBeDisabled({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
-    await page.selectOption('#invoice-voucher-type', 'sales');
+    await chooseVoucherType(page, 'sales');
     await selectComboboxOption(page, 'invoice-ledger', ledgerName);
 
     const productInputId = (await page.locator('[id^="invoice-product-"]').first().getAttribute('id')) || 'invoice-product-1';

@@ -9,8 +9,7 @@ import {
   openNewCreditNote,
   createProduct,
   catalogueSearch,
-  catalogueRow,
-} from './fixtures';
+  catalogueRow, chooseVoucherType } from './fixtures';
 
 /**
  * Credit notes, both directions.
@@ -49,7 +48,7 @@ test.describe('Credit notes', () => {
   ) {
     await clickNavLink(page, '/invoices');
     await page.waitForTimeout(500);
-    await page.selectOption('#invoice-voucher-type', voucherType);
+    await chooseVoucherType(page, voucherType);
     await selectComboboxOption(page, 'invoice-ledger', ledgerName);
 
     const productInputId =

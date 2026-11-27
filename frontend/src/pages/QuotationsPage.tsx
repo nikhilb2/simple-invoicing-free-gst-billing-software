@@ -18,6 +18,9 @@ import {
   fetchQuotations,
   setQuotationStatus,
 } from '../features/quotations/api';
+import { useCompanyHasInvoice } from '../features/firstInvoiceTour/useCompanyHasInvoice';
+import { QuotationsFirstRunNote } from '../components/ComposerFirstRun';
+import { isFirstRun } from '../utils/getStarted';
 import { quotationQueryKeys } from '../features/quotations/queryKeys';
 import type {
   Quotation,
@@ -53,6 +56,7 @@ const STATUS_ACTION_TITLES: Record<QuotationSettableStatus, string> = {
 };
 
 export default function QuotationsPage() {
+  const companyHasInvoice = useCompanyHasInvoice();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -197,6 +201,7 @@ export default function QuotationsPage() {
           <p className="section-copy">
             Quotations and proforma invoices. Offers only: nothing here affects stock, ledgers, reports or returns until you convert it to an invoice.
           </p>
+          {isFirstRun(companyHasInvoice) ? <QuotationsFirstRunNote /> : null}
         </div>
         <div className="button-row">
           <Link className="button button--primary" to="/invoices?new=quotation">

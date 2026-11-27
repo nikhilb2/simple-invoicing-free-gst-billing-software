@@ -36,8 +36,8 @@ const STEPS: Array<{
     id: 'product',
     title: 'Add a product',
     copy: 'What you sell. Counting its stock is optional.',
-    to: '/catalogue',
-    action: 'Open catalogue',
+    to: '/invoices?add=product',
+    action: 'Add a product',
   },
   { id: 'invoice', title: 'Create your first invoice', copy: 'Needs a customer and a product.', to: '/invoices', action: 'Create invoice' },
   {

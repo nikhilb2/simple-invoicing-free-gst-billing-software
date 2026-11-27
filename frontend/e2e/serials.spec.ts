@@ -1,4 +1,4 @@
-import { test, expect, uniqueSku, uniqueGstin, selectComboboxOption, clickNavLink } from './fixtures';
+import { test, expect, uniqueSku, uniqueGstin, selectComboboxOption, clickNavLink, chooseVoucherType } from './fixtures';
 
 /**
  * Serial / IMEI scanning.
@@ -174,7 +174,7 @@ test.describe('Serial scanning', () => {
   async function openComposer(page: Page, voucherType: 'sales' | 'purchase') {
     await clickNavLink(page, '/invoices');
     await page.waitForTimeout(500);
-    await page.selectOption('#invoice-voucher-type', voucherType);
+    await chooseVoucherType(page, voucherType);
     await expect(scanInput(page)).toBeVisible({ timeout: 10_000 });
   }
 

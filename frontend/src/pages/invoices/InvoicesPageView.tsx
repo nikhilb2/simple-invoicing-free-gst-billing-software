@@ -31,6 +31,7 @@ import { createQuotation, fetchConversionDraft, fetchQuotationById, updateQuotat
 import { quotationQueryKeys } from '../../features/quotations/queryKeys';
 import { convertDeliveryChallan, fetchChallanConversionDraft } from '../../features/deliveryChallans/api';
 import { deliveryChallanQueryKeys } from '../../features/deliveryChallans/queryKeys';
+import { hasComposerDocumentParam, showBillTypeRow } from '../../utils/getStarted';
 import { challanQuantityNotes, challanReferenceText, readChallanAlreadyInvoiced } from '../../utils/challanConversion';
 import {
   composerDocumentName,
@@ -49,6 +50,8 @@ import { invoiceQueryKeys } from '../../features/invoices/queryKeys';
 import { missingQuantity, readStockShortage } from '../../features/invoices/stockShortage';
 import { useFirstInvoiceTourStore } from '../../store/useFirstInvoiceTourStore';
 import ComposerNextStep from '../../components/ComposerNextStep';
+import { BillTypeRow, FirstCustomerBox, FirstItemButton, VoucherTypeSelect } from '../../components/ComposerFirstRun';
+import { useCompanyHasInvoice } from '../../features/firstInvoiceTour/useCompanyHasInvoice';
 import { FIRST_INVOICE_QUERY_KEY } from '../../features/firstInvoiceTour/tourSteps';
 import { useInvoiceComposerStore } from '../../store/useInvoiceComposerStore';
 import LedgerQuickCreateModal from './components/LedgerQuickCreateModal';
@@ -116,6 +119,10 @@ export default function InvoicesPage() {
   const { activeFY } = useFY();
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
+  /* First run (#1134): read once at mount, because ?new= is removed from the URL once applied. */
+  const [urlPicksDocument] = useState(() => hasComposerDocumentParam(searchParams));
+  const [billTypeChanged, setBillTypeChanged] = useState(false);
+  const companyHasInvoice = useCompanyHasInvoice();
   const selectedLedgerId = useInvoiceComposerStore((state) => state.selectedLedgerId);
   const setSelectedLedgerId = useInvoiceComposerStore((state) => state.setSelectedLedgerId);
   const openLedgerCreateModal = useInvoiceComposerStore((state) => state.openLedgerCreateModal);
@@ -331,6 +338,20 @@ export default function InvoicesPage() {
       return next;
     }, { replace: true });
   }, [searchParams, setSearchParams, openLedgerCreateModal]);
+
+  // The dashboard's "Add a product" step: the product goes on Line 1, like the one made from Line 1's button.
+  useEffect(() => {
+    if (searchParams.get('add') !== 'product') return;
+    if (!composerQuery.data) return;
+    const firstLine = itemsRef.current[0];
+    if (firstLine) openProductCreateFromLine('', firstLine.id);
+    else openProductCreateModal();
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      next.delete('add');
+      return next;
+    }, { replace: true });
+  }, [searchParams, setSearchParams, composerQuery.data, openProductCreateFromLine, openProductCreateModal]);
 
   // Fetch ledger addresses when ledger selection changes (for shipping address UI)
   useEffect(() => {
@@ -1479,6 +1500,13 @@ export default function InvoicesPage() {
   }, [composerLoaded, ledgers.length, products.length, selectedLedgerId, productChosen, voucherType, stockShortage, ledgerFormOpen, productFormOpen, stockFormOpen, reportToTour]);
   useEffect(() => () => reportToTour(null), [reportToTour]);
 
+  const billTypeRow = showBillTypeRow({
+    hasInvoice: companyHasInvoice,
+    urlPicksDocument,
+    voucherType,
+    locked: conversion !== null || challanConversion !== null || editingQuotation !== null || editingInvoiceId !== null,
+    changeChosen: billTypeChanged,
+  });
   const documentName = composerDocumentName(voucherType);
   const conversionLedgerChanged = conversion !== null && Number(selectedLedgerId) !== conversion.invoice.ledger_id;
   const conversionShortfalls = conversion
@@ -1670,14 +1698,14 @@ export default function InvoicesPage() {
 
           <form ref={composerFormRef} className="stack" noValidate onSubmit={handleSubmitInvoice} onInvalidCapture={fieldErrors.onInvalidCapture}>
             <div className="field-grid">
-              <div className="field">
-                <label htmlFor="invoice-voucher-type">Voucher type</label>
-                <select
-                  id="invoice-voucher-type"
-                  className="select"
+              {billTypeRow ? (
+                <BillTypeRow onChange={() => setBillTypeChanged(true)} />
+              ) : (
+                <VoucherTypeSelect
+                  afterChange={billTypeChanged}
                   value={voucherType}
                   disabled={conversion !== null || challanConversion !== null || editingQuotation !== null || editingInvoiceId !== null}
-                  onChange={(event) => changeVoucherType(event.target.value as ComposerVoucherType)}
+                  onChange={(value) => changeVoucherType(value as ComposerVoucherType)}
                 >
                   <option value="sales">Sales</option>
                   <option value="purchase">Purchase</option>
@@ -1689,8 +1717,8 @@ export default function InvoicesPage() {
                       <option value="proforma">Proforma invoice</option>
                     </>
                   ) : null}
-                </select>
-              </div>
+                </VoucherTypeSelect>
+              )}
 
               <div className="field">
                 <div className="field__label-row">
@@ -1717,32 +1745,7 @@ export default function InvoicesPage() {
                     {counterparty.addLabel}
                   </button>
                 ) : null}
-                {composerQuery.data && (ledgers.length === 0 || products.length === 0) ? (
-                  <div className="empty-state stack composer-first-run" data-testid="invoice-first-run">
-                    <strong>
-                      {ledgers.length === 0
-                        ? products.length === 0 ? 'Add your first customer and product' : 'Add your first customer'
-                        : 'Add your first product'}
-                    </strong>
-                    <p className="muted-text" style={{ margin: 0 }}>
-                      An invoice needs a customer ledger and at least one product. Add what is missing to get started.
-                    </p>
-                    <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-                      {ledgers.length === 0 ? (
-                        <button type="button" className="button button--primary" data-tour="add-customer" onClick={openLedgerCreateModal}>
-                          <Plus size={13} />
-                          Add a customer
-                        </button>
-                      ) : null}
-                      {products.length === 0 ? (
-                        <button type="button" className="button button--primary" data-tour="add-product" onClick={openProductCreateModal}>
-                          <Plus size={13} />
-                          Add a product
-                        </button>
-                      ) : null}
-                    </div>
-                  </div>
-                ) : null}
+                {composerQuery.data && ledgers.length === 0 ? <FirstCustomerBox onAdd={openLedgerCreateModal} /> : null}
               </div>
 
               {voucherType === 'sales' && company?.gst?.trim() ? (
@@ -2216,6 +2219,9 @@ export default function InvoicesPage() {
                     >
                       <div className="field">
                         <label htmlFor={`invoice-product-${item.id}`}>Line {index + 1}</label>
+                        {index === 0 && composerQuery.data && products.length === 0 ? (
+                          <FirstItemButton id={`invoice-product-${item.id}`} onClick={() => openProductCreateFromLine('', item.id)} />
+                        ) : (
                         <ProductCombobox
                           id={`invoice-product-${item.id}`}
                           products={products}
@@ -2227,6 +2233,7 @@ export default function InvoicesPage() {
                           onCreateNew={(name) => openProductCreateFromLine(name, item.id)}
                           required
                         />
+                        )}
                       </div>
                       {lineError('product')}
 

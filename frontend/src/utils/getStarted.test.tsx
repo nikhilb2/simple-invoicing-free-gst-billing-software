@@ -142,6 +142,13 @@ describe('GetStartedCard', () => {
     expect(html).toContain('https://guide.gstbill.in/getting-started/');
   });
 
+  it('sends "Add a product" to the composer, where the product goes on Line 1', () => {
+    const html = render({ address: true, customer: true, product: false, invoice: false, bank: true });
+    expect(html).toContain('href="/invoices?add=product"');
+    expect(html).toContain('>Add a product</a>');
+    expect(html).not.toContain('/catalogue');
+  });
+
   it('shows finished steps as done without an action link', () => {
     const html = render({ address: true, customer: true, product: false, invoice: false, bank: false });
     expect(html).not.toContain('href="/settings/company?focus=address"');

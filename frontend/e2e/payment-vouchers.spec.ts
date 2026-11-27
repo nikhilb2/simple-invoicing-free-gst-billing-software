@@ -1,4 +1,4 @@
-import { test, expect, expectSuccess, uniqueGstin, selectComboboxOption, clickNavLink } from './fixtures';
+import { test, expect, expectSuccess, uniqueGstin, selectComboboxOption, clickNavLink, chooseVoucherType, showVoucherTypeDropdown } from './fixtures';
 
 test.describe('Payment Vouchers from Invoices Page', () => {
   /**
@@ -21,6 +21,7 @@ test.describe('Payment Vouchers from Invoices Page', () => {
   test('Payment option appears in voucher type dropdown', async ({ authedPage: page }) => {
     await clickNavLink(page, '/invoices');
     await expect(page.locator('h1')).toContainText('Invoice composer', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
+    await showVoucherTypeDropdown(page);
     const select = page.locator('#invoice-voucher-type');
     await expect(select.locator('option[value="payment"]')).toHaveCount(1);
   });
@@ -32,7 +33,7 @@ test.describe('Payment Vouchers from Invoices Page', () => {
     // Before selecting payment, line items should be present
     await expect(page.locator('[id^="invoice-product-"]').first()).toBeVisible({ timeout: 5_000 });
 
-    await page.selectOption('#invoice-voucher-type', 'payment');
+    await chooseVoucherType(page, 'payment');
 
     // Line items should disappear
     await expect(page.locator('[id^="invoice-product-"]')).toHaveCount(0);
@@ -56,7 +57,7 @@ test.describe('Payment Vouchers from Invoices Page', () => {
     await expect(page.locator('h1')).toContainText('Invoice composer', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
 
     // Select Payment voucher type
-    await page.selectOption('#invoice-voucher-type', 'payment');
+    await chooseVoucherType(page, 'payment');
 
     // Select the ledger
     await selectComboboxOption(page, 'invoice-ledger', ledgerName);
@@ -86,7 +87,7 @@ test.describe('Payment Vouchers from Invoices Page', () => {
     await clickNavLink(page, '/invoices');
     await expect(page.locator('h1')).toContainText('Invoice composer', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
 
-    await page.selectOption('#invoice-voucher-type', 'payment');
+    await chooseVoucherType(page, 'payment');
     await selectComboboxOption(page, 'invoice-ledger', ledgerName);
     await page.selectOption('#payment-mode', 'cash');
     await page.fill('#payment-amount', '1000');
@@ -120,7 +121,7 @@ test.describe('Payment Vouchers from Invoices Page', () => {
     await clickNavLink(page, '/invoices');
     await expect(page.locator('h1')).toContainText('Invoice composer', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
 
-    await page.selectOption('#invoice-voucher-type', 'payment');
+    await chooseVoucherType(page, 'payment');
     await selectComboboxOption(page, 'invoice-ledger', ledgerName);
     await page.selectOption('#payment-mode', 'cash');
     await page.fill('#payment-amount', '1000');
@@ -148,7 +149,7 @@ test.describe('Payment Vouchers from Invoices Page', () => {
     await clickNavLink(page, '/invoices');
     await expect(page.locator('h1')).toContainText('Invoice composer', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
 
-    await page.selectOption('#invoice-voucher-type', 'payment');
+    await chooseVoucherType(page, 'payment');
     await selectComboboxOption(page, 'invoice-ledger', ledgerName);
     await page.selectOption('#payment-mode', 'cash');
     await page.fill('#payment-amount', '0');
@@ -166,11 +167,11 @@ test.describe('Payment Vouchers from Invoices Page', () => {
     await expect(page.locator('h1')).toContainText('Invoice composer', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
 
     // Select Payment
-    await page.selectOption('#invoice-voucher-type', 'payment');
+    await chooseVoucherType(page, 'payment');
     await expect(page.locator('#payment-amount')).toBeVisible({ timeout: 3_000 });
 
     // Switch back to Sales
-    await page.selectOption('#invoice-voucher-type', 'sales');
+    await chooseVoucherType(page, 'sales');
 
     // Line items should be back
     await expect(page.locator('[id^="invoice-product-"]').first()).toBeVisible({ timeout: 3_000 });

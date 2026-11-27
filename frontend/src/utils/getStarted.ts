@@ -18,6 +18,47 @@ export function hasPostedInvoices(metrics: Pick<DashboardMetrics, 'sales'>): boo
   return metrics.sales.sales_invoice_count + metrics.sales.purchase_invoice_count > 0;
 }
 
+/**
+ * "First run" (#1134): the active company has no sales or purchase invoice at
+ * all, in any financial year, cancelled ones included. This is the same rule as
+ * hasPostedInvoices (no invoice yet), but read from the invoice list total with
+ * cancelled shown, because the dashboard metrics count active invoices only.
+ * `hasInvoice` is null or undefined until that is known: a loading or failed
+ * lookup is never a first run, so returning users see no jump.
+ */
+export function isFirstRun(hasInvoice: boolean | null | undefined): boolean {
+  return hasInvoice === false;
+}
+
+/** URL params that pick a document to open or make. They keep today's dropdown. */
+export const COMPOSER_DOCUMENT_PARAMS = ['new', 'edit', 'duplicate', 'edit_quotation', 'from_quotation', 'from_challan'] as const;
+
+export function hasComposerDocumentParam(params: Pick<URLSearchParams, 'has'>): boolean {
+  return COMPOSER_DOCUMENT_PARAMS.some((key) => params.has(key));
+}
+
+/**
+ * Whether the composer shows the "Bill type: Sales invoice / Change" row in
+ * place of the Voucher type dropdown. Only on first run, for a plain new sales
+ * invoice: a URL that picks a document, a preselected or locked voucher type,
+ * or a tap on Change all show the dropdown.
+ */
+export function showBillTypeRow({
+  hasInvoice,
+  urlPicksDocument,
+  voucherType,
+  locked,
+  changeChosen,
+}: {
+  hasInvoice: boolean | null | undefined;
+  urlPicksDocument: boolean;
+  voucherType: string;
+  locked: boolean;
+  changeChosen: boolean;
+}): boolean {
+  return isFirstRun(hasInvoice) && !urlPicksDocument && voucherType === 'sales' && !locked && !changeChosen;
+}
+
 export function getStartedStatus(metrics: DashboardMetrics, facts: GetStartedFacts): GetStartedStatus {
   const { catalog, inventory } = metrics;
   return {

@@ -1,4 +1,4 @@
-import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption, clickNavLink, createProduct, adjustInventory, searchAllFY } from './fixtures';
+import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption, clickNavLink, createProduct, adjustInventory, searchAllFY, chooseVoucherType } from './fixtures';
 
 /**
  * Helper: create a product (with stock) + ledger, navigate to /invoices, and
@@ -30,7 +30,7 @@ async function createInvoicePrerequisites(page: Parameters<typeof selectCombobox
   await clickNavLink(page, '/invoices');
   // Wait for LedgerCombobox to be enabled (ledgers loaded)
   await expect(page.locator('#invoice-ledger')).not.toBeDisabled({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
-  await page.selectOption('#invoice-voucher-type', 'sales');
+  await chooseVoucherType(page, 'sales');
 
   await selectComboboxOption(page, 'invoice-ledger', ledgerName);
 

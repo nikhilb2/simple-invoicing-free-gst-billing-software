@@ -362,7 +362,7 @@ export async function ensureSalesData(page: Page) {
 
   await clickNavLink(page, '/invoices');
   await expect(page.locator('#invoice-ledger')).not.toBeDisabled({ timeout: 5_000 });
-  await page.selectOption('#invoice-voucher-type', 'sales');
+  await chooseVoucherType(page, 'sales');
   await selectComboboxOption(page, 'invoice-ledger', ledgerName);
   await selectComboboxOption(page, 'invoice-product-1', sku);
   await page.locator('[id^="invoice-quantity-"]').first().fill('1');
@@ -376,4 +376,25 @@ export async function ensureSalesData(page: Page) {
   await expect(preview).not.toBeVisible();
 
   salesDataSeeded = true;
+}
+
+/**
+ * Picks a voucher type in the composer. A company with no invoice yet shows a
+ * "Bill type: Sales invoice / Change" row (#1134) until Change is tapped, so
+ * wait for that to settle, tap Change if the row is there, then pick.
+ */
+export async function chooseVoucherType(page: Page, value: string) {
+  await page.locator('#invoice-voucher-type, [data-testid="invoice-bill-type-row"]').first().waitFor();
+  await page.waitForLoadState('networkidle');
+  await showVoucherTypeDropdown(page);
+  await page.selectOption('#invoice-voucher-type', value);
+}
+
+/** Opens the Voucher type dropdown when the first-run row stands in for it. */
+export async function showVoucherTypeDropdown(page: Page) {
+  await page.locator('#invoice-voucher-type, [data-testid="invoice-bill-type-row"]').first().waitFor();
+  await page.waitForLoadState('networkidle');
+  const row = page.getByTestId('invoice-bill-type-row');
+  if (await row.count()) await row.getByRole('button', { name: 'Change' }).click();
+  await expect(page.locator('#invoice-voucher-type')).toBeVisible();
 }

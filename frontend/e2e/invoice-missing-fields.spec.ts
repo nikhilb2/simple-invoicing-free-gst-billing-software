@@ -1,4 +1,4 @@
-import { test, expect, selectComboboxOption, clickNavLink, createProduct, adjustInventory, uniqueSku, uniqueGstin, expectSuccess } from './fixtures';
+import { test, expect, selectComboboxOption, clickNavLink, createProduct, adjustInventory, uniqueSku, uniqueGstin, expectSuccess, chooseVoucherType } from './fixtures';
 
 const EXPECT_TIMEOUT = Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000');
 
@@ -25,7 +25,7 @@ test.describe('Create invoice with missing fields', () => {
 
     await clickNavLink(page, '/invoices');
     await expect(page.locator('#invoice-ledger')).not.toBeDisabled({ timeout: EXPECT_TIMEOUT });
-    await page.selectOption('#invoice-voucher-type', 'sales');
+    await chooseVoucherType(page, 'sales');
 
     const createButton = page.getByRole('button', { name: 'Create invoice', exact: true });
     await expect(createButton).toBeEnabled();

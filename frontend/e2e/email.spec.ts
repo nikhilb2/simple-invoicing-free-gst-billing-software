@@ -1,4 +1,4 @@
-import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption, clickNavLink, createProduct, adjustInventory, searchAllFY, localToday, localStartOfMonth } from './fixtures';
+import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption, clickNavLink, createProduct, adjustInventory, searchAllFY, localToday, localStartOfMonth, chooseVoucherType } from './fixtures';
 
 const LEDGER_EMAIL = 'buyer@example.com';
 const EXPECT_TIMEOUT_MS = Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '2000');
@@ -170,7 +170,7 @@ test.describe('Send Email Modal', () => {
       // Create invoice
       await clickNavLink(page, '/invoices');
       await expect(page.locator('#invoice-ledger')).not.toBeDisabled({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
-      await page.selectOption('#invoice-voucher-type', 'sales');
+      await chooseVoucherType(page, 'sales');
       await selectComboboxOption(page, 'invoice-ledger', ledgerName);
       const productInputId = (await page.locator('[id^="invoice-product-"]').first().getAttribute('id')) || 'invoice-product-1';
       await selectComboboxOption(page, productInputId, sku);
@@ -249,7 +249,7 @@ test.describe('Send Email Modal', () => {
       // Create an invoice so the statement has entries
       await clickNavLink(page, '/invoices');
       await expect(page.locator('#invoice-ledger')).not.toBeDisabled({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
-      await page.selectOption('#invoice-voucher-type', 'sales');
+      await chooseVoucherType(page, 'sales');
       await selectComboboxOption(page, 'invoice-ledger', ledgerName);
       const productInputId = (await page.locator('[id^="invoice-product-"]').first().getAttribute('id')) || 'invoice-product-1';
       await selectComboboxOption(page, productInputId, sku);

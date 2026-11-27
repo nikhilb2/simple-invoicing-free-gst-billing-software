@@ -9717,3 +9717,39 @@ a.ledger-chip:focus-visible {
     display: grid;
   }
 }
+
+/* First run (#1134): the Bill type row, the Line 1 "Add your first item" button
+   and the Quotations note. */
+.bill-type-row__label {
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.bill-type-row__line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 44px;
+}
+
+.bill-type-row__value {
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.first-item-button {
+  width: 100%;
+  min-height: 44px;
+  justify-content: center;
+  color: var(--accent);
+  border: 1.5px dashed rgb(var(--rgb-accent) / 0.7);
+}
+
+.quotations-first-run {
+  margin-top: 12px;
+}
+
+.quotations-first-run__link {
+  min-height: 44px;
+}

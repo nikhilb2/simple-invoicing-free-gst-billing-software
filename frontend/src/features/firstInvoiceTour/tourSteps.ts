@@ -80,7 +80,7 @@ const PRODUCT: Guide = {
   action: {
     selector: tour('add-product'),
     title: 'Add what you sold',
-    body: 'Tap Add a product.',
+    body: 'Tap Add your first item.',
   },
 };
 

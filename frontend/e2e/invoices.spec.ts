@@ -1,4 +1,4 @@
-import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption, clickNavLink, createProduct, adjustInventory, searchAllFY, localToday } from './fixtures';
+import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption, clickNavLink, createProduct, adjustInventory, searchAllFY, localToday, chooseVoucherType } from './fixtures';
 
 test.describe('Invoices', () => {
   async function openInvoiceFeed(page: import('@playwright/test').Page) {
@@ -141,7 +141,7 @@ test.describe('Invoices', () => {
     await page.waitForTimeout(500);
 
     // Create a sales invoice so there's at least one in the list
-    await page.selectOption('#invoice-voucher-type', 'sales');
+    await chooseVoucherType(page, 'sales');
 
     await selectComboboxOption(page, 'invoice-ledger', ledgerName);
 
@@ -175,7 +175,7 @@ test.describe('Invoices', () => {
     await page.waitForTimeout(500);
 
     // Select voucher type
-    await page.selectOption('#invoice-voucher-type', 'sales');
+    await chooseVoucherType(page, 'sales');
 
     // Select ledger
     await selectComboboxOption(page, 'invoice-ledger', ledgerName);
@@ -200,7 +200,7 @@ test.describe('Invoices', () => {
     await clickNavLink(page, '/invoices');
     await page.waitForTimeout(500);
 
-    await page.selectOption('#invoice-voucher-type', 'purchase');
+    await chooseVoucherType(page, 'purchase');
 
     // Select ledger
     await selectComboboxOption(page, 'invoice-ledger', ledgerName);
@@ -221,7 +221,7 @@ test.describe('Invoices', () => {
     await clickNavLink(page, '/invoices');
     await page.waitForTimeout(500);
 
-    await page.selectOption('#invoice-voucher-type', 'sales');
+    await chooseVoucherType(page, 'sales');
 
     // Select ledger
     await selectComboboxOption(page, 'invoice-ledger', ledgerName);
@@ -256,7 +256,7 @@ test.describe('Invoices', () => {
     await page.waitForTimeout(500);
 
     // Create invoice first
-    await page.selectOption('#invoice-voucher-type', 'sales');
+    await chooseVoucherType(page, 'sales');
     await selectComboboxOption(page, 'invoice-ledger', ledgerName);
 
     const productInputId3 = (await page.locator('[id^="invoice-product-"]').first().getAttribute('id')) || 'invoice-product-1';
@@ -289,7 +289,7 @@ test.describe('Invoices', () => {
     await page.waitForTimeout(500);
 
     // Select voucher type
-    await page.selectOption('#invoice-voucher-type', 'sales');
+    await chooseVoucherType(page, 'sales');
 
     // Select ledger
     await selectComboboxOption(page, 'invoice-ledger', ledgerName);
@@ -380,7 +380,7 @@ test.describe('Invoices', () => {
     await page.waitForTimeout(500);
     await openAdvanced(page);
 
-    await page.selectOption('#invoice-voucher-type', 'sales');
+    await chooseVoucherType(page, 'sales');
     await expect(page.locator('#invoice-supplier-ref')).not.toBeVisible();
   });
 
@@ -389,7 +389,7 @@ test.describe('Invoices', () => {
     await page.waitForTimeout(500);
     await openAdvanced(page);
 
-    await page.selectOption('#invoice-voucher-type', 'sales');
+    await chooseVoucherType(page, 'sales');
     await expect(page.locator('#invoice-reference-notes')).toBeVisible();
   });
 
@@ -398,7 +398,7 @@ test.describe('Invoices', () => {
     await page.waitForTimeout(500);
     await openAdvanced(page);
 
-    await page.selectOption('#invoice-voucher-type', 'purchase');
+    await chooseVoucherType(page, 'purchase');
     await expect(page.locator('#invoice-reference-notes')).not.toBeVisible();
   });
 
@@ -407,7 +407,7 @@ test.describe('Invoices', () => {
     await page.waitForTimeout(500);
     await openAdvanced(page);
 
-    await page.selectOption('#invoice-voucher-type', 'purchase');
+    await chooseVoucherType(page, 'purchase');
     await expect(page.locator('#invoice-supplier-ref')).toBeVisible();
   });
 
@@ -418,7 +418,7 @@ test.describe('Invoices', () => {
     await clickNavLink(page, '/invoices');
     await page.waitForTimeout(500);
 
-    await page.selectOption('#invoice-voucher-type', 'purchase');
+    await chooseVoucherType(page, 'purchase');
 
     await selectComboboxOption(page, 'invoice-ledger', ledgerName);
 
@@ -443,15 +443,15 @@ test.describe('Invoices', () => {
     await page.waitForTimeout(500);
 
     await openAdvanced(page);
-    await page.selectOption('#invoice-voucher-type', 'purchase');
+    await chooseVoucherType(page, 'purchase');
     await page.fill('#invoice-supplier-ref', 'TEMP-REF-123');
 
     // Switch to sales — field should disappear
-    await page.selectOption('#invoice-voucher-type', 'sales');
+    await chooseVoucherType(page, 'sales');
     await expect(page.locator('#invoice-supplier-ref')).not.toBeVisible();
 
     // Switch back to purchase — field should appear empty (state preserved but not visible)
-    await page.selectOption('#invoice-voucher-type', 'purchase');
+    await chooseVoucherType(page, 'purchase');
     await expect(page.locator('#invoice-supplier-ref')).toBeVisible();
   });
 
@@ -463,7 +463,7 @@ test.describe('Invoices', () => {
     await page.waitForTimeout(500);
 
     // Create purchase invoice with supplier ref
-    await page.selectOption('#invoice-voucher-type', 'purchase');
+    await chooseVoucherType(page, 'purchase');
     await selectComboboxOption(page, 'invoice-ledger', ledgerName);
     const productInputId = (await page.locator('[id^="invoice-product-"]').first().getAttribute('id')) || 'invoice-product-1';
     await selectComboboxOption(page, productInputId, sku);
@@ -489,7 +489,7 @@ test.describe('Invoices', () => {
     await clickNavLink(page, '/invoices');
     await page.waitForTimeout(500);
 
-    await page.selectOption('#invoice-voucher-type', 'sales');
+    await chooseVoucherType(page, 'sales');
     await selectComboboxOption(page, 'invoice-ledger', ledgerName);
     const productInputId = (await page.locator('[id^="invoice-product-"]').first().getAttribute('id')) || 'invoice-product-1';
     await selectComboboxOption(page, productInputId, sku);
@@ -541,7 +541,7 @@ test.describe('Invoices', () => {
     await clickNavLink(page, '/invoices');
     await page.waitForTimeout(500);
 
-    await page.selectOption('#invoice-voucher-type', 'sales');
+    await chooseVoucherType(page, 'sales');
     await selectComboboxOption(page, 'invoice-ledger', ledgerName);
 
     const productInputId = (await page.locator('[id^="invoice-product-"]').first().getAttribute('id')) || 'invoice-product-1';
@@ -572,7 +572,7 @@ test.describe('Invoices', () => {
     await clickNavLink(page, '/invoices');
     await page.waitForTimeout(500);
 
-    await page.selectOption('#invoice-voucher-type', 'sales');
+    await chooseVoucherType(page, 'sales');
     await selectComboboxOption(page, 'invoice-ledger', ledgerName);
 
     const productInputId = (await page.locator('[id^="invoice-product-"]').first().getAttribute('id')) || 'invoice-product-1';
@@ -599,7 +599,7 @@ test.describe('Invoices', () => {
     await clickNavLink(page, '/invoices');
     await page.waitForTimeout(500);
 
-    await page.selectOption('#invoice-voucher-type', 'sales');
+    await chooseVoucherType(page, 'sales');
     await selectComboboxOption(page, 'invoice-ledger', ledgerName);
 
     const productInputId = (await page.locator('[id^="invoice-product-"]').first().getAttribute('id')) || 'invoice-product-1';
@@ -687,7 +687,7 @@ test.describe('Invoices', () => {
     await clickNavLink(page, '/invoices');
     await page.waitForTimeout(500);
 
-    await page.selectOption('#invoice-voucher-type', 'purchase');
+    await chooseVoucherType(page, 'purchase');
     await selectComboboxOption(page, 'invoice-ledger', ledgerName);
     const productInputId = (await page.locator('[id^="invoice-product-"]').first().getAttribute('id')) || 'invoice-product-1';
     await selectComboboxOption(page, productInputId, sku);
@@ -716,7 +716,7 @@ test.describe('Invoices', () => {
     await clickNavLink(page, '/invoices');
     await page.waitForTimeout(500);
 
-    await page.selectOption('#invoice-voucher-type', 'purchase');
+    await chooseVoucherType(page, 'purchase');
     await selectComboboxOption(page, 'invoice-ledger', ledgerName);
     const productInputId = (await page.locator('[id^="invoice-product-"]').first().getAttribute('id')) || 'invoice-product-1';
     await selectComboboxOption(page, productInputId, sku);
@@ -744,7 +744,7 @@ test.describe('Invoices', () => {
     await clickNavLink(page, '/invoices');
     await page.waitForTimeout(500);
 
-    await page.selectOption('#invoice-voucher-type', 'purchase');
+    await chooseVoucherType(page, 'purchase');
     await selectComboboxOption(page, 'invoice-ledger', ledgerName);
     const productInputId = (await page.locator('[id^="invoice-product-"]').first().getAttribute('id')) || 'invoice-product-1';
     await selectComboboxOption(page, productInputId, sku);
@@ -770,7 +770,7 @@ test.describe('Invoices', () => {
     await clickNavLink(page, '/invoices');
     await page.waitForTimeout(500);
 
-    await page.selectOption('#invoice-voucher-type', 'purchase');
+    await chooseVoucherType(page, 'purchase');
     await selectComboboxOption(page, 'invoice-ledger', ledgerName);
     const productInputId = (await page.locator('[id^="invoice-product-"]').first().getAttribute('id')) || 'invoice-product-1';
     await selectComboboxOption(page, productInputId, sku);
@@ -797,7 +797,7 @@ test.describe('Invoices', () => {
     await clickNavLink(page, '/invoices');
     await page.waitForTimeout(500);
 
-    await page.selectOption('#invoice-voucher-type', 'sales');
+    await chooseVoucherType(page, 'sales');
     await selectComboboxOption(page, 'invoice-ledger', ledgerName);
     const productInputId = (await page.locator('[id^="invoice-product-"]').first().getAttribute('id')) || 'invoice-product-1';
     await selectComboboxOption(page, productInputId, sku);
@@ -825,7 +825,7 @@ test.describe('Invoices', () => {
     await clickNavLink(page, '/invoices');
     await page.waitForTimeout(500);
 
-    await page.selectOption('#invoice-voucher-type', 'purchase');
+    await chooseVoucherType(page, 'purchase');
     await selectComboboxOption(page, 'invoice-ledger', ledgerName);
     const productInputId = (await page.locator('[id^="invoice-product-"]').first().getAttribute('id')) || 'invoice-product-1';
     await selectComboboxOption(page, productInputId, sku);
@@ -857,7 +857,7 @@ test.describe('Invoices', () => {
     await clickNavLink(page, '/invoices');
     await page.waitForTimeout(500);
 
-    await page.selectOption('#invoice-voucher-type', 'sales');
+    await chooseVoucherType(page, 'sales');
     await selectComboboxOption(page, 'invoice-ledger', ledgerName);
     const productInputId = (await page.locator('[id^="invoice-product-"]').first().getAttribute('id')) || 'invoice-product-1';
     await selectComboboxOption(page, productInputId, sku);

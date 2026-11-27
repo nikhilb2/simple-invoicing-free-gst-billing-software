@@ -1,4 +1,4 @@
-import { test, expect, expectSuccess, uniqueGstin, uniqueSku, clickNavLink, createProduct, adjustInventory, selectComboboxOption } from './fixtures';
+import { test, expect, expectSuccess, uniqueGstin, uniqueSku, clickNavLink, createProduct, adjustInventory, selectComboboxOption, chooseVoucherType } from './fixtures';
 
 const EXPECT_TIMEOUT = Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000');
 
@@ -131,7 +131,7 @@ test.describe('Share link', () => {
 
     await clickNavLink(page, '/invoices');
     await expect(page.locator('#invoice-ledger')).not.toBeDisabled({ timeout: EXPECT_TIMEOUT });
-    await page.selectOption('#invoice-voucher-type', 'sales');
+    await chooseVoucherType(page, 'sales');
     await selectComboboxOption(page, 'invoice-ledger', ledgerName);
     const productInputId = (await page.locator('[id^="invoice-product-"]').first().getAttribute('id')) || 'invoice-product-1';
     await selectComboboxOption(page, productInputId, sku);
