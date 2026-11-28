@@ -1,4 +1,4 @@
-import { test, expect } from './fixtures';
+import { test, expect, financialYearLabels } from './fixtures';
 
 test.describe('Financial Year Switcher', () => {
   test('FY switcher section is visible in the nav panel', async ({ authedPage: page }) => {
@@ -102,9 +102,11 @@ test.describe('Financial Year Switcher', () => {
     const listbox = page.locator('[role="listbox"]');
     await expect(listbox).toBeVisible({ timeout: 5_000 });
 
-    // If FY already exists from a previous run, just verify it's there and skip
-    const existingOption = listbox.locator(`button:has-text("${testLabel}")`);
-    if (await existingOption.isVisible()) {
+    // If FY already exists from a previous run, just verify it's there and skip.
+    // Ask the API: the switcher's list loads asynchronously, so an instant
+    // isVisible() can miss an existing year.
+    if ((await financialYearLabels(page)).includes(testLabel)) {
+      await expect(listbox.locator(`button:has-text("${testLabel}")`).first()).toBeVisible({ timeout: 10_000 });
       await page.locator('h1').first().click();
       return;
     }

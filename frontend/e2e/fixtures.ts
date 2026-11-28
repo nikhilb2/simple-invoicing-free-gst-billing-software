@@ -306,6 +306,60 @@ export async function openNewCreditNote(page: Page) {
 }
 
 /**
+ * Labels of the company's financial years ("2031-32"), read from the API.
+ *
+ * The sidebar FY switcher loads its list asynchronously, so an instant
+ * `isVisible()` on an option can say "missing" before the list arrives, and a
+ * helper then tries to create a year that already exists ("already exists").
+ * The API answer doesn't race.
+ */
+export async function financialYearLabels(page: Page): Promise<string[]> {
+  return page.evaluate(async () => {
+    const token = localStorage.getItem('token');
+    const response = await fetch('/api/financial-years/', {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!response.ok) throw new Error(`/financial-years/ -> ${response.status}`);
+    const years = (await response.json()) as Array<{ label: string }>;
+    return years.map((year) => year.label);
+  });
+}
+
+/**
+ * Helper: make sure a financial year exists and make it the active one,
+ * through the sidebar switcher. Creates the year if the API says it is
+ * missing, then waits for its option to load before clicking it. The
+ * dropdown is closed when this returns, so it is safe to call repeatedly.
+ */
+export async function ensureAndActivateFY(page: Page, startYear: number, label: string) {
+  const exists = (await financialYearLabels(page)).includes(label);
+  const fyButton = page.getByTestId('fy-switcher');
+  const listbox = page.locator('[role="listbox"]');
+  await fyButton.click();
+  await expect(listbox).toBeVisible({ timeout: 5_000 });
+
+  if (!exists) {
+    await listbox.locator('button:has-text("+ New FY")').click();
+    const dialog = page.locator('[role="dialog"][aria-label="Create new financial year"]');
+    await expect(dialog).toBeVisible({ timeout: 5_000 });
+    await dialog.locator('input[type="number"]').fill(String(startYear));
+    await dialog.locator('button:has-text("Create")').click();
+    await expect(dialog).not.toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
+    // Reopen the dropdown to activate
+    await fyButton.click();
+    await expect(listbox).toBeVisible({ timeout: 5_000 });
+  }
+
+  // Waits for the list to load: the option is there once the switcher has fetched it.
+  const option = listbox.locator(`button:has-text("${label}")`).first();
+  await expect(option).toBeVisible({ timeout: 10_000 });
+  await option.click();
+  if (await listbox.isVisible()) {
+    await page.locator('h1').first().click();
+  }
+}
+
+/**
  * Helper: tick "Search all FY" on the invoice feed.
  *
  * The checkbox lives in the Filters panel, which is collapsed until the

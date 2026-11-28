@@ -1,4 +1,4 @@
-import { test, expect, uniqueGstin, clickNavLink } from './fixtures';
+import { test, expect, uniqueGstin, clickNavLink, ensureAndActivateFY } from './fixtures';
 
 /**
  * Financial year used for all FY-defaults tests.
@@ -13,28 +13,7 @@ const FY_END_DATE = '2032-03-31';
  * Ensure the test FY exists and is the active FY.
  */
 async function activateTestFY(page: import('@playwright/test').Page) {
-  const fyButton = page.getByTestId('fy-switcher');
-  await fyButton.click();
-  const listbox = page.locator('[role="listbox"]');
-  await expect(listbox).toBeVisible({ timeout: 5_000 });
-
-  const existingOption = listbox.locator(`button:has-text("${TEST_FY_LABEL}")`).first();
-  if (!(await existingOption.isVisible())) {
-    await listbox.locator('button:has-text("+ New FY")').click();
-    const dialog = page.locator('[role="dialog"][aria-label="Create new financial year"]');
-    await expect(dialog).toBeVisible({ timeout: 5_000 });
-    await dialog.locator('input[type="number"]').fill(String(TEST_FY_START_YEAR));
-    await dialog.locator('button:has-text("Create")').click();
-    await expect(dialog).not.toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
-    // Reopen to activate
-    await fyButton.click();
-    await expect(listbox).toBeVisible({ timeout: 5_000 });
-  }
-
-  await listbox.locator(`button:has-text("${TEST_FY_LABEL}")`).first().click();
-  if (await listbox.isVisible()) {
-    await page.locator('h1').first().click();
-  }
+  await ensureAndActivateFY(page, TEST_FY_START_YEAR, TEST_FY_LABEL);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -73,25 +52,7 @@ test.describe('FY Defaults — Day Book', () => {
     await expect(page.locator('#day-book-to')).toHaveValue(FY_END_DATE);
 
     // Switch to a different FY (2030-31) — create it if needed
-    const fyButton = page.getByTestId('fy-switcher');
-    await fyButton.click();
-    const listbox = page.locator('[role="listbox"]');
-    await expect(listbox).toBeVisible({ timeout: 5_000 });
-
-    const fy2030Label = '2030-31';
-    const existing = listbox.locator(`button:has-text("${fy2030Label}")`).first();
-    if (!(await existing.isVisible())) {
-      await listbox.locator('button:has-text("+ New FY")').click();
-      const dialog = page.locator('[role="dialog"][aria-label="Create new financial year"]');
-      await expect(dialog).toBeVisible({ timeout: 5_000 });
-      await dialog.locator('input[type="number"]').fill('2030');
-      await dialog.locator('button:has-text("Create")').click();
-      await expect(dialog).not.toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
-      await fyButton.click();
-      await expect(listbox).toBeVisible({ timeout: 5_000 });
-    }
-
-    await listbox.locator(`button:has-text("${fy2030Label}")`).first().click();
+    await ensureAndActivateFY(page, 2030, '2030-31');
     await page.waitForTimeout(500);
 
     // Date range should now reflect FY 2030-31 bounds
@@ -163,25 +124,7 @@ test.describe('FY Defaults — Ledger Statement', () => {
     await expect(page.locator('#statement-from')).toHaveValue(FY_START_DATE);
 
     // Switch to 2030-31
-    const fyButton = page.getByTestId('fy-switcher');
-    await fyButton.click();
-    const listbox = page.locator('[role="listbox"]');
-    await expect(listbox).toBeVisible({ timeout: 5_000 });
-
-    const fy2030Label = '2030-31';
-    const existing = listbox.locator(`button:has-text("${fy2030Label}")`).first();
-    if (!(await existing.isVisible())) {
-      await listbox.locator('button:has-text("+ New FY")').click();
-      const dialog = page.locator('[role="dialog"][aria-label="Create new financial year"]');
-      await expect(dialog).toBeVisible({ timeout: 5_000 });
-      await dialog.locator('input[type="number"]').fill('2030');
-      await dialog.locator('button:has-text("Create")').click();
-      await expect(dialog).not.toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
-      await fyButton.click();
-      await expect(listbox).toBeVisible({ timeout: 5_000 });
-    }
-
-    await listbox.locator(`button:has-text("${fy2030Label}")`).first().click();
+    await ensureAndActivateFY(page, 2030, '2030-31');
     await page.waitForTimeout(500);
 
     await expect(page.locator('#statement-from')).toHaveValue('2030-04-01');
