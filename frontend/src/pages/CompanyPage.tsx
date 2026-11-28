@@ -1028,8 +1028,11 @@ export default function CompanyPage() {
     try {
       if (noCompany) {
         // First company for this user: the creator becomes its admin and the
-        // new company becomes their active one.
-        const created = await api.post<CompanyProfile>('/company/companies', payload);
+        // new company becomes their active one. `first_setup` makes a second
+        // (or stale) tab get the company back instead of a second one (#1151).
+        const created = await api.post<CompanyProfile>('/company/companies', payload, {
+          params: { first_setup: true },
+        });
         localStorage.setItem('active_company_id', String(created.data.id));
       } else {
         // A profile that exists but was never named (a fresh self-hosted install).

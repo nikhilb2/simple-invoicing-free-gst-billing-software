@@ -1,6 +1,6 @@
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func, inspect
 from sqlalchemy.orm import Session
 
@@ -31,6 +31,8 @@ from src.services.company_access import (
     add_membership,
     admin_company_count,
     can_access_company,
+    first_accessible_company,
+    legacy_default_company,
 )
 from src.schemas.company import (
     CompanyCreationCapOut,
@@ -261,6 +263,9 @@ def list_companies(
 def create_company_profile(
     payload: CompanyProfileUpdate,
     request: Request,
+    # Sent only by the first-run setup screen (#1151). Hidden from the OpenAPI
+    # schema, so MCP tools and API clients keep creating companies as before.
+    first_setup: bool = Query(False, include_in_schema=False),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_session_user),
 ):
@@ -272,6 +277,29 @@ def create_company_profile(
             raise HTTPException(status_code=403, detail="Insufficient permissions")
     elif current_user.role not in (UserRole.admin, UserRole.manager):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    if first_setup:
+        # The setup screen is for someone with no company yet. If they already
+        # have one, this is a second tab (or a stale one) that was still showing
+        # the form: hand back the company they have instead of making another,
+        # so that tab moves on into it. Checked before the limit, so a stale tab
+        # never sees "limit reached" either.
+        if shared:
+            existing = first_accessible_company(db, current_user)
+        else:
+            # Single tenant: every company is everyone's, so any company means
+            # setup is done. Keep the one already selected, if there is one.
+            existing = (
+                db.get(CompanyProfile, current_user.active_company_id)
+                if current_user.active_company_id is not None
+                else None
+            ) or legacy_default_company(db)
+        if existing is not None:
+            # The same rule as a new company below: switch in shared hosting,
+            # or fill an empty single-tenant selection.
+            if "X-MCP-Tool" not in request.headers and (shared or current_user.active_company_id is None):
+                _set_active_company(db, current_user, existing.id)
+            return _company_to_out(existing)
 
     cap = _get_company_creation_capability(db, current_user)
     if not cap.can_create_company:
