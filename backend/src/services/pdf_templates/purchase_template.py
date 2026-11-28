@@ -9,6 +9,7 @@ from .builders import (
     _address_html,
     _build_invoice_discount_html,
     _build_item_discount_html,
+    _build_taxable_html,
     _build_pdf_payment_details_html,
     _build_pdf_table_colgroup,
     _build_pdf_tax_breakup_rows,
@@ -375,7 +376,7 @@ def _build_purchase_invoice_html(
   <section class="invoice-sheet__footer">
     <div class="invoice-sheet__totals">
       <p class="eyebrow">Tax breakup</p>
-      <p>Taxable: {_fmt_currency(float(invoice.taxable_amount or 0), currency)}</p>
+      {_build_taxable_html(invoice, currency)}
       {tax_breakup_rows}
       <p>Total tax: {_fmt_currency(float(invoice.total_tax_amount or 0), currency)}</p>
       {invoice_discount_label}

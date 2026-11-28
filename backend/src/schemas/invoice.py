@@ -93,6 +93,9 @@ class InvoiceCreate(BaseModel):
     apply_round_off: bool = False
     discount_type: Literal["percentage", "net"] | None = None
     discount_value: float | None = Field(default=None, lt=MONEY_LIMIT, allow_inf_nan=False)
+    # Which way the bill discount is taken (#1154). Left out: before GST on a new
+    # invoice, the stored way on an edit. "before_tax" switches an old invoice.
+    discount_mode: Literal["before_tax", "after_tax"] | None = None
     shipping_address_same_as_billing: bool = True
     shipping_address_id: int | None = None
     new_shipping_address: ShippingAddressInline | None = None
@@ -147,6 +150,8 @@ class InvoiceItemOut(BaseModel):
     description: str | None = None
     discount_type: str | None = None
     discount_value: float | None = None
+    # This line's share of a before-GST bill discount (#1154), already off taxable_amount.
+    bill_discount_amount: float = 0
     serial_numbers: list[str] = Field(default_factory=list)
     # Whether the line carried serial numbers when it was saved. False: it was
     # billed before "Track serials" was on and takes none on an edit. None: no
@@ -213,6 +218,7 @@ class InvoiceOut(BaseModel):
     round_off_amount: float = 0
     discount_type: str | None = None
     discount_value: float | None = None
+    discount_mode: str = "after_tax"
     tcs_section_id: int | None = None
     tcs_section_ref: str | None = None
     tcs_rate: float | None = None

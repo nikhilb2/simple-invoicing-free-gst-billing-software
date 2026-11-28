@@ -52,7 +52,12 @@ def _product(db_session, sku="SKU01", price=100.0, gst_rate=18.0):
 
 
 def _inv(db_session):
-    invoice = Invoice(total_amount=0, created_by=1, invoice_date=datetime.utcnow())
+    invoice = Invoice(
+        total_amount=0, created_by=1, invoice_date=datetime.utcnow(),
+        # These pin the after-GST arithmetic that documents saved before #1154 keep;
+        # tests/services/test_bill_discount_before_gst.py covers new documents.
+        discount_mode="after_tax",
+    )
     db_session.add(invoice)
     db_session.flush()
     return invoice

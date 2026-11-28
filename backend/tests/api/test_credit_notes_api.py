@@ -19,6 +19,7 @@ from src.models.credit_note import CreditNote
 from src.models.invoice import InvoiceItem
 from src.models.user import User, UserRole
 from src.services.gst_tax_service import india_today
+from tests.api.legacy_discount import create_invoice_after_gst
 from tests.api.test_product_performance import _create_ledger, _create_product
 
 
@@ -451,8 +452,10 @@ def gst_seller(client, db_session):
     return company
 
 
-def _sale(client, line, *, place_of_supply=None, product_id=None, **extra):
-    """A sale of one line to an unregistered buyer, dated a few days ago."""
+def _sale(client, line, *, place_of_supply=None, product_id=None, after_gst=False, **extra):
+    """A sale of one line to an unregistered buyer, dated a few days ago.
+
+    ``after_gst``: saved before #1154, the bill discount taken after GST."""
     product = product_id or _create_product(client, f"SKU-{uuid4().hex[:8]}", "Widget", hsn_sac="8471")
     payload = {
         "voucher_type": "sales",
@@ -463,6 +466,8 @@ def _sale(client, line, *, place_of_supply=None, product_id=None, **extra):
     }
     if place_of_supply:
         payload["place_of_supply"] = place_of_supply
+    if after_gst:
+        return create_invoice_after_gst(client, payload)
     response = client.post("/api/invoices/", json=payload)
     assert response.status_code == 200, response.text
     return response.json()
@@ -572,17 +577,46 @@ def test_two_half_returns_of_a_discounted_invoice_add_up_to_its_total(client, gs
 
 
 def test_fixed_invoice_discount_return_does_not_over_credit(client, gst_seller):
-    """A flat (non-percentage) invoice-level discount must be honoured too."""
+    """A flat (non-percentage) invoice-level discount must be honoured too (an invoice saved before #1154)."""
     invoice = _sale(
         client,
         {"quantity": 1, "unit_price": 1000, "gst_rate": 18},
-        discount_type="net", discount_value=118,
+        discount_type="net", discount_value=118, after_gst=True,
     )
     assert invoice["total_amount"] == 1062.00
 
     note = _note(client, invoice, quantity=1).json()
 
     assert note["total_amount"] == 1062.00
+
+
+def test_full_return_of_an_invoice_discounted_before_gst_credits_what_it_billed(client, gst_seller):
+    """#1154: the lines already carry the discount, so nothing is shared out again."""
+    invoice = _sale(
+        client,
+        {"quantity": 1, "unit_price": 300, "gst_rate": 18},
+        discount_type="net", discount_value=50,
+    )
+    assert (invoice["taxable_amount"], invoice["total_tax_amount"], invoice["total_amount"]) == (250, 45, 295)
+
+    note = _note(client, invoice, quantity=1).json()
+
+    assert (note["taxable_amount"], note["total_amount"]) == (250, 295)
+    assert note["cgst_amount"] + note["sgst_amount"] + note["igst_amount"] == 45
+
+
+def test_full_return_of_an_old_after_gst_invoice_still_credits_its_total(client, gst_seller):
+    """#1154 acceptance: the old 304.00 invoice (300 at 18%, 50 off after GST) credits 304.00."""
+    invoice = _sale(
+        client,
+        {"quantity": 1, "unit_price": 300, "gst_rate": 18},
+        discount_type="net", discount_value=50, after_gst=True,
+    )
+    assert invoice["total_amount"] == 304
+
+    note = _note(client, invoice, quantity=1).json()
+
+    assert note["total_amount"] == 304
 
 
 def _closing_balance(client, invoice):

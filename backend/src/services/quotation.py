@@ -49,7 +49,13 @@ from src.schemas.quotation import (
     QuotationUpdate,
 )
 from src.services.company_access import company_scope
-from src.services.document_totals import apply_discount_and_round_off, require_money_fits, snapshot_company_fields
+from src.services.document_totals import (
+    apply_discount_and_round_off,
+    require_money_fits,
+    resolve_discount_mode,
+    share_bill_discount,
+    snapshot_company_fields,
+)
 from src.services.financial_year import get_active_fy, get_fy_for_date, require_same_financial_year
 from src.services.gst_tax_service import (
     assign_invoice_tax_totals,
@@ -292,6 +298,16 @@ def _apply_payload(
     assign_item_tax_split(
         items, interstate_supply=interstate, tax_inclusive=payload.tax_inclusive
     )
+    # Before GST on a new quotation, the stored way on an edit (#1154), as invoices do.
+    quotation.discount_mode = resolve_discount_mode(quotation.discount_mode, payload.discount_mode, creating=False)
+    if quotation.discount_mode == "before_tax":
+        share_bill_discount(
+            items,
+            payload.discount_type,
+            payload.discount_value,
+            interstate_supply=interstate,
+            currency_code=quotation.company_currency_code,
+        )
     taxable_total = _money(sum(
         (Decimal(str(item.taxable_amount or 0)) for item in items),
         Decimal("0"),
@@ -348,6 +364,7 @@ def create_quotation(
 
     quotation = Quotation(
         company_id=company.id,
+        discount_mode=resolve_discount_mode(None, payload.discount_mode, creating=True),
         document_type=payload.document_type,
         status=STATUS_OPEN,
         quotation_date=quotation_date,
@@ -770,6 +787,8 @@ def build_conversion_draft(db: Session, quotation: Quotation, *, company: Compan
         document_type=quotation.document_type,
         invoice=invoice,
         warnings=_draft_warnings(db, quotation, products, company, today),
+        quotation_discount_mode=quotation.discount_mode or "after_tax",
+        quotation_total_amount=float(quotation.total_amount or 0),
     )
 
 

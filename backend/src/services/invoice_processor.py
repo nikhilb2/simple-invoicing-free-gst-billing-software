@@ -22,7 +22,13 @@ from src.models.invoice import Invoice, InvoiceItem
 from src.models.ledger_address import LedgerAddress
 from src.models.product import Product
 from src.schemas.invoice import InvoiceCreate
-from src.services.document_totals import apply_discount_and_round_off, require_money_fits, snapshot_company_fields
+from src.services.document_totals import (
+    apply_discount_and_round_off,
+    require_money_fits,
+    resolve_discount_mode,
+    share_bill_discount,
+    snapshot_company_fields,
+)
 from src.services.gst_tax_service import (
     assign_invoice_tax_totals,
     assign_item_tax_split,
@@ -659,6 +665,20 @@ class InvoiceProcessor:
             interstate_supply=interstate_supply,
             tax_inclusive=payload.tax_inclusive,
         )
+        # A new document takes the bill discount before GST (#1154): it is shared
+        # over the lines' taxable values and their GST worked out again. One saved
+        # before that keeps taking it after GST unless the edit switches it.
+        invoice.discount_mode = resolve_discount_mode(
+            invoice.discount_mode, getattr(payload, "discount_mode", None), creating=False
+        )
+        if invoice.discount_mode == "before_tax":
+            share_bill_discount(
+                created_items,
+                payload.discount_type,
+                payload.discount_value,
+                interstate_supply=interstate_supply,
+                currency_code=invoice.company_currency_code,
+            )
         # The taxable base can move by a paisa on inclusive intrastate lines.
         taxable_total = _money(sum(
             (Decimal(str(item.taxable_amount or 0)) for item in created_items),

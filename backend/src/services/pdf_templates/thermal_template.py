@@ -17,14 +17,19 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from dataclasses import dataclass, field
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from src.core.currency import resolve_currency_code
 from src.core.validation import GST_STATE_NAMES
 from src.models.delivery_challan import STATUS_CANCELLED as CHALLAN_CANCELLED
 from src.models.quotation import DOCUMENT_PROFORMA, STATUS_CANCELLED
 from src.services.gst_tax_service import india_today, invoice_is_interstate, to_india_date
-from src.services.invoice_discounts import invoice_discount_amount, item_discount_amount
+from src.services.invoice_discounts import (
+    bill_discount_total,
+    invoice_discount_amount,
+    item_discount_amount,
+    takes_discount_before_tax,
+)
 from src.services.pdf_paper import page_css, thermal_width_mm
 
 from .builders import (
@@ -35,7 +40,9 @@ from .builders import (
     _pdf_display_quantity,
     _pdf_display_unit,
     _pdf_unit_price,
+    bill_discount_label,
     invoice_cancellation_note,
+    shows_discount_before_tax,
     tcs_label,
 )
 from .purchase_template import _extract_pan_from_gstin, _is_interstate_supply
@@ -354,7 +361,15 @@ def _tax_rows(items, interstate: bool) -> list[tuple[float, float, float, float]
 
 
 def _gst_totals(doc_row, interstate: bool) -> list[tuple[str, float]]:
-    totals = [("Taxable value", float(doc_row.taxable_amount or 0))]
+    totals = []
+    if shows_discount_before_tax(doc_row):
+        # Before GST (#1154): the discount comes off the subtotal the items add up to.
+        discount = bill_discount_total(doc_row)
+        totals += [
+            ("Subtotal", float(Decimal(str(doc_row.taxable_amount or 0)) + discount)),
+            (bill_discount_label(doc_row), -float(discount)),
+        ]
+    totals.append(("Taxable value", float(doc_row.taxable_amount or 0)))
     if interstate:
         totals.append(("IGST", float(doc_row.igst_amount or 0)))
     else:
@@ -365,7 +380,7 @@ def _gst_totals(doc_row, interstate: bool) -> list[tuple[str, float]]:
 def _adjustment_totals(doc_row, currency: str) -> list[tuple[str, float]]:
     """Invoice-level discount, TCS and round off, in the order the A4 totals box prints them."""
     totals: list[tuple[str, float]] = []
-    if doc_row.discount_type and float(doc_row.discount_value or 0) > 0:
+    if doc_row.discount_type and float(doc_row.discount_value or 0) > 0 and not takes_discount_before_tax(doc_row):
         label = "Discount"
         if doc_row.discount_type == "percentage":
             label += f" ({_fmt_rate(float(doc_row.discount_value))}%)"
@@ -389,9 +404,20 @@ def _item_discount_line(item, currency: str, tax_inclusive: bool) -> str:
     return f"Disc: {_fmt_currency(amount, currency)} off"
 
 
+def _ex_gst_unit_price(item, *, tax_inclusive: bool) -> float:
+    """The unit price before GST: as typed, or taken out of a GST-inclusive price."""
+    price = Decimal(str(item.unit_price or 0))
+    if tax_inclusive:
+        price = price / (1 + Decimal(str(item.gst_rate or 0)) / Decimal("100"))
+    return float(price.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+
+
 def _line_items(doc_row, products, *, currency: str, serials=None, taxable_only=False, discounts=True):
     product_map = {product.id: product for product in products}
     tax_inclusive = bool(getattr(doc_row, "tax_inclusive", False))
+    # Before GST with a bill discount (#1154): each item at its value before GST and
+    # before its share of the discount, so the items add up to the Subtotal.
+    before_tax = not taxable_only and shows_discount_before_tax(doc_row)
     serials = serials or {}
     items = []
     for item in doc_row.items or []:
@@ -409,8 +435,16 @@ def _line_items(doc_row, products, *, currency: str, serials=None, taxable_only=
                 rate=float(item.gst_rate or 0),
                 qty=_pdf_display_quantity(item.quantity, getattr(prod, "allow_decimal", None) if prod else None),
                 unit=_pdf_display_unit(getattr(prod, "unit", None) if prod else None),
-                price=float(item.unit_price or 0) if taxable_only else _pdf_unit_price(item, tax_inclusive=tax_inclusive),
-                amount=float((item.taxable_amount if taxable_only else item.line_total) or 0),
+                price=(
+                    _ex_gst_unit_price(item, tax_inclusive=tax_inclusive) if before_tax
+                    else float(item.unit_price or 0) if taxable_only
+                    else _pdf_unit_price(item, tax_inclusive=tax_inclusive)
+                ),
+                amount=(
+                    float(Decimal(str(item.taxable_amount or 0)) + Decimal(str(getattr(item, "bill_discount_amount", 0) or 0)))
+                    if before_tax
+                    else float((item.taxable_amount if taxable_only else item.line_total) or 0)
+                ),
             )
         )
     return items

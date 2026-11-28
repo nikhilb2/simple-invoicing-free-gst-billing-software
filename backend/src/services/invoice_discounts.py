@@ -21,6 +21,7 @@ which round-trips against the processor to catch exactly that.
 from dataclasses import dataclass
 from decimal import Decimal
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from src.models.invoice import Invoice, InvoiceItem
@@ -87,7 +88,9 @@ def item_discount_amount(item: InvoiceItem, *, tax_inclusive: bool) -> Decimal:
             discount = _money(value)
         return min(discount, pre_discount_taxable)
 
-    discount = pre_discount_taxable - _dec(item.taxable_amount)
+    # A line's share of a before-GST bill discount (#1154) is off its taxable value
+    # too, but it is the bill's discount, not the line's.
+    discount = pre_discount_taxable - _dec(item.taxable_amount) - _dec(getattr(item, "bill_discount_amount", 0))
     # A stored taxable above the reconstruction would mean the write path
     # changed shape; clamp rather than report a negative discount.
     if discount <= 0:
@@ -145,6 +148,31 @@ def invoice_discount_amount(invoice: Invoice) -> Decimal:
     if discount <= 0:
         return Decimal("0.00")
     return _money(discount)
+
+
+def takes_discount_before_tax(document) -> bool:
+    """Whether the document shares its bill discount over the lines before GST (#1154).
+
+    Every document saved before #1154 is 'after_tax'. A document object with no
+    ``discount_mode`` at all is treated the same way.
+    """
+    return getattr(document, "discount_mode", None) == "before_tax"
+
+
+def bill_discount_total(document) -> Decimal:
+    """The bill (document-level) discount, whichever way the document takes it.
+
+    A 'before_tax' document stores each line's share, already taken off the line's
+    taxable value, so the discount is their sum and :func:`invoice_discount_amount`
+    (which inverts the after-GST arithmetic) is 0 for it. An 'after_tax' document
+    stores no shares, and its discount is recovered from the totals as before.
+    """
+    if takes_discount_before_tax(document):
+        return _money(sum(
+            (_dec(getattr(item, "bill_discount_amount", 0)) for item in document.items or []),
+            Decimal("0"),
+        ))
+    return invoice_discount_amount(document)
 
 
 def apportion_invoice_discount(
@@ -324,10 +352,25 @@ def build_invoice_discount_totals(
     tax_inclusive_by_invoice = {invoice.id: bool(invoice.tax_inclusive) for invoice in invoices}
     item_totals = _item_discount_totals(db, invoice_ids, tax_inclusive_by_invoice)
 
+    # Before-GST documents (#1154) store each line's share; one grouped query reads them.
+    before_tax_ids = [invoice.id for invoice in invoices if takes_discount_before_tax(invoice)]
+    bill_shares: dict[int, Decimal] = {}
+    if before_tax_ids:
+        rows = (
+            db.query(InvoiceItem.invoice_id, func.sum(InvoiceItem.bill_discount_amount))
+            .filter(InvoiceItem.invoice_id.in_(before_tax_ids))
+            .group_by(InvoiceItem.invoice_id)
+            .all()
+        )
+        bill_shares = {invoice_id: _money(_dec(total)) for invoice_id, total in rows}
+
     summaries: dict[int, InvoiceDiscountSummary] = {}
     for invoice in invoices:
         item_total = item_totals.get(invoice.id, Decimal("0.00"))
-        invoice_discount = invoice_discount_amount(invoice)
+        if takes_discount_before_tax(invoice):
+            invoice_discount = bill_shares.get(invoice.id, Decimal("0.00"))
+        else:
+            invoice_discount = invoice_discount_amount(invoice)
         summaries[invoice.id] = InvoiceDiscountSummary(
             invoice_id=invoice.id,
             item_discount_total=item_total,

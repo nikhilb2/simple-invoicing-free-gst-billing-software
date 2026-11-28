@@ -25,6 +25,7 @@ from src.models.company import CompanyProfile
 from src.models.credit_note import CreditNote, CreditNoteItem
 from src.models.invoice import Invoice, InvoiceItem
 from src.models.user import User, UserRole
+from tests.api.legacy_discount import save_invoice_after_gst
 
 PERIOD = {"from_date": "2026-06-01", "to_date": "2026-06-30"}
 WORKSHEET = "/api/ledgers/tax-ledger/gstr3b/worksheet"
@@ -335,10 +336,13 @@ def test_line_discount_is_already_in_the_taxable_value(client, books):
 
 
 def test_invoice_level_discount_leaves_the_figures_and_is_named(client, books):
-    invoice = _invoice(
-        client, books.intra, [_line(books.at18, 10, 100)],
-        discount_type="net", discount_value=118,
-    )
+    """An invoice saved before #1154 took its discount after GST: unchanged, and still named."""
+    plain = _invoice(client, books.intra, [_line(books.at18, 10, 100)])
+    invoice = save_invoice_after_gst(client, plain, {
+        "ledger_id": books.intra, "voucher_type": "sales", "invoice_date": IN_JUNE,
+        "items": [{"product_id": books.at18, "quantity": 10, "unit_price": 100}],
+        "discount_type": "net", "discount_value": 118,
+    })
     assert float(invoice["total_amount"]) == pytest.approx(1062.0)
 
     sheet = _sheet(client)
@@ -348,6 +352,21 @@ def test_invoice_level_discount_leaves_the_figures_and_is_named(client, books):
     warning = _warning(sheet, "invoice_level_discount")
     assert warning["documents"][0]["number"] == invoice["invoice_number"]
     assert warning["documents"][0]["detail"] == "Discount ₹118.00"
+
+
+def test_a_discount_before_gst_is_in_the_figures_and_not_named(client, books):
+    """#1154: a new invoice's discount comes off the taxable value, so 3B needs no warning."""
+    invoice = _invoice(
+        client, books.intra, [_line(books.at18, 10, 100)],
+        discount_type="net", discount_value=118,
+    )
+    # 1000 - 118 = 882 taxable; CGST = SGST = 79.38.
+    assert float(invoice["total_amount"]) == pytest.approx(1040.76)
+
+    sheet = _sheet(client)
+    row = _row(sheet, "3.1a")
+    assert (row["taxable_value"], row["cgst"], row["sgst"]) == (882.0, 79.38, 79.38)
+    assert _warning(sheet, "invoice_level_discount") is None
 
 
 def test_round_off_does_not_touch_the_figures(client, books):

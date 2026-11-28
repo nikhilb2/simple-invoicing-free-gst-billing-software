@@ -14,6 +14,7 @@ from src.models.company import CompanyProfile
 from src.models.invoice import Invoice
 from src.models.tax_withholding_section import TaxWithholdingSection
 from src.services.invoice_discounts import invoice_discount_amount
+from tests.api.legacy_discount import create_invoice_after_gst
 
 MIGRATION = Path(__file__).resolve().parents[2] / "migrations" / "20261107000001_add_tax_withholding_foundation.py"
 SELLER_GSTIN = "29AAAAA0000A1Z5"
@@ -78,12 +79,15 @@ def _product(client, *, price=100000, gst_rate=18, sku="SCRAP-1"):
     }))["id"]
 
 
-def _invoice(client, ledger, product, *, when=APRIL, quantity=1, unit_price=100000, method="post", invoice_id=None, **extra):
+def _invoice(client, ledger, product, *, when=APRIL, quantity=1, unit_price=100000, method="post", invoice_id=None, after_gst=False, **extra):
     body = {
         "ledger_id": ledger, "voucher_type": "sales", "invoice_date": when,
         "items": [{"product_id": product, "quantity": quantity, "unit_price": unit_price}],
         **extra,
     }
+    if after_gst:
+        # Saved before #1154: the bill discount taken after GST.
+        return SimpleNamespace(status_code=200, text="", json=lambda: create_invoice_after_gst(client, body))
     if method == "put":
         return client.put(f"/api/invoices/{invoice_id}", json=body)
     return client.post("/api/invoices/", json=body)
@@ -138,7 +142,7 @@ def test_tcs_base_is_after_the_invoice_discount_and_the_discount_inverse_still_h
 
     body = _ok(_invoice(
         client, ledger, product, discount_type="net", discount_value=18000,
-        tcs_section_id=_section_id(db_session, SCRAP_2025),
+        tcs_section_id=_section_id(db_session, SCRAP_2025), after_gst=True,
     ))
 
     assert body["tcs_base_amount"] == 100000
@@ -146,6 +150,24 @@ def test_tcs_base_is_after_the_invoice_discount_and_the_discount_inverse_still_h
     assert body["total_amount"] == 102000
     invoice = db_session.get(Invoice, body["id"])
     assert invoice_discount_amount(invoice) == Decimal("18000.00")
+
+
+def test_tcs_base_is_after_a_discount_before_gst(client, db_session, company):
+    """#1154: 18,000 off the 1,00,000 taxable value; GST on 82,000; TCS on what is left."""
+    ledger = _ledger(client, gst=BUYER_GSTIN)
+    product = _product(client)
+
+    body = _ok(_invoice(
+        client, ledger, product, discount_type="net", discount_value=18000,
+        tcs_section_id=_section_id(db_session, SCRAP_2025),
+    ))
+
+    assert (body["taxable_amount"], body["total_tax_amount"]) == (82000, 14760)
+    assert body["tcs_base_amount"] == 96760
+    assert body["tcs_amount"] == 1935.2
+    assert body["total_amount"] == 98695.2
+    invoice = db_session.get(Invoice, body["id"])
+    assert invoice_discount_amount(invoice) == Decimal("0.00")
 
 
 def test_taxable_base_section_takes_the_pre_gst_share(client, db_session, company):
@@ -407,7 +429,7 @@ def test_full_return_of_a_discounted_tcs_invoice_reverses_all_its_tcs(client, db
     product = _product(client)
     invoice = _ok(_invoice(
         client, ledger, product, discount_type="net", discount_value=18000,
-        tcs_section_id=_section_id(db_session, SCRAP_2025),
+        tcs_section_id=_section_id(db_session, SCRAP_2025), after_gst=True,
     ))
     assert (invoice["tcs_amount"], invoice["total_amount"]) == (2000, 102000)
 

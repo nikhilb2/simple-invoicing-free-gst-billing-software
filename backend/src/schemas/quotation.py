@@ -67,6 +67,8 @@ class QuotationFields(BaseModel):
     apply_round_off: bool = False
     discount_type: Literal["percentage", "net"] | None = None
     discount_value: float | None = Field(default=None, lt=MONEY_LIMIT, allow_inf_nan=False)
+    # As on an invoice (#1154): before GST when new, the stored way on an edit.
+    discount_mode: Literal["before_tax", "after_tax"] | None = None
     shipping_address_same_as_billing: bool = True
     shipping_address_id: int | None = None
     new_shipping_address: ShippingAddressInline | None = None
@@ -134,6 +136,7 @@ class QuotationItemOut(BaseModel):
     description: str | None = None
     discount_type: str | None = None
     discount_value: float | None = None
+    bill_discount_amount: float = 0
 
 
 class LinkedInvoiceOut(BaseModel):
@@ -175,6 +178,7 @@ class QuotationOut(BaseModel):
     round_off_amount: float = 0
     discount_type: str | None = None
     discount_value: float | None = None
+    discount_mode: str = "after_tax"
     taxable_amount: float
     total_tax_amount: float
     cgst_amount: float
@@ -234,3 +238,8 @@ class QuotationConversionDraft(BaseModel):
     # and hsn_sac unset, so both come from the product as it stands today.
     invoice: QuotationConvert
     warnings: list[ConversionWarning] = Field(default_factory=list)
+    # How the quotation took its bill discount, and its total (#1154). The invoice is
+    # always before GST, so an after-GST quotation with a discount converts to a
+    # different total, and the composer says so.
+    quotation_discount_mode: str = "after_tax"
+    quotation_total_amount: float = 0

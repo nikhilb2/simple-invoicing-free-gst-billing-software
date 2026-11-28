@@ -104,12 +104,18 @@ def test_the_largest_values_that_fit_are_stored(tenant):
     quantity = iso._ok(client.post("/api/quotations/", json=_body(tenant, {"quantity": 999_999_999.999, "unit_price": 0}, product="untaxed")))
     assert quantity["items"][0]["quantity"] == 999_999_999.999
 
-    # A net discount larger than the document just clears it, as it does on an invoice.
+    # The largest discount is stored; it clears the whole document (#1154: more than
+    # the subtotal is refused, so the document is as large as the discount).
     discounted = iso._ok(client.post("/api/quotations/", json=_body(
-        tenant, {"unit_price": 100}, product="untaxed", discount_type="net", discount_value=99_999_999.99,
+        tenant, {"unit_price": 99_999_999.99}, product="untaxed", discount_type="net", discount_value=99_999_999.99,
     )))
     assert discounted["discount_value"] == 99_999_999.99
     assert discounted["total_amount"] == 0
+    too_much = client.post("/api/quotations/", json=_body(
+        tenant, {"unit_price": 100}, product="untaxed", discount_type="net", discount_value=99_999_999.99,
+    ))
+    assert too_much.status_code == 400, too_much.text
+    assert too_much.json()["detail"] == "The discount (₹9,99,99,999.99) is more than the subtotal (₹100.00)."
 
     # A date needs a financial year that covers it (#1132).
     iso._ok(client.post("/api/financial-years/", json={
