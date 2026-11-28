@@ -12,6 +12,7 @@ from src.models.financial_year import FinancialYear
 from src.models.invoice import Invoice
 from src.schemas.invoice import InvoiceCreate
 from src.services.financial_year import get_fy_for_date
+from src.services.gst_tax_service import india_today
 from src.services.invoice_processor import InvoiceProcessor
 
 
@@ -24,6 +25,12 @@ def create_invoice_record(
     active_fy: FinancialYear | None,
 ) -> tuple[Invoice, list[str]]:
     """Add the invoice to the session and return it with its warnings."""
+    if payload.invoice_date is None:
+        # No date means today in India. Fixing it here, before the year and the
+        # number are chosen, keeps the date, the year and the number in
+        # agreement and sends it through the same refusal as a dated invoice
+        # (#1156). The model's own default is UTC and would not.
+        payload = payload.model_copy(update={"invoice_date": india_today()})
     # Determine which FY this invoice belongs to based on its date.
     # If the invoice date falls within a different FY, use that FY.
     fy_for_invoice = active_fy
