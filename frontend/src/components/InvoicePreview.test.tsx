@@ -38,3 +38,13 @@ describe('invoice preview delivery actions', () => {
     expect(html).toContain('title="Print invoice"');
   });
 });
+
+describe('invoice preview overflow on phones', () => {
+  it('marks Print and E-Way Bill to move into the menu on a phone, but keeps them in the desktop row', () => {
+    const html = preview('active', 'sales');
+    // Rendered outside a browser, so this is the desktop layout.
+    expect(html).toContain('preview-header__actions');
+    expect(html).toContain('title="Print invoice"');
+    expect(html).not.toContain('preview-header--bar');
+  });
+});

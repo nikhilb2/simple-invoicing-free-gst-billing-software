@@ -1,5 +1,6 @@
 import { ReactNode, useCallback, useEffect, useRef } from 'react';
 import { MoreHorizontal } from 'lucide-react';
+import useMediaQuery, { PHONE_QUERY } from '../hooks/useMediaQuery';
 import ModalCloseButton from './ModalCloseButton';
 
 // Stable identity, so the click-outside effect does not resubscribe on every
@@ -13,12 +14,27 @@ export type PreviewAction = {
   disabled?: boolean;
   /** Falls back to `label` for the tooltip and the accessible name. */
   title?: string;
+  /**
+   * Stays in the button row on desktop, moves into the "…" menu on a phone.
+   * A phone fits three controls on a row; the rest of a six-action toolbar is
+   * what used to wrap the header into four rows.
+   */
+  overflowOnPhone?: boolean;
 };
 
 type PreviewToolbarProps = {
   eyebrow: string;
   title: string;
   titleId: string;
+  /**
+   * The document number, when `title` ends with one. On a phone the title bar
+   * then shows `phoneNoun` (or the rest of `title`) and the number as two
+   * parts, and only the noun may be cut: the number is what the owner checks
+   * before sharing, so it is never cut. The heading keeps `title` as its name.
+   */
+  titleNumber?: string;
+  /** A shorter noun for the phone title bar, e.g. "Purchase" for "Purchase invoice". */
+  phoneNoun?: string;
   /** Optional control displayed immediately beside the document title. */
   titleAdornment?: ReactNode;
   meta?: ReactNode;
@@ -45,6 +61,8 @@ type PreviewToolbarProps = {
   onMenuOpenChange?: (open: boolean) => void;
   onClose: () => void;
   closeLabel: string;
+  /** Forces a layout. Left out, it follows the viewport (max-width 640px). */
+  phone?: boolean;
 };
 
 /**
@@ -62,6 +80,8 @@ export default function PreviewToolbar({
   eyebrow,
   title,
   titleId,
+  titleNumber,
+  phoneNoun,
   titleAdornment,
   meta,
   primary,
@@ -72,7 +92,10 @@ export default function PreviewToolbar({
   onMenuOpenChange = noop,
   onClose,
   closeLabel,
+  phone,
 }: PreviewToolbarProps) {
+  const viewportIsPhone = useMediaQuery(PHONE_QUERY);
+  const isPhone = phone ?? viewportIsPhone;
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -91,86 +114,142 @@ export default function PreviewToolbar({
     action.onClick();
   }, [onMenuOpenChange]);
 
-  const hasMenu = menu.length > 0 || Boolean(menuExtra);
+  const rowActions = isPhone ? secondary.filter((action) => !action.overflowOnPhone) : secondary;
+  const phoneMenu = isPhone ? secondary.filter((action) => action.overflowOnPhone) : [];
+  const hasMenu = phoneMenu.length > 0 || menu.length > 0 || Boolean(menuExtra);
+
+  const primaryButton = (
+    <button
+      type="button"
+      className="button button--primary"
+      onClick={primary.onClick}
+      disabled={primary.disabled}
+      title={primary.title ?? primary.label}
+      aria-label={primary.title ?? primary.label}
+    >
+      {primary.icon}
+      {primary.label}
+    </button>
+  );
+
+  const actionButton = (action: PreviewAction) => (
+    <button
+      key={action.label}
+      type="button"
+      className="button button--ghost"
+      onClick={action.onClick}
+      disabled={action.disabled}
+      title={action.title ?? action.label}
+      aria-label={action.title ?? action.label}
+    >
+      {action.icon}
+      {action.label}
+    </button>
+  );
+
+  const menuItem = (action: PreviewAction) => (
+    <button
+      key={action.label}
+      type="button"
+      className="action-dropdown__item"
+      role="menuitem"
+      onClick={() => runAndClose(action)}
+      disabled={action.disabled}
+      aria-label={action.title ?? action.label}
+    >
+      {action.icon}
+      {action.label}
+    </button>
+  );
+
+  const overflow = hasMenu ? (
+    <div className="action-dropdown" ref={menuRef}>
+      <button
+        type="button"
+        className="button button--ghost button--icon"
+        onClick={() => onMenuOpenChange(!menuOpen)}
+        aria-haspopup="true"
+        aria-expanded={menuOpen}
+        title="More actions"
+        aria-label="More actions"
+      >
+        <MoreHorizontal size={16} aria-hidden="true" />
+      </button>
+      {menuOpen ? (
+        <div className="action-dropdown__menu" role="menu">
+          {phoneMenu.map(menuItem)}
+          {menuExtra}
+          {menu.map(menuItem)}
+        </div>
+      ) : null}
+    </div>
+  ) : null;
+
+  const fullNoun = titleNumber && title.endsWith(titleNumber) ? title.slice(0, -titleNumber.length).trim() : null;
+  const titleElement =
+    isPhone && titleNumber && fullNoun !== null ? (
+      <h2 id={titleId} className="nav-panel__title nav-panel__title--split" aria-label={title}>
+        <span className="nav-panel__title-noun">{phoneNoun ?? fullNoun}</span>{' '}
+        <span className="nav-panel__title-number">{titleNumber}</span>
+      </h2>
+    ) : (
+      <h2 id={titleId} className="nav-panel__title">{title}</h2>
+    );
+
+  const heading = titleAdornment ? (
+    <div className="preview-header__heading-row">
+      {titleElement}
+      {titleAdornment}
+    </div>
+  ) : (
+    titleElement
+  );
+
+  if (isPhone) {
+    // Two siblings instead of one header, because only the title bar may stay
+    // pinned: the pinned header used to hold every action, which on a 390px
+    // screen was half the dialog. Close lives in the bar so it is reachable at
+    // any scroll position; the actions scroll away with the document.
+    const [firstRowAction, ...restActions] = rowActions;
+    return (
+      <>
+        <div className="panel__header preview-header preview-header--bar no-print">
+          <div className="preview-header__title">{heading}</div>
+          <ModalCloseButton onClick={onClose} label={closeLabel} />
+        </div>
+
+        <div className="preview-actions no-print">
+          {meta ? <p className="muted-text preview-header__meta">{meta}</p> : null}
+          <div className="preview-toolbar preview-toolbar--phone">
+            <div className="preview-toolbar__row">
+              {primaryButton}
+              {firstRowAction ? actionButton(firstRowAction) : null}
+              {overflow}
+            </div>
+            {restActions.length > 0 ? (
+              <div className="preview-toolbar__row preview-toolbar__row--rest" data-count={restActions.length}>
+                {restActions.map(actionButton)}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </>
+    );
+  }
 
   return (
     <div className="panel__header preview-header no-print">
       <div className="preview-header__title">
         <p className="eyebrow">{eyebrow}</p>
-        {titleAdornment ? (
-          <div className="preview-header__heading-row">
-            <h2 id={titleId} className="nav-panel__title">{title}</h2>
-            {titleAdornment}
-          </div>
-        ) : (
-          <h2 id={titleId} className="nav-panel__title">{title}</h2>
-        )}
+        {heading}
         {meta ? <p className="muted-text preview-header__meta">{meta}</p> : null}
       </div>
 
       <div className="preview-header__actions">
         <div className="button-row preview-toolbar">
-          <button
-            type="button"
-            className="button button--primary"
-            onClick={primary.onClick}
-            disabled={primary.disabled}
-            title={primary.title ?? primary.label}
-            aria-label={primary.title ?? primary.label}
-          >
-            {primary.icon}
-            {primary.label}
-          </button>
-
-          {secondary.map((action) => (
-            <button
-              key={action.label}
-              type="button"
-              className="button button--ghost"
-              onClick={action.onClick}
-              disabled={action.disabled}
-              title={action.title ?? action.label}
-              aria-label={action.title ?? action.label}
-            >
-              {action.icon}
-              {action.label}
-            </button>
-          ))}
-
-          {hasMenu ? (
-            <div className="action-dropdown" ref={menuRef}>
-              <button
-                type="button"
-                className="button button--ghost button--icon"
-                onClick={() => onMenuOpenChange(!menuOpen)}
-                aria-haspopup="true"
-                aria-expanded={menuOpen}
-                title="More actions"
-                aria-label="More actions"
-              >
-                <MoreHorizontal size={16} aria-hidden="true" />
-              </button>
-              {menuOpen ? (
-                <div className="action-dropdown__menu" role="menu">
-                  {menuExtra}
-                  {menu.map((action) => (
-                    <button
-                      key={action.label}
-                      type="button"
-                      className="action-dropdown__item"
-                      role="menuitem"
-                      onClick={() => runAndClose(action)}
-                      disabled={action.disabled}
-                      aria-label={action.title ?? action.label}
-                    >
-                      {action.icon}
-                      {action.label}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-          ) : null}
+          {primaryButton}
+          {rowActions.map(actionButton)}
+          {overflow}
         </div>
 
         <ModalCloseButton onClick={onClose} label={closeLabel} />

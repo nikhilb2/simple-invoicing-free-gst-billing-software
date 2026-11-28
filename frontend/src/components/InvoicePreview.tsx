@@ -198,6 +198,8 @@ export default function InvoicePreview({ invoice, onClose, onError, onPaymentRec
           eyebrow="Invoice preview"
           titleId="invoice-preview-title"
           title={`${documentNoun} ${invoice.invoice_number || `#${invoice.id}`}`}
+          titleNumber={invoice.invoice_number || `#${invoice.id}`}
+          phoneNoun={invoice.voucher_type === 'purchase' ? 'Purchase' : undefined}
           titleAdornment={
             <span className="invoice-number-copy">
               <button
@@ -270,6 +272,7 @@ export default function InvoicePreview({ invoice, onClose, onError, onPaymentRec
               onClick: handlePrintPdf,
               disabled: !pdfUrl || loadingPdf || previewFailed,
               title: 'Print invoice',
+              overflowOnPhone: true,
             },
             ...(canSend ? [downloadAction] : []),
             ...(showRecordPayment ? [{
@@ -285,6 +288,7 @@ export default function InvoicePreview({ invoice, onClose, onError, onPaymentRec
               icon: <FileJson size={16} aria-hidden="true" />,
               onClick: () => setShowEwayBillModal(true),
               title: 'Generate E-Way Bill JSON',
+              overflowOnPhone: true,
             }] : []),
           ]}
           menuExtra={<><CopiesStepper value={copies} onChange={setCopies} /><PaperSizePicker value={paper} onChange={setPaper} /></>}

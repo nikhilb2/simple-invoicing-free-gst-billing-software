@@ -7,7 +7,8 @@ import { useEffect, useState } from 'react';
  * can't reach, like the chart props Recharts only takes as numbers.
  */
 export default function useMediaQuery(query: string) {
-  const [matches, setMatches] = useState(() => window.matchMedia(query).matches);
+  // No window or matchMedia when rendered to a string (tests): not a match.
+  const [matches, setMatches] = useState(() => typeof window !== 'undefined' && !!window.matchMedia?.(query).matches);
 
   useEffect(() => {
     const list = window.matchMedia(query);
@@ -24,3 +25,6 @@ export default function useMediaQuery(query: string) {
 
 /** The width the app switches to its narrow layout at, per styles.css. */
 export const NARROW_QUERY = '(max-width: 720px)';
+
+/** A phone, per the `max-width: 640px` blocks in styles.css. */
+export const PHONE_QUERY = '(max-width: 640px)';
