@@ -8264,6 +8264,7 @@ a.ledger-chip:focus-visible {
    need it must not push the whole layout sideways. */
 .catalogue-table-wrap {
   overflow-x: auto;
+  scroll-padding-left: 160px; /* the pinned column's width on a phone */
   border: 1px solid var(--line);
   border-radius: 20px;
   background: rgb(var(--rgb-panel-well) / 0.5);
@@ -8308,6 +8309,12 @@ a.ledger-chip:focus-visible {
   z-index: 2;
   background: var(--bg-card-strong);
   min-width: 220px;
+}
+
+/* Fully opaque (the token is 96%): text scrolling under the pinned name must
+   not show through it. */
+.catalogue-table td:first-child {
+  background: rgb(var(--rgb-card-strong));
 }
 
 .catalogue-table thead th:first-child {
@@ -8356,6 +8363,15 @@ a.ledger-chip:focus-visible {
 /* An inactive product used to be indistinguishable from an active one — the
    only signal was the state of an icon you had to hover to read. */
 .catalogue-row--inactive td {
+  opacity: 0.55;
+}
+
+/* The pinned cell stays opaque; its content is dimmed instead of the cell. */
+.catalogue-row--inactive td:first-child {
+  opacity: 1;
+}
+
+.catalogue-row--inactive td:first-child > * {
   opacity: 0.55;
 }
 
@@ -8637,6 +8653,22 @@ a.ledger-chip:focus-visible {
   .catalogue-table th:first-child,
   .catalogue-table td:first-child {
     min-width: 160px;
+  }
+
+  /* Four 40px buttons in a line would be 198px wide and reach under the pinned
+     product column. A 2x2 block of 44px touch targets is 114px and fits beside
+     it. The editing row keeps its Save / Cancel layout. */
+  .catalogue-row:not(.catalogue-row--editing) .catalogue-row__actions {
+    display: grid;
+    grid-template-columns: repeat(2, 44px);
+    gap: 6px;
+    justify-content: start;
+  }
+
+  .catalogue-row:not(.catalogue-row--editing) .catalogue-row__actions .button--icon {
+    width: 44px;
+    height: 44px;
+    min-height: 44px;
   }
 
   /* The global mobile rule stacks every .button-row into a full-width column.
