@@ -8,7 +8,7 @@ import ScopeBar, { Metric } from '../components/ScopeBar';
 import DateRangePresets from '../components/DateRangePresets';
 import Gstr1HsnSummary from '../components/Gstr1HsnSummary';
 import { useFY } from '../context/FYContext';
-import type { CompanyProfile, Gstr1Summary, Gstr1ValidationResult } from '../types/api';
+import type { CompanyProfile, Gstr1Summary, Gstr1ValidationError, Gstr1ValidationResult } from '../types/api';
 import formatCurrency from '../utils/formatting';
 import { defaultFilingPeriod } from '../utils/dateRanges';
 import { zeroRateSalesNote } from '../utils/gstr1Notes';
@@ -338,53 +338,7 @@ export default function Gstr1FilingPage() {
               </span>
             </div>
 
-            {validation.errors.length > 0 ? (
-              <div className="table-wrap" style={{ maxHeight: 480, overflow: 'auto' }}>
-                <table className="invoice-feed-table">
-                  <caption className="sr-only">GSTR-1 validation errors</caption>
-                  <thead>
-                    <tr>
-                      <th scope="col">Invoice #</th>
-                      <th scope="col">Field</th>
-                      <th scope="col">Issue</th>
-                      <th scope="col">Severity</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {validation.errors.map((err, i) => (
-                      <tr key={i}>
-                        <td className="text-xs">
-                          {/* A period problem is about no one document. */}
-                          {err.invoice_number ? (
-                            <Link
-                              className="button button--ghost button--small"
-                              to={`/invoices-view?search=${encodeURIComponent(err.invoice_number)}`}
-                            >
-                              {err.invoice_number}
-                            </Link>
-                          ) : '—'}
-                        </td>
-                        <td className="text-xs">{err.field}</td>
-                        <td className="text-xs">{err.message}</td>
-                        <td>
-                          <span
-                            className={`invoice-type-badge ${
-                              err.severity === 'error'
-                                ? 'invoice-type-badge--purchase'
-                                : 'invoice-type-badge--sales'
-                            }`}
-                          >
-                            {err.severity}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <div className="empty-state">No issues found — this period is ready for filing.</div>
-            )}
+            <Gstr1ValidationIssues errors={validation.errors} />
           </article>
         </section>
       ) : null}
@@ -401,6 +355,79 @@ export default function Gstr1FilingPage() {
         )
       ) : null}
     </div>
+  );
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+   Validation results
+   ──────────────────────────────────────────────────────────────────────── */
+
+/** The issues a validation pass found. A missing or invalid company GSTIN is
+ *  about no one invoice, and the user fixes it in company settings, so it
+ *  shows above the table with a link there (#1103) instead of as a table row
+ *  whose "Settings" is plain text and, on a phone, cut off. */
+export function Gstr1ValidationIssues({ errors }: { errors: Gstr1ValidationError[] }) {
+  const companyIssue = errors.find((issue) => issue.field === 'Company GSTIN' && !issue.invoice_number);
+  const invoiceIssues = errors.filter((issue) => issue !== companyIssue);
+
+  return (
+    <>
+      {companyIssue ? (
+        <div className="form-error" role="alert">
+          <div>{companyIssue.message}</div>
+          <Link to="/settings/company?focus=gstin" className="link-button link-button--tap">
+            Open company settings →
+          </Link>
+        </div>
+      ) : null}
+      {invoiceIssues.length > 0 ? (
+        <div className="table-wrap" style={{ maxHeight: 480, overflow: 'auto' }}>
+          <table className="invoice-feed-table">
+            <caption className="sr-only">GSTR-1 validation errors</caption>
+            <thead>
+              <tr>
+                <th scope="col">Invoice #</th>
+                <th scope="col">Field</th>
+                <th scope="col">Issue</th>
+                <th scope="col">Severity</th>
+              </tr>
+            </thead>
+            <tbody>
+              {invoiceIssues.map((err, i) => (
+                <tr key={i}>
+                  <td className="text-xs">
+                    {/* A period problem is about no one document. */}
+                    {err.invoice_number ? (
+                      <Link
+                        className="button button--ghost button--small"
+                        to={`/invoices-view?search=${encodeURIComponent(err.invoice_number)}`}
+                      >
+                        {err.invoice_number}
+                      </Link>
+                    ) : '—'}
+                  </td>
+                  <td className="text-xs">{err.field}</td>
+                  <td className="text-xs">{err.message}</td>
+                  <td>
+                    <span
+                      className={`invoice-type-badge ${
+                        err.severity === 'error'
+                          ? 'invoice-type-badge--purchase'
+                          : 'invoice-type-badge--sales'
+                      }`}
+                    >
+                      {err.severity}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : companyIssue ? null : (
+        <div className="empty-state">No issues found — this period is ready for filing.</div>
+      )}
+    </>
   );
 }
 
