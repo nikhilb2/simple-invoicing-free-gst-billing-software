@@ -164,8 +164,8 @@ def test_update_invoice_date_without_covering_fy_is_blocked(client, db_session, 
 
     assert response.status_code == 400, response.text
     assert response.json()["detail"] == (
-        f"This date is in {fy_label}, which isn't set up yet. Add it from Financial Year "
-        "in the sidebar (+ New FY, admins only), or pick a date in FY 2025-26."
+        f"This date is in {fy_label}, which isn't set up yet. An admin can add it "
+        "from the side menu (Financial Year \u2192 + New FY). Or pick a date in FY 2025-26."
     )
     after = client.get(f"/api/invoices/{invoice['id']}").json()
     assert after["invoice_date"].startswith("2026-03-28")

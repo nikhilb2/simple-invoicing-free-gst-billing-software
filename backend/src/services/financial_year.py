@@ -70,8 +70,8 @@ def require_financial_year_for_date(db: Session, doc_date: date, company_id: int
         status_code=400,
         detail=(
             f"This date is in {_fy_name(_indian_fy_label(doc_date))}, which isn't set up yet. "
-            f"Add it from Financial Year in the sidebar (+ New FY, admins only), "
-            f"or pick a date in {_fy_name(suggested.label)}."
+            f"An admin can add it from the side menu (Financial Year \u2192 + New FY). "
+            f"Or pick a date in {_fy_name(suggested.label)}."
         ),
     )
 

@@ -21,6 +21,7 @@ import { showTdsFields, totalTds, validateTdsAllocations } from '../utils/tds';
 import { domIdPart } from '../utils/domId';
 import TdsAllocationFields from '../components/TdsAllocationFields';
 import { useFY } from '../context/FYContext';
+import FYDateWarning from '../components/FYDateWarning';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import { fetchOutstandingInvoices, fetchLedgerAddresses, createLedgerAddress, updateLedgerAddress, deleteLedgerAddress } from '../features/invoices/api';
 import { dueBadgeLabel, formatInvoiceDateLabel } from '../utils/invoiceDueDate.ts';
@@ -1218,14 +1219,7 @@ export default function LedgerViewPage() {
                     value={paymentForm.date}
                     onChange={(e) => setPaymentForm((f) => ({ ...f, date: e.target.value }))}
                   />
-                  {activeFY !== null && paymentForm.date && (
-                    paymentForm.date.slice(0, 10) < activeFY.start_date ||
-                    paymentForm.date.slice(0, 10) > activeFY.end_date
-                  ) ? (
-                    <p className="field-warning">
-                      ⚠️ This date is outside the active financial year ({activeFY.label}). The payment will still be recorded.
-                    </p>
-                  ) : null}
+                  <FYDateWarning date={paymentForm.date} outcome="The payment will still be recorded." />
                 </div>
                 <div className="field">
                   <label htmlFor="pay-mode">Mode</label>
@@ -1405,14 +1399,7 @@ export default function LedgerViewPage() {
                     value={editPaymentForm.date}
                     onChange={(e) => setEditPaymentForm((f) => ({ ...f, date: e.target.value }))}
                   />
-                  {activeFY !== null && editPaymentForm.date && (
-                    editPaymentForm.date.slice(0, 10) < activeFY.start_date ||
-                    editPaymentForm.date.slice(0, 10) > activeFY.end_date
-                  ) ? (
-                    <p className="field-warning">
-                      ⚠️ This date is outside the active financial year ({activeFY.label}). The payment will still be saved.
-                    </p>
-                  ) : null}
+                  <FYDateWarning date={editPaymentForm.date} outcome="The payment will still be saved." />
                 </div>
                 <div className="field">
                   <label htmlFor="edit-pay-mode">Mode</label>

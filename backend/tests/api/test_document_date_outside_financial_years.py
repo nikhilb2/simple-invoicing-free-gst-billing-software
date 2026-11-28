@@ -71,8 +71,8 @@ def two_years(client):
         after_last=date(current.year + 1, 4, 1),
         before_first=previous - timedelta(days=1),
         refusal=lambda day: (
-            f"This date is in FY {_label(_fy_start(day))}, which isn't set up yet. Add it from "
-            f"Financial Year in the sidebar (+ New FY, admins only), or pick a date in FY {_label(current)}."
+            f"This date is in FY {_label(_fy_start(day))}, which isn't set up yet. An admin can add it "
+            f"from the side menu (Financial Year \u2192 + New FY). Or pick a date in FY {_label(current)}."
         ),
     )
 
@@ -154,8 +154,8 @@ def test_the_issue_example_reads_plainly(two_years):
 
     next_label = _label(s.after_last)
     assert response.json()["detail"] == (
-        f"This date is in FY {next_label}, which isn't set up yet. Add it from Financial Year in the "
-        f"sidebar (+ New FY, admins only), or pick a date in FY {_label(s.current)}."
+        f"This date is in FY {next_label}, which isn't set up yet. An admin can add it from the "
+        f"side menu (Financial Year \u2192 + New FY). Or pick a date in FY {_label(s.current)}."
     )
 
 

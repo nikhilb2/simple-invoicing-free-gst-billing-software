@@ -21,6 +21,7 @@ import PlaceOfSupplyField from '../../components/PlaceOfSupplyField';
 import { createDueDateFormState, formatInvoiceDateLabel, resolveDueDate, type DueDateMode } from '../../utils/invoiceDueDate.ts';
 import { readInvoiceComposerPrefs, updateInvoiceComposerPrefs } from '../../utils/invoiceComposerPrefs.ts';
 import { useFY } from '../../context/FYContext';
+import FYDateWarning from '../../components/FYDateWarning';
 import { useShortcuts } from '../../context/ShortcutsContext';
 import { fetchInvoiceById, fetchInvoiceComposerData, fetchLedgerAddresses, fetchTcsSections } from '../../features/invoices/api';
 import { EMPTY_TCS_FORM, buildTcsPayload, findTcsSection, reconcileTcsSection, tcsFormForCopy, tcsFormFromDocument, tcsFormOnBuyerChange, tcsTotalsInput, type TcsFormState } from './tcsForm';
@@ -1769,13 +1770,7 @@ export default function InvoicesPage() {
                   required
                 />
                 <FieldError id="invoice-date" errors={fieldErrors.errors} />
-                {activeFY !== null &&
-                  invoiceDate !== '' &&
-                  (invoiceDate < activeFY.start_date || invoiceDate > activeFY.end_date) ? (
-                  <p className="field-warning">
-                    ⚠️ This date is outside the active financial year ({activeFY.label}). The {documentName} will still be created.
-                  </p>
-                ) : null}
+                <FYDateWarning date={invoiceDate} outcome={`The ${documentName} will still be created.`} />
               </div>
 
               {isQuote ? (

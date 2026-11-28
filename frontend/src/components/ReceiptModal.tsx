@@ -10,6 +10,7 @@ import TdsAllocationFields from './TdsAllocationFields';
 import EmptyState from './EmptyState';
 import ModalCloseButton from './ModalCloseButton';
 import { useFY } from '../context/FYContext';
+import FYDateWarning from './FYDateWarning';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import { toLocalDateTimeInput } from '../utils/dateRanges';
 import { defaultPaymentAccountId } from '../utils/cashBank';
@@ -262,14 +263,7 @@ export default function ReceiptModal({
                 value={form.date}
                 onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))}
               />
-              {activeFY !== null && form.date && (
-                form.date.slice(0, 10) < activeFY.start_date ||
-                form.date.slice(0, 10) > activeFY.end_date
-              ) ? (
-                <p className="field-warning">
-                  ⚠️ This date is outside the active financial year ({activeFY.label}). The receipt will still be recorded.
-                </p>
-              ) : null}
+              <FYDateWarning date={form.date} outcome="The receipt will still be recorded." />
             </div>
             <div className="field">
               <label htmlFor="rcpt-mode">Mode</label>

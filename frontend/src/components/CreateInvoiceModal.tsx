@@ -8,6 +8,7 @@ import { FieldError, LineFieldErrors, useFormFieldErrors } from '../hooks/useFor
 import api, { getApiErrorMessage } from '../api/client';
 import type { InvoiceCreate, Invoice, Ledger, Product, TaxWithholdingSection } from '../types/api';
 import { useFY } from '../context/FYContext';
+import FYDateWarning from './FYDateWarning';
 import TaxInclusiveToggle from './TaxInclusiveToggle';
 import formatCurrency from '../utils/formatting';
 import { computeInvoiceTotals, computeLineTotal, priceColumnLabel, priceIncludesGstExample, type InvoiceTotalLine } from '../utils/invoiceTotals';
@@ -183,10 +184,6 @@ export default function CreateInvoiceModal({
     setItems((c) => c.map((i) => (i.id === id ? { ...i, serials } : i)));
   }
 
-  const isDateOutsideFY =
-    activeFY !== null &&
-    invoiceDate !== '' &&
-    (invoiceDate < activeFY.start_date || invoiceDate > activeFY.end_date);
   const resolvedDueDate = resolveDueDate({
     mode: dueDateMode,
     invoiceDate,
@@ -355,11 +352,7 @@ export default function CreateInvoiceModal({
                     required
                   />
                   <FieldError id="modal-inv-date" errors={fieldErrors.errors} />
-                  {isDateOutsideFY && activeFY ? (
-                    <p className="field-warning">
-                      ⚠️ This date is outside the active financial year ({activeFY.label}). The invoice will still be created.
-                    </p>
-                  ) : null}
+                  <FYDateWarning date={invoiceDate} outcome="The invoice will still be created." />
                 </div>
 
                 <div className="field">
