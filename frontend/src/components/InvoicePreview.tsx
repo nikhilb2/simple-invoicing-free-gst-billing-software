@@ -198,6 +198,8 @@ export default function InvoicePreview({ invoice, onClose, onError, onPaymentRec
           eyebrow="Invoice preview"
           titleId="invoice-preview-title"
           title={`${documentNoun} ${invoice.invoice_number || `#${invoice.id}`}`}
+          titleNumber={invoice.invoice_number || `#${invoice.id}`}
+          phoneNoun={invoice.voucher_type === 'purchase' ? 'Purchase' : undefined}
           titleAdornment={
             <span className="invoice-number-copy">
               <button

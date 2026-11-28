@@ -26,6 +26,15 @@ type PreviewToolbarProps = {
   eyebrow: string;
   title: string;
   titleId: string;
+  /**
+   * The document number, when `title` ends with one. On a phone the title bar
+   * then shows `phoneNoun` (or the rest of `title`) and the number as two
+   * parts, and only the noun may be cut: the number is what the owner checks
+   * before sharing, so it is never cut. The heading keeps `title` as its name.
+   */
+  titleNumber?: string;
+  /** A shorter noun for the phone title bar, e.g. "Purchase" for "Purchase invoice". */
+  phoneNoun?: string;
   /** Optional control displayed immediately beside the document title. */
   titleAdornment?: ReactNode;
   meta?: ReactNode;
@@ -71,6 +80,8 @@ export default function PreviewToolbar({
   eyebrow,
   title,
   titleId,
+  titleNumber,
+  phoneNoun,
   titleAdornment,
   meta,
   primary,
@@ -174,13 +185,24 @@ export default function PreviewToolbar({
     </div>
   ) : null;
 
+  const fullNoun = titleNumber && title.endsWith(titleNumber) ? title.slice(0, -titleNumber.length).trim() : null;
+  const titleElement =
+    isPhone && titleNumber && fullNoun !== null ? (
+      <h2 id={titleId} className="nav-panel__title nav-panel__title--split" aria-label={title}>
+        <span className="nav-panel__title-noun">{phoneNoun ?? fullNoun}</span>{' '}
+        <span className="nav-panel__title-number">{titleNumber}</span>
+      </h2>
+    ) : (
+      <h2 id={titleId} className="nav-panel__title">{title}</h2>
+    );
+
   const heading = titleAdornment ? (
     <div className="preview-header__heading-row">
-      <h2 id={titleId} className="nav-panel__title">{title}</h2>
+      {titleElement}
       {titleAdornment}
     </div>
   ) : (
-    <h2 id={titleId} className="nav-panel__title">{title}</h2>
+    titleElement
   );
 
   if (isPhone) {

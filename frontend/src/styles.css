@@ -8956,12 +8956,36 @@ a.ledger-chip:focus-visible {
    cut with an ellipsis instead of pushing Close onto a second row. */
 .preview-header--bar .preview-header__heading-row {
   flex-wrap: nowrap;
+  /* 6px, not 8: the 2px let "Purchase PINV-2026-001" fit whole at 390px. */
+  gap: 6px;
 }
 
 .preview-header--bar .nav-panel__title {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A title with a document number (the invoice preview): only the noun is
+   cut, so "Purchase PINV-2026-001" becomes "Purc… PINV-2026-001" on a narrow
+   phone, never "Purchase PINV-…". */
+.preview-header--bar .nav-panel__title--split {
+  display: flex;
+  /* About one space of this font, so "Invoice INV-…" reads as before. */
+  gap: 0.25em;
+  text-overflow: clip;
+}
+
+.preview-header--bar .nav-panel__title-noun {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preview-header--bar .nav-panel__title-number {
+  flex-shrink: 0;
   white-space: nowrap;
 }
 
