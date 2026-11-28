@@ -81,7 +81,7 @@ test.describe('Invoice cancellation', () => {
     await expect(page.locator('.modal-overlay')).toBeVisible({ timeout: 5_000 });
     await page.click('button:has-text("Cancel invoice")');
 
-    await expectSuccess(page, 'Invoice cancelled');
+    await expectSuccess(page, /Invoice \S+ cancelled\./);
 
     // By default, cancelled invoices are hidden from the list
     await expect(page.locator('.invoice-compact-card', { hasText: ledgerName })).toHaveCount(0);
@@ -98,7 +98,7 @@ test.describe('Invoice cancellation', () => {
     await row.locator('button[title="Cancel"]').click();
     await expect(page.locator('.modal-overlay')).toBeVisible({ timeout: 5_000 });
     await page.click('button:has-text("Cancel invoice")');
-    await expectSuccess(page, 'Invoice cancelled');
+    await expectSuccess(page, /Invoice \S+ cancelled\./);
 
     // Toggle "Show Cancelled"
     await page.locator('label.invoice-feed-view__checkbox', { hasText: 'Show cancelled' }).locator('input').check();
@@ -128,7 +128,7 @@ test.describe('Invoice cancellation', () => {
     await row.locator('button[title="Cancel"]').click();
     await expect(page.locator('.modal-overlay')).toBeVisible({ timeout: 5_000 });
     await page.click('button:has-text("Cancel invoice")');
-    await expectSuccess(page, 'Invoice cancelled');
+    await expectSuccess(page, /Invoice \S+ cancelled\./);
 
     // Show Cancelled
     await page.locator('label.invoice-feed-view__checkbox', { hasText: 'Show cancelled' }).locator('input').check();
@@ -139,7 +139,7 @@ test.describe('Invoice cancellation', () => {
 
     // Restore it
     await cancelledRow.locator('button[title="Restore"]').click();
-    await expectSuccess(page, 'Invoice restored');
+    await expectSuccess(page, /Invoice \S+ restored\./);
 
     // Toggle back to "Hide Cancelled" mode (default)
     await page.locator('label.invoice-feed-view__checkbox', { hasText: 'Show cancelled' }).locator('input').uncheck();
@@ -166,7 +166,7 @@ test.describe('Invoice cancellation', () => {
     await row.locator('button[title="Cancel"]').click();
     await expect(page.locator('.modal-overlay')).toBeVisible({ timeout: 5_000 });
     await page.click('button:has-text("Cancel invoice")');
-    await expectSuccess(page, 'Invoice cancelled');
+    await expectSuccess(page, /Invoice \S+ cancelled\./);
 
     // Navigate away and come back
     await clickNavLink(page, '/catalogue');
