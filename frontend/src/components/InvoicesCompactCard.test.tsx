@@ -54,3 +54,33 @@ describe('InvoicesCompactCard record payment', () => {
     expect(render(invoice({}), false)).not.toContain('Record payment');
   });
 });
+
+describe('InvoicesCompactCard phone layout markup', () => {
+  test('shows the bill number as "Bill …", not "Invoice #"', () => {
+    const html = render(invoice({ invoice_number: 'INV-2026-015' }));
+    expect(html).toContain('Bill INV-2026-015');
+    expect(html).not.toContain('Invoice #');
+  });
+
+  test('puts the name, bill number and badges in separate rows, in that order', () => {
+    const html = render(invoice({ ledger: { name: 'Dev test Customer' } as Invoice['ledger'] }));
+    const name = html.indexOf('invoice-compact-card__ledger');
+    const bill = html.indexOf('invoice-compact-card__number');
+    const badges = html.indexOf('invoice-compact-card__badges');
+    expect(name).toBeGreaterThan(-1);
+    expect(bill).toBeGreaterThan(name);
+    expect(badges).toBeGreaterThan(bill);
+  });
+
+  test('replaces the eye icon with a text View button that keeps the invoice in its name', () => {
+    const html = render(invoice({ invoice_number: 'INV-2026-015' }));
+    expect(html).toMatch(/<button[^>]*class="button button--ghost button--small"[^>]*aria-label="View invoice INV-2026-015"[^>]*>View<\/button>/);
+    expect(html).not.toContain('Preview invoice');
+    expect(html).not.toContain('lucide-eye');
+  });
+
+  test('keeps Record payment before View', () => {
+    const html = render(invoice({}));
+    expect(html.indexOf('Record payment')).toBeLessThan(html.indexOf('>View<'));
+  });
+});

@@ -21,6 +21,7 @@ import { invoiceQueryKeys } from '../features/invoices/queryKeys';
 import EmptyState from '../components/EmptyState';
 import PageSizeSelect, { readStoredPageSize, storePageSize } from '../components/PageSizeSelect';
 import { numericParam, textParam } from '../utils/deepLink';
+import { invoiceFeedSummaryLine, isInvoiceFeedFiltered } from '../utils/invoiceFeedSummary';
 
 type Breakdown = {
   credit: number;
@@ -427,6 +428,7 @@ export default function InvoicesAdvancedView() {
     searchDescription,
     showCancelled,
   ].filter(Boolean).length;
+  const isFiltered = isInvoiceFeedFiltered(invoiceSearch, activeFilterCount, productId);
 
   return (
     <div className="invoice-feed-view stack">
@@ -470,7 +472,7 @@ export default function InvoicesAdvancedView() {
               so it cannot shove the action buttons off the input's baseline. */}
           <input
             type="text"
-            placeholder="Search invoice no., ledger, product or IMEI…"
+            placeholder="Search customer, bill no. or item"
             aria-label="Search invoices"
             aria-describedby="invoice-feed-search-hint"
             value={invoiceSearch}
@@ -506,13 +508,15 @@ export default function InvoicesAdvancedView() {
               <Download size={16} />
               {exporting ? 'Preparing…' : 'Export CSV'}
             </button>
-            <button
-              type="button"
-              className="button button--ghost button--small"
-              onClick={handleResetFilters}
-            >
-              Reset
-            </button>
+            {isFiltered && (
+              <button
+                type="button"
+                className="button button--ghost button--small"
+                onClick={handleResetFilters}
+              >
+                Reset
+              </button>
+            )}
           </div>
         </div>
 
@@ -605,10 +609,15 @@ export default function InvoicesAdvancedView() {
 
         {/* Current FY Info */}
         {!allowAllFY && (
-          <div className="invoice-feed-view__fy-label">
+          <div className="invoice-feed-view__fy-label invoice-feed-view__fy-label--wide">
             Showing invoices from: <strong>{activeFY?.label}</strong>
           </div>
         )}
+
+        {/* Phone only: one line in place of the top summary panel and the FY label */}
+        <div className="invoice-feed-view__fy-label invoice-feed-view__summary-line">
+          {invoiceFeedSummaryLine(allPagesBreakdown, activeCurrencyCode, allowAllFY ? null : activeFY?.label, isFiltered)}
+        </div>
 
         {/* Product filter badge */}
         {productId !== null && (
@@ -646,6 +655,7 @@ export default function InvoicesAdvancedView() {
       )}
 
       <InvoicesTotalBreakdown
+        className="invoice-feed-breakdown--top"
         breakdown={allPagesBreakdown}
         currencyCode={activeCurrencyCode}
         title="Summary of all pages"

@@ -1,4 +1,4 @@
-import { Eye, Pencil, RotateCcw, Trash2, FileMinus, Copy } from 'lucide-react';
+import { Pencil, RotateCcw, Trash2, FileMinus, Copy } from 'lucide-react';
 import type { Invoice } from '../types/api';
 import formatCurrency, { plural } from '../utils/formatting';
 import { formatInvoiceDateLabel } from '../utils/invoiceDueDate.ts';
@@ -27,12 +27,12 @@ interface InvoicesCompactCardProps {
         {/* Main Info */}
           <div className="invoice-compact-card__main">
             <div className="invoice-compact-card__head">
-            <div>
+            <div className="invoice-compact-card__title">
                 <h3 className="invoice-compact-card__ledger">
                 {invoice.ledger?.name || 'Unknown Ledger'}
               </h3>
-                <p className="invoice-compact-card__meta">
-                Invoice #{invoice.invoice_number}
+                <p className="invoice-compact-card__meta invoice-compact-card__number">
+                Bill {invoice.invoice_number}
               </p>
               {invoice.supplier_invoice_number && (
                   <p className="invoice-compact-card__meta">
@@ -115,13 +115,12 @@ interface InvoicesCompactCardProps {
               </button>
             ) : null}
             <button
-                type="button"
+              type="button"
               onClick={() => onPreview(invoice)}
-                className="button button--ghost button--icon"
-              title="Preview"
-              aria-label={`Preview invoice ${invoice.invoice_number}`}
+              className="button button--ghost button--small"
+              aria-label={`View invoice ${invoice.invoice_number}`}
             >
-              <Eye size={16} aria-hidden="true" />
+              View
             </button>
             {!isCancelled && (
               <>

@@ -21,8 +21,8 @@ test.describe('E-Way Bill form', () => {
     });
     expect(invoiceNumber).toBeTruthy();
     await page.goto('/invoices-view');
-    await page.getByPlaceholder(/Search invoice no/).fill(invoiceNumber!);
-    await page.getByTitle('Preview').first().click();
+    await page.getByPlaceholder(/Search customer, bill no/).fill(invoiceNumber!);
+    await page.getByRole('button', { name: /^View invoice/ }).first().click();
     const preview = page.locator('.modal-panel--invoice-preview');
     await expect(preview).toBeVisible({ timeout: 10_000 });
     await preview.getByRole('button', { name: /e-way bill/i }).click();
@@ -106,8 +106,8 @@ test.describe('E-Way Bill file and rules', () => {
 
   async function openPreview(page: Page, invoiceNumber: string) {
     await page.goto('/invoices-view');
-    await page.getByPlaceholder(/Search invoice no/).fill(invoiceNumber);
-    await page.locator('.invoice-compact-card', { hasText: invoiceNumber }).first().getByTitle('Preview').click();
+    await page.getByPlaceholder(/Search customer, bill no/).fill(invoiceNumber);
+    await page.locator('.invoice-compact-card', { hasText: invoiceNumber }).first().getByRole('button', { name: /^View invoice/ }).click();
     const preview = page.locator('.modal-panel--invoice-preview');
     await expect(preview).toBeVisible({ timeout: 10_000 });
     return preview;
