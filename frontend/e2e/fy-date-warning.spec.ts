@@ -8,7 +8,14 @@ const TEST_FY_START_YEAR = 2031;
 const TEST_FY_LABEL = '2031-32';
 const DATE_INSIDE_FY = '2031-08-15';         // within 2031-04-01 … 2032-03-31
 const DATE_OUTSIDE_FY_BEFORE = '2031-01-01'; // before FY start
-const DATE_OUTSIDE_FY_AFTER = '2032-06-01';  // after FY end
+const DATE_OUTSIDE_FY_AFTER = '2032-06-01';  // after FY end (FY 2032-33: may or may not exist)
+// A year no spec ever sets up, so the date falls in no financial year at all.
+const DATE_IN_NO_FY = '2045-06-01';
+const NO_FY_LABEL = '2045-46';
+// A date after the active FY's end gets the "outside" warning when its own FY
+// exists (fy-invoice-series creates 2032-33), and the refusal text when it
+// doesn't (#1150). Either way the user is warned before saving.
+const AFTER_FY_WARNING = /outside the active financial year|isn't set up yet/;
 
 /**
  * Ensure the test FY exists and is the active FY.
@@ -68,7 +75,20 @@ test.describe('FY Date Warning — InvoicesPage invoice form', () => {
     await page.fill('#invoice-date', DATE_OUTSIDE_FY_AFTER);
 
     await expect(page.locator('.field-warning')).toBeVisible({ timeout: 3_000 });
-    await expect(page.locator('.field-warning')).toContainText('outside the active financial year');
+    await expect(page.locator('.field-warning')).toContainText(AFTER_FY_WARNING);
+  });
+
+  test('says the year is not set up when the invoice date is in no financial year', async ({ authedPage: page }) => {
+    await activateTestFY(page);
+    await clickNavLink(page, '/invoices');
+    await page.waitForTimeout(500);
+
+    await page.fill('#invoice-date', DATE_IN_NO_FY);
+
+    const warning = page.locator('.field-warning');
+    await expect(warning).toBeVisible({ timeout: 3_000 });
+    await expect(warning).toContainText(`This date is in FY ${NO_FY_LABEL}, which isn't set up yet.`);
+    await expect(warning).toContainText(`Or pick a date in FY ${TEST_FY_LABEL}.`);
   });
 
   test('warning disappears when invoice date is moved inside active FY', async ({ authedPage: page }) => {
@@ -195,7 +215,17 @@ test.describe('FY Date Warning — Payment form (LedgerView)', () => {
     await modal.locator('#pay-date').fill(`${DATE_OUTSIDE_FY_AFTER}T10:00`);
 
     await expect(modal.locator('.field-warning')).toBeVisible({ timeout: 3_000 });
-    await expect(modal.locator('.field-warning')).toContainText('outside the active financial year');
+    await expect(modal.locator('.field-warning')).toContainText(AFTER_FY_WARNING);
+  });
+
+  test('says the year is not set up when the payment date is in no financial year', async ({ authedPage: page }) => {
+    await activateTestFY(page);
+    const modal = await seedLedgerAndOpenPaymentModal(page);
+
+    await modal.locator('#pay-date').fill(`${DATE_IN_NO_FY}T10:00`);
+
+    await expect(modal.locator('.field-warning')).toBeVisible({ timeout: 3_000 });
+    await expect(modal.locator('.field-warning')).toContainText(`This date is in FY ${NO_FY_LABEL}, which isn't set up yet.`);
   });
 
   test('warning disappears when payment date is moved inside FY', async ({ authedPage: page }) => {

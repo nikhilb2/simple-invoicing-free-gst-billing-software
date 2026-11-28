@@ -33,6 +33,31 @@ test.describe('Tax ledger set-off', () => {
     });
     test.skip(!/^\d{2}/.test(companyGst), 'The active company has no GSTIN, so no supply is interstate.');
     const homeState = companyGst.slice(0, 2);
+
+    // Since #1150 a document dated in no financial year is refused, so make sure
+    // DAY's year exists (409 = it already does). Creating a year doesn't make it
+    // active; the invoice form only warns that DAY is outside the active year.
+    const fyStatus = await page.evaluate(async (day) => {
+      const headers: Record<string, string> = {
+        Authorization: `Bearer ${localStorage.getItem('token')}`,
+        'Content-Type': 'application/json',
+      };
+      const companyId = localStorage.getItem('active_company_id');
+      if (companyId) headers['X-Company-Id'] = companyId;
+      const [y, m] = day.split('-').map(Number);
+      const start = m >= 4 ? y : y - 1;
+      const res = await fetch('/api/financial-years/', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          label: `${start}-${String((start + 1) % 100).padStart(2, '0')}`,
+          start_date: `${start}-04-01`,
+          end_date: `${start + 1}-03-31`,
+        }),
+      });
+      return res.status;
+    }, DAY);
+    expect([201, 409]).toContain(fyStatus);
     const otherState = homeState === '27' ? '29' : '27';
 
     const sku = uniqueSku();
