@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { MessageCircle } from 'lucide-react';
 import { fetchCompanyProfile, fetchDueInvoicePage, fetchInvoiceById, fetchLedgers, type DueInvoiceFilters } from '../features/invoices/api';
 import type { CompanyProfile, Invoice, Ledger } from '../types/api';
 import { sendDueReminders, type DueRemindersResponse } from '../api/emailLogs';
@@ -9,22 +8,16 @@ import StatusToasts from '../components/StatusToasts';
 import ScopeBar, { Metric } from '../components/ScopeBar';
 import InvoicePreview from '../components/InvoicePreview';
 import ReceiptModal from '../components/ReceiptModal';
-import { canRecordPayment } from '../utils/invoicePayment';
 import ConfirmDialog from '../components/ConfirmDialog';
 import formatCurrency, { plural } from '../utils/formatting';
-import { buildWhatsAppUrl, toWhatsAppNumber } from '../utils/phone';
-import { buildWhatsAppReminderMessage } from '../utils/whatsappReminder';
 import { downloadCsv } from '../utils/csv';
 import {
   buildDueWindow,
   DEFAULT_DUE_MODE,
-  dueBadgeLabel,
-  formatInvoiceDateLabel,
-  isOverdueInvoice,
   type DueFilterMode,
 } from '../utils/invoiceDueDate.ts';
 import { toIsoDate } from '../utils/dateRanges';
-import OverdueBadge from '../components/OverdueBadge';
+import DueInvoiceRow from '../components/DueInvoiceRow';
 import DuesAgeingStrip from '../components/DuesAgeingStrip';
 import EmptyState from '../components/EmptyState';
 import LoadingState from '../components/LoadingState';
@@ -426,102 +419,15 @@ export default function InvoiceDuesPage() {
               <EmptyState message="No invoices match your due filters. Try adjusting the due window or search." />
             ) : null}
             {!loading
-              ? items.map((invoice) => {
-                  const whatsappNumber = toWhatsAppNumber(invoice.ledger_phone);
-                  const whatsappUrl = whatsappNumber
-                    ? buildWhatsAppUrl(
-                        whatsappNumber,
-                        buildWhatsAppReminderMessage({
-                          customerName: invoice.ledger_name,
-                          invoiceNumber: invoice.invoice_number || `#${invoice.id}`,
-                          outstandingAmount: invoice.outstanding_amount,
-                          currencyCode: invoice.company_currency_code || currencyCode,
-                          dueDate: invoice.due_date,
-                          overdue: isOverdueInvoice(invoice),
-                        }),
-                      )
-                    : null;
-                  return (
-                  <div key={invoice.id} className="invoice-row">
-                    <div className="invoice-row__meta">
-                      <strong>{invoice.invoice_number || `#${invoice.id}`}</strong>
-                      <span className="table-subtext">
-                        {invoice.ledger_name || 'Unknown ledger'}
-                        {' · '}
-                        Invoice {formatInvoiceDateLabel(invoice.invoice_date)}
-                        {' · '}
-                        Due {formatInvoiceDateLabel(invoice.due_date)}
-                        {' '}
-                        <OverdueBadge invoice={invoice} />
-                      </span>
-                      <span className="table-subtext">
-                        {isOverdueInvoice(invoice) ? null : (
-                          <>
-                            {dueBadgeLabel(invoice.due_in_days)}
-                            {' · '}
-                          </>
-                        )}
-                        Status {invoice.payment_status}
-                        {' · '}
-                        Remaining {formatCurrency(invoice.outstanding_amount, invoice.company_currency_code || currencyCode)}
-                      </span>
-                      {(invoice.tds_amount ?? 0) > 0 ? (
-                        <span className="table-subtext">
-                          {invoice.voucher_type === 'purchase' ? 'Paid to supplier' : 'Received'}{' '}
-                          {formatCurrency(invoice.paid_amount, invoice.company_currency_code || currencyCode)}
-                          {' · '}
-                          {invoice.voucher_type === 'purchase' ? 'TDS deducted' : 'TDS deducted by customer'}{' '}
-                          {formatCurrency(invoice.tds_amount ?? 0, invoice.company_currency_code || currencyCode)}
-                        </span>
-                      ) : null}
-                      {(invoice.ledger_payable_amount ?? 0) > 0 ? (
-                        <span className="table-subtext">
-                          You also owe this party {formatCurrency(invoice.ledger_payable_amount ?? 0, currencyCode)} (net{' '}
-                          {formatCurrency(Math.abs(invoice.ledger_net_receivable ?? 0), currencyCode)}{' '}
-                          {(invoice.ledger_net_receivable ?? 0) > 0 ? 'receivable' : 'payable'})
-                        </span>
-                      ) : null}
-                    </div>
-                    <span className="invoice-row__price">{formatCurrency(invoice.total_amount, invoice.company_currency_code || currencyCode)}</span>
-                    <div className="invoice-row__actions">
-                      {invoice.ledger_id ? (
-                        <Link className="button button--ghost button--small" to={`/ledgers/${invoice.ledger_id}`}>
-                          Ledger
-                        </Link>
-                      ) : null}
-                      {canRecordPayment(invoice) ? (
-                        <button
-                          type="button"
-                          className="button button--secondary button--small"
-                          onClick={() => setPaymentInvoice(invoice)}
-                          aria-label={`Record payment for invoice ${invoice.invoice_number || `#${invoice.id}`}`}
-                        >
-                          Record payment
-                        </button>
-                      ) : null}
-                      <button
-                        type="button"
-                        className="button button--ghost button--small"
-                        onClick={() => void handlePreviewInvoice(invoice.id)}
-                      >
-                        View
-                      </button>
-                      {whatsappUrl ? (
-                        <a
-                          className="button button--ghost button--small"
-                          href={whatsappUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          title={`WhatsApp reminder to ${invoice.ledger_name || 'customer'}`}
-                          aria-label={`WhatsApp reminder to ${invoice.ledger_name || 'customer'}`}
-                        >
-                          <MessageCircle size={16} aria-hidden="true" />
-                        </a>
-                      ) : null}
-                    </div>
-                  </div>
-                  );
-                })
+              ? items.map((invoice) => (
+                  <DueInvoiceRow
+                    key={invoice.id}
+                    invoice={invoice}
+                    currencyCode={currencyCode}
+                    onPreview={(invoiceId) => void handlePreviewInvoice(invoiceId)}
+                    onRecordPayment={setPaymentInvoice}
+                  />
+                ))
               : null}
           </div>
 

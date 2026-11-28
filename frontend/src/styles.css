@@ -9800,3 +9800,93 @@ a.ledger-chip:focus-visible {
 .quotations-first-run__link {
   min-height: 44px;
 }
+
+/* ── Dues row: customer, amount due, one obvious reminder ─────────────── */
+/* Wide screens: the meta column on the left, the buttons on the right. */
+.invoice-row--dues,
+.invoice-row--dues:has(> .invoice-row__actions) {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.invoice-row--dues .invoice-row__price {
+  text-align: left;
+}
+
+.invoice-row--dues .invoice-row__customer {
+  justify-self: start;
+  font-size: 1.05rem;
+  font-weight: 800;
+}
+
+.invoice-row--dues .invoice-row__actions {
+  align-items: center;
+  /* Keeps the "no phone" hint from widening this column and squeezing the meta. */
+  max-width: 400px;
+}
+
+.invoice-row--dues .invoice-row__action-pair {
+  display: contents;
+}
+
+.invoice-row--dues .invoice-row__no-phone {
+  order: 3;
+  flex: 1 0 100%;
+  display: grid;
+  justify-items: end;
+}
+
+@media (max-width: 720px) {
+  .invoice-row--dues,
+  .invoice-row--dues:has(> .invoice-row__actions) {
+    grid-template-columns: 1fr;
+    row-gap: 6px;
+  }
+
+  /* The name is a link to the customer page: 44px to tap, drawn at text height. */
+  .invoice-row--dues .invoice-row__customer {
+    display: flex;
+    align-items: center;
+    justify-self: stretch;
+    min-height: 44px;
+    margin-block: -9.4px;
+  }
+
+  .invoice-row--dues .invoice-row__actions {
+    display: grid;
+    gap: 6px;
+  }
+
+  /* Full-size buttons on a phone, not the 30px small ones. */
+  .invoice-row--dues .invoice-row__actions .button {
+    min-height: 44px;
+    padding: 9px 16px;
+    font-size: 0.9rem;
+    border-radius: 12px;
+  }
+
+  .invoice-row--dues .invoice-row__no-phone {
+    order: 0;
+    justify-items: center;
+    text-align: center;
+    gap: 1px;
+  }
+
+  .invoice-row--dues .invoice-row__no-phone .link-button {
+    font-size: 0.8rem;
+    text-decoration: underline;
+  }
+
+  .invoice-row--dues .invoice-row__action-pair {
+    display: flex;
+    gap: 8px;
+  }
+
+  /* "Payment received" keeps its own width, "View bill" takes the rest. */
+  .invoice-row--dues .invoice-row__action-pair .button {
+    flex: 1 1 auto;
+  }
+
+  .invoice-row--dues .invoice-row__action-pair .button:first-child:not(:last-child) {
+    flex: 0 0 auto;
+  }
+}
