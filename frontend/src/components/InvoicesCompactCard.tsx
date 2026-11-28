@@ -90,7 +90,7 @@ interface InvoicesCompactCardProps {
           <div className="invoice-compact-card__side">
             <div>
               <div className="invoice-compact-card__meta">
-              {isCredit ? 'Credit (Purchase)' : 'Debit (Sales)'}
+              Bill total
             </div>
               <div className={`invoice-compact-card__amount invoice-compact-card__amount--${invoice.voucher_type}`}>
               {formatCurrency(invoice.total_amount, invoice.company_currency_code || currencyCode)}

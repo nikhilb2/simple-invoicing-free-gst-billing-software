@@ -25,23 +25,23 @@ export default function InvoicesTotalBreakdown({ breakdown, currencyCode, title,
       )}
       <div className="invoice-feed-breakdown__grid">
         <div className="invoice-feed-breakdown__cell">
-          <div className="invoice-feed-breakdown__label">Total Listed</div>
-          <div className="invoice-feed-breakdown__value">{formatCurrency(breakdown.total, currencyCode)}</div>
-        </div>
-        <div className="invoice-feed-breakdown__cell">
-          <div className="invoice-feed-breakdown__label">Credit (Purchase)</div>
-          <div className="invoice-feed-breakdown__value invoice-feed-breakdown__value--purchase">{formatCurrency(breakdown.credit, currencyCode)}</div>
-        </div>
-        <div className="invoice-feed-breakdown__cell">
-          <div className="invoice-feed-breakdown__label">Debit (Sales)</div>
+          <div className="invoice-feed-breakdown__label">Sales</div>
           <div className="invoice-feed-breakdown__value invoice-feed-breakdown__value--sales">{formatCurrency(breakdown.debit, currencyCode)}</div>
+        </div>
+        <div className="invoice-feed-breakdown__cell">
+          <div className="invoice-feed-breakdown__label">Purchases</div>
+          <div className="invoice-feed-breakdown__value invoice-feed-breakdown__value--purchase">{formatCurrency(breakdown.credit, currencyCode)}</div>
         </div>
         <div className="invoice-feed-breakdown__cell">
           <div className="invoice-feed-breakdown__label">Cancelled</div>
           <div className="invoice-feed-breakdown__value invoice-feed-breakdown__value--cancelled">{formatCurrency(breakdown.cancelled, currencyCode)}</div>
         </div>
         <div className="invoice-feed-breakdown__cell">
-          <div className="invoice-feed-breakdown__label">Active Total</div>
+          <div className="invoice-feed-breakdown__label">All bills (incl. cancelled)</div>
+          <div className="invoice-feed-breakdown__value">{formatCurrency(breakdown.total, currencyCode)}</div>
+        </div>
+        <div className="invoice-feed-breakdown__cell">
+          <div className="invoice-feed-breakdown__label">All bills (not cancelled)</div>
           <div className="invoice-feed-breakdown__value invoice-feed-breakdown__value--active">
             {formatCurrency(breakdown.credit + breakdown.debit, currencyCode)}
           </div>
