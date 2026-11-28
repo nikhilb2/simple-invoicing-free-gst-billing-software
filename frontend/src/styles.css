@@ -2813,6 +2813,108 @@ a.invoice-row {
   flex-shrink: 0;
 }
 
+/* The bill's totals under the line items, with the bill discount in it (#1154).
+   The same well as a .line-item; right-aligned at 460px, full width on a phone. */
+.composer-totals {
+  display: grid;
+  gap: 8px;
+  width: min(100%, 460px);
+  margin-left: auto;
+  padding: 16px;
+  border-radius: 20px;
+  background: rgb(var(--rgb-overlay) / 0.03);
+  border: 1px solid rgb(var(--rgb-info) / 0.08);
+}
+
+.composer-totals__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+.composer-totals__row > label {
+  margin: 0;
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+.composer-totals__row--add {
+  align-items: center;
+}
+
+.composer-totals__row--muted {
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 400;
+}
+
+.composer-totals__row--total {
+  margin-top: 2px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  font-size: 1.05rem;
+  font-weight: 800;
+}
+
+.composer-totals__value {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.composer-totals__row--total .composer-totals__value {
+  font-size: 1.25rem;
+}
+
+.composer-totals__discount {
+  display: grid;
+  gap: 6px;
+}
+
+.composer-totals__discount-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.composer-totals__discount-controls .input {
+  width: 132px;
+}
+
+.composer-totals .line-item__discount-modes {
+  gap: 8px;
+  font-size: 0.85rem;
+}
+
+.composer-totals .field-error--block {
+  margin: 0;
+}
+
+.composer-totals__note {
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgb(var(--rgb-accent) / 0.08);
+}
+
+.composer-totals__note p {
+  margin: 0;
+  font-size: 0.88rem;
+}
+
+.composer-totals__note .link-button {
+  justify-self: start;
+}
+
+.composer-totals__hint {
+  margin: 0;
+  font-size: 0.8rem;
+}
+
 .invoice-row__type-indicator {
   display: flex;
   align-items: center;

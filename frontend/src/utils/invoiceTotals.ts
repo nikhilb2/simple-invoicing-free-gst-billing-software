@@ -1,3 +1,5 @@
+import type { DiscountMode } from '../types/api';
+
 /** Preview arithmetic follows InvoiceProcessor and document_totals on the server. */
 export type InvoiceTotalLine = {
   unitPrice: number;
@@ -70,22 +72,129 @@ export function computeLineTotal({
   return { taxableAmount, taxAmount, lineTotal };
 }
 
+export type { DiscountMode };
+
+/* Exact paise arithmetic for the before-GST share, as the server's Decimal does it.
+   Binary floats can land a hair under a half paisa (84.662 is fine, 0.125 x 3 is not). */
+function decimalParts(value: number): { digits: bigint; scale: bigint } {
+  let text = String(value);
+  if (/e/i.test(text)) text = value.toFixed(20);
+  const negative = text.startsWith('-');
+  const [whole, fraction = ''] = (negative ? text.slice(1) : text).split('.');
+  const digits = BigInt(whole + fraction) * (negative ? -1n : 1n);
+  return { digits, scale: 10n ** BigInt(fraction.length) };
+}
+
+/** numerator / denominator rounded half-up (away from zero), as ROUND_HALF_UP. */
+function divideHalfUp(numerator: bigint, denominator: bigint): bigint {
+  const negative = (numerator < 0n) !== (denominator < 0n);
+  const n = numerator < 0n ? -numerator : numerator;
+  const d = denominator < 0n ? -denominator : denominator;
+  const quotient = (2n * n + d) / (2n * d);
+  return negative ? -quotient : quotient;
+}
+
+const toPaise = (amount: number) => BigInt(Math.round(amount * 100));
+const fromPaise = (paise: bigint) => Number(paise) / 100;
+
+/** paise x value / (100 x divisor), to the paisa: money(amount x value / 100) on the server. */
+function percentOf(paise: bigint, value: number, divisor = 1n): bigint {
+  const { digits, scale } = decimalParts(value);
+  return divideHalfUp(paise * digits, 100n * scale * divisor);
+}
+
+/** The before-GST bill discount on a subtotal: % of it, or the flat amount, to the paisa. */
+export function billDiscountAmount(subtotal: number, { type, value }: Discount): number {
+  if (!type || value == null || !Number.isFinite(value) || value <= 0) return 0;
+  if (type === 'percentage') return fromPaise(percentOf(toPaise(subtotal), value));
+  const { digits, scale } = decimalParts(value);
+  return fromPaise(divideHalfUp(digits * 100n, scale));
+}
+
+/**
+ * Shares a discount across lines by their taxable value, as the server's
+ * `_split_by_weight`: each share rounded half-up to the paisa, and what is left
+ * over put on the largest line (the first on a tie), so they add up exactly.
+ */
+export function shareByWeight(amount: number, weights: number[]): number[] {
+  const amountPaise = toPaise(amount);
+  const weightPaise = weights.map(toPaise);
+  const total = weightPaise.reduce((sum, weight) => sum + weight, 0n);
+  if (amountPaise === 0n || total <= 0n) return weights.map(() => 0);
+  const shares = weightPaise.map((weight) => divideHalfUp(amountPaise * weight, total));
+  const residue = amountPaise - shares.reduce((sum, share) => sum + share, 0n);
+  if (residue !== 0n) {
+    let largest = 0;
+    weightPaise.forEach((weight, index) => { if (weight > weightPaise[largest]) largest = index; });
+    shares[largest] += residue;
+  }
+  return shares.map(fromPaise);
+}
+
+/** CGST and SGST (each half, rounded at half the rate, so equal), or IGST, of a GST total. */
+export function gstHeads(taxAmount: number, interstateSupply: boolean) {
+  if (interstateSupply) return { cgstAmount: 0, sgstAmount: 0, igstAmount: roundMoney(taxAmount) };
+  const half = roundMoney(taxAmount / 2);
+  return { cgstAmount: half, sgstAmount: half, igstAmount: 0 };
+}
+
+type LineResult = ReturnType<typeof computeLineTotal>;
+
+/**
+ * A line after its share of a before-GST bill discount, as share_bill_discount on the
+ * server: GST worked out again on the reduced taxable value like an ex-GST line,
+ * CGST and SGST each at half the rate. Inclusive prices too: the share comes off the
+ * ex-GST value.
+ */
+function lineAfterShare(line: LineResult, gstRate: number, share: number, interstateSupply: boolean): LineResult {
+  if (share === 0) return line;
+  const taxable = toPaise(line.taxableAmount) - toPaise(share);
+  const rate = Number.isFinite(gstRate) ? gstRate : 0;
+  const tax = interstateSupply ? percentOf(taxable, rate) : 2n * percentOf(taxable, rate, 2n);
+  return { taxableAmount: fromPaise(taxable), taxAmount: fromPaise(tax), lineTotal: fromPaise(taxable + tax) };
+}
+
 export function computeInvoiceTotals(lines: InvoiceTotalLine[], {
   taxInclusive,
   invoiceDiscount = {},
+  discountMode = 'after_tax',
   applyRoundOff = false,
   interstateSupply = true,
   tcs = null,
 }: {
   taxInclusive: boolean; invoiceDiscount?: Discount; applyRoundOff?: boolean; interstateSupply?: boolean;
+  /**
+   * 'before_tax' (#1154, every new document): the bill discount comes off the subtotal
+   * and is shared over the lines before GST, and the result also carries `subtotal`,
+   * `billDiscountAmount`, `billDiscountShares` and `billDiscountTooLarge`. 'after_tax'
+   * (the default here, documents saved before #1154): off taxable + GST at the end.
+   */
+  discountMode?: DiscountMode;
   /** Null or left out: no TCS, and the result has no TCS fields. */
   tcs?: TcsInput | null;
 }) {
-  const calculated = lines.map((line) => computeLineTotal({ ...line, taxInclusive, interstateSupply }));
+  let calculated = lines.map((line) => computeLineTotal({ ...line, taxInclusive, interstateSupply }));
+  let beforeTaxFields: {
+    subtotal: number; billDiscountAmount: number; billDiscountShares: number[]; billDiscountTooLarge: boolean;
+  } | undefined;
+  if (discountMode === 'before_tax') {
+    const subtotal = roundMoney(calculated.reduce((sum, line) => sum + line.taxableAmount, 0));
+    const asked = billDiscountAmount(subtotal, invoiceDiscount);
+    // The server refuses a discount over the subtotal; the preview leaves it out
+    // (and says so) rather than show negative figures.
+    const tooLarge = asked > subtotal;
+    const discount = tooLarge ? 0 : asked;
+    const shares = shareByWeight(discount, calculated.map((line) => line.taxableAmount));
+    calculated = calculated.map((line, index) => lineAfterShare(line, lines[index].gstRate, shares[index], interstateSupply));
+    beforeTaxFields = { subtotal, billDiscountAmount: discount, billDiscountShares: shares, billDiscountTooLarge: tooLarge };
+  }
   const taxableAmount = roundMoney(calculated.reduce((sum, line) => sum + line.taxableAmount, 0));
   const taxAmount = roundMoney(calculated.reduce((sum, line) => sum + line.taxAmount, 0));
   const totalAmount = roundMoney(taxableAmount + taxAmount);
-  const invoiceDiscountAmount = Math.min(discountAmount(totalAmount, invoiceDiscount), totalAmount);
+  // Before GST the discount is already in the lines: nothing more comes off here.
+  const invoiceDiscountAmount = beforeTaxFields
+    ? 0
+    : Math.min(discountAmount(totalAmount, invoiceDiscount), totalAmount);
   const afterDiscountTotal = roundMoney(totalAmount - invoiceDiscountAmount);
   // TCS goes on after the invoice discount and before the round-off, so the total
   // is still a whole rupee: total = taxable + tax - discount + tcs + round-off.
@@ -106,6 +215,7 @@ export function computeInvoiceTotals(lines: InvoiceTotalLine[], {
   return {
     taxableAmount, taxAmount, totalAmount, invoiceDiscountAmount, afterDiscountTotal,
     ...tcsFields,
+    ...beforeTaxFields,
     roundOffAmount: roundMoney(total - beforeRoundOff), total,
   };
 }

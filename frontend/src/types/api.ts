@@ -405,6 +405,8 @@ export type Invoice = {
   round_off_amount: number;
   discount_type?: string | null;
   discount_value?: number | null;
+  /** How the bill discount is taken (#1154). Saved before #1154: 'after_tax'. */
+  discount_mode?: DiscountMode;
   supplier_invoice_number?: string | null;
   reference_notes?: string | null;
   ledger: Ledger | null;
@@ -480,12 +482,16 @@ export type InvoiceItem = {
   description?: string | null;
   discount_type?: string | null;
   discount_value?: number | null;
+  /** This line's share of a before-GST bill discount (#1154), already off taxable_amount. */
+  bill_discount_amount?: number;
   serial_numbers?: string[];
   /** false: billed before serial tracking was on, so an edit takes no serials for it. null: no record. */
   serials_applied?: boolean | null;
 };
 
 export type QuotationDocumentType = 'quotation' | 'proforma';
+/** Which way a document takes its bill discount (#1154): before GST (every new one) or after (saved before #1154). */
+export type DiscountMode = 'before_tax' | 'after_tax';
 export type QuotationStatus = 'open' | 'accepted' | 'declined' | 'converted' | 'cancelled';
 /** The stored status, or `expired`, which is derived from the date and never stored. */
 export type QuotationDisplayStatus = QuotationStatus | 'expired';
@@ -508,6 +514,7 @@ export type QuotationItem = {
   description: string | null;
   discount_type: string | null;
   discount_value: number | null;
+  bill_discount_amount?: number;
 };
 
 export type Quotation = {
@@ -537,6 +544,7 @@ export type Quotation = {
   round_off_amount: number;
   discount_type: string | null;
   discount_value: number | null;
+  discount_mode?: DiscountMode;
   taxable_amount: number;
   total_tax_amount: number;
   cgst_amount: number;
@@ -574,6 +582,8 @@ export type QuotationFields = {
   apply_round_off?: boolean;
   discount_type?: 'percentage' | 'net' | null;
   discount_value?: number | null;
+  /** Left out: before GST when new, the stored way on an edit. 'before_tax' switches an old document. */
+  discount_mode?: DiscountMode;
   shipping_address_same_as_billing?: boolean;
   shipping_address_id?: number | null;
   new_shipping_address?: { label: string; address: string } | null;
@@ -609,6 +619,9 @@ export type QuotationConversionDraft = {
   document_type: QuotationDocumentType;
   invoice: QuotationConvert;
   warnings: QuotationConversionWarning[];
+  /** How the quotation took its bill discount, and its total (#1154). */
+  quotation_discount_mode?: DiscountMode;
+  quotation_total_amount?: number;
 };
 
 export type DeliveryChallanStatus = 'open' | 'invoiced' | 'cancelled';
@@ -836,6 +849,8 @@ export type InvoiceCreate = {
   apply_round_off?: boolean;
   discount_type?: 'percentage' | 'net' | null;
   discount_value?: number | null;
+  /** Left out: before GST when new, the stored way on an edit. 'before_tax' switches an old document. */
+  discount_mode?: DiscountMode;
   shipping_address_same_as_billing?: boolean;
   shipping_address_id?: number | null;
   new_shipping_address?: { label: string; address: string } | null;

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  billDiscountProblem,
   composerSubmitReason,
   discountProblem,
   fieldProblemMessage,
@@ -94,5 +95,36 @@ describe('line field rules', () => {
     expect(fieldProblemMessage('discount-min')).toBe("Discount can't be below 0");
     expect(fieldProblemMessage('discount-max')).toBe("Discount can't be more than 100%");
     expect(fieldProblemMessage('price-check')).toBeNull();
+  });
+});
+
+describe('the bill discount in the totals block (#1154)', () => {
+  it('may not go over the subtotal; equal to it is allowed', () => {
+    expect(billDiscountProblem('350', 'net', 300)).toBe('bill-discount-subtotal');
+    expect(billDiscountProblem('300', 'net', 300)).toBeNull();
+    expect(billDiscountProblem('300.01', 'net', 300)).toBe('bill-discount-subtotal');
+    expect(billDiscountProblem('101', 'percentage', 300)).toBe('bill-discount-max');
+    expect(billDiscountProblem('100', 'percentage', 300)).toBeNull();
+    expect(billDiscountProblem('-1', 'net', 300)).toBe('bill-discount-min');
+    expect(billDiscountProblem('', 'net', 300)).toBeNull();
+  });
+
+  it('says the same under the box and in the strip', () => {
+    const problem: ComposerProblem = { kind: 'bill-discount-subtotal', subtotal: '₹300.00' };
+    expect(fieldProblemMessage(problem.kind, problem.subtotal)).toBe("Discount can't be more than the subtotal (₹300.00)");
+    expect(composerSubmitReason([problem])).toBe("Discount can't be more than the subtotal (₹300.00).");
+    expect(composerSubmitReason([{ kind: 'bill-discount-max' }])).toBe("Discount can't be more than 100%.");
+    expect(composerSubmitReason([{ kind: 'bill-discount-min' }])).toBe("Discount can't be below 0.");
+  });
+
+  it('comes after every line, as the block sits under them', () => {
+    const problems: ComposerProblem[] = [
+      { kind: 'bill-discount-max' },
+      { kind: 'price-min', line: 3 },
+      { kind: 'customer' },
+    ];
+    expect(inPageOrder(problems).map((problem) => problem.kind)).toEqual(['customer', 'price-min', 'bill-discount-max']);
+    expect(composerSubmitReason([{ kind: 'bill-discount-max' }, { kind: 'serial', line: 2 }]))
+      .toMatch(/^Line 2 has no serial number yet.*, and 1 more to fix\.$/);
   });
 });

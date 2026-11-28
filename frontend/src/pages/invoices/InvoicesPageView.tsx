@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Boxes, Lock, Plus, Trash2 } from 'lucide-react';
 import api, { getApiErrorCode, getApiErrorMessage } from '../../api/client';
-import type { CompanyAccount, CompanyProfile, Invoice, InvoiceCreate, Ledger, LedgerAddress, Payment, PaymentCreate, Product, DeliveryChallanConversionDraft, Quotation, QuotationConversionDraft, QuotationFields } from '../../types/api';
+import type { CompanyAccount, CompanyProfile, DiscountMode, Invoice, InvoiceCreate, Ledger, LedgerAddress, Payment, PaymentCreate, Product, DeliveryChallanConversionDraft, Quotation, QuotationConversionDraft, QuotationFields } from '../../types/api';
 import InvoicePreview from '../../components/InvoicePreview';
 import QuotationPreview from '../../components/QuotationPreview';
 import ScanBar, { type ScanOutcome, type ScanResolution } from '../../components/ScanBar';
@@ -13,7 +13,8 @@ import ProductCombobox from '../../components/ProductCombobox';
 import LedgerCombobox from '../../components/LedgerCombobox';
 import TaxInclusiveToggle from '../../components/TaxInclusiveToggle';
 import formatCurrency, { plural } from '../../utils/formatting';
-import { computeInvoiceTotals, computeLineTotal, priceColumnLabel, priceIncludesGstExample, type InvoiceTotalLine } from '../../utils/invoiceTotals';
+import { computeInvoiceTotals, computeLineTotal, gstHeads, priceColumnLabel, priceIncludesGstExample, type InvoiceTotalLine } from '../../utils/invoiceTotals';
+import { tcsLabel } from '../../utils/tcs';
 import { toIsoDate } from '../../utils/dateRanges';
 import { formatInvoiceTaxBreakdown, isInterstateSupply } from '../../utils/invoiceTax';
 import { isInterstatePlaceOfSupply, resolvePlaceOfSupply, stalePlaceOfSupplyWarning, type PlaceOfSupplyChoice } from '../../utils/gstStates';
@@ -24,10 +25,12 @@ import { useFY } from '../../context/FYContext';
 import FYDateWarning from '../../components/FYDateWarning';
 import { useShortcuts } from '../../context/ShortcutsContext';
 import { fetchInvoiceById, fetchInvoiceComposerData, fetchLedgerAddresses, fetchTcsSections } from '../../features/invoices/api';
-import { EMPTY_TCS_FORM, buildTcsPayload, findTcsSection, reconcileTcsSection, tcsFormForCopy, tcsFormFromDocument, tcsFormOnBuyerChange, tcsTotalsInput, type TcsFormState } from './tcsForm';
+import { EMPTY_TCS_FORM, buildTcsPayload, effectiveTcsRate, findTcsSection, reconcileTcsSection, tcsFormForCopy, tcsFormFromDocument, tcsFormOnBuyerChange, tcsTotalsInput, type TcsFormState } from './tcsForm';
 import { editingInvoiceTitle } from './editingTitle';
 import { lineNeedsSerials, unserialedProductIds } from './serialLines';
 import TcsFields from './components/TcsFields';
+import ComposerTotals from './components/ComposerTotals';
+import { BILL_DISCOUNT_ID, billDiscountHint, copiedDocumentNote, oldDocumentNote } from './composerTotalsText';
 import { createQuotation, fetchConversionDraft, fetchQuotationById, updateQuotation } from '../../features/quotations/api';
 import { quotationQueryKeys } from '../../features/quotations/queryKeys';
 import { convertDeliveryChallan, fetchChallanConversionDraft } from '../../features/deliveryChallans/api';
@@ -68,6 +71,7 @@ import { FieldError, useFormFieldErrors } from '../../hooks/useFormFieldErrors';
 import { createItem, type InvoiceFormItem } from './types';
 import { defaultPaymentAccountId } from '../../utils/cashBank';
 import {
+  billDiscountProblem,
   checkProblem,
   composerSubmitReason,
   discountProblem,
@@ -154,6 +158,17 @@ export default function InvoicesPage() {
   const [applyRoundOff, setApplyRoundOff] = useState(initialPrefs.applyRoundOff);
   const [invoiceDiscountType, setInvoiceDiscountType] = useState<'percentage' | 'net'>(initialPrefs.invoiceDiscountType);
   const [invoiceDiscountValue, setInvoiceDiscountValue] = useState('');
+  /* The bill discount comes off before GST on every new document (#1154). A document
+     saved before then with a discount after GST keeps that way when edited, unless the
+     user switches it (savedAfterGst is the note and its link). */
+  const [discountMode, setDiscountMode] = useState<DiscountMode>('before_tax');
+  const [savedAfterGst, setSavedAfterGst] = useState(false);
+  /** A new invoice copied from a document that took its discount after GST: the source and its total. */
+  const [copiedAfterGst, setCopiedAfterGst] = useState<{ source: 'quotation' | 'invoice'; total: number } | null>(null);
+  /** "+ Add discount" was tapped, or the document has a discount: the amount box shows. */
+  const [billDiscountOpen, setBillDiscountOpen] = useState(false);
+  const billDiscountInputRef = useRef<HTMLInputElement | null>(null);
+  const focusBillDiscountRef = useRef(false);
   const [supplierInvoiceNumber, setSupplierInvoiceNumber] = useState('');
   /* TCS (#769): section, rate and amount as picked. The rate and amount follow
      the suggestion and the computed value until they are typed over. */
@@ -509,16 +524,34 @@ export default function InvoicesPage() {
     setTcsForm((current) => tcsFormOnBuyerChange(current, tcsSection, previous, selectedLedger));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedLedger?.id]);
+  const totalsOptions = { taxInclusive, applyRoundOff, interstateSupply: composerInterstateSupply, tcs: tcsInput };
+  const typedBillDiscount = { type: invoiceDiscountType, value: Number(invoiceDiscountValue) };
+  const totalsAsTyped = computeInvoiceTotals(totalLines, { ...totalsOptions, discountMode, invoiceDiscount: typedBillDiscount });
+  /* Before GST the discount comes off the subtotal, so a flat amount can't be more than it.
+     A document kept after GST is capped at its total, as it always was. */
+  const billSubtotal = totalsAsTyped.subtotal ?? totalsAsTyped.taxableAmount;
+  const hasTotalsBlock = voucherType !== 'payment' && voucherType !== 'receipt';
+  const billProblem = hasTotalsBlock
+    ? billDiscountProblem(invoiceDiscountValue, invoiceDiscountType, discountMode === 'before_tax' ? billSubtotal : Number.POSITIVE_INFINITY)
+    : null;
+  const billSubtotalText = formatCurrency(billSubtotal, activeCurrencyCode);
+  // While the value can't be used, every row is worked out without it, so none goes negative.
+  const totals = billProblem
+    ? computeInvoiceTotals(totalLines, { ...totalsOptions, discountMode })
+    : totalsAsTyped;
   const {
-    invoiceDiscountAmount, afterDiscountTotal, tcsAmount: tcsPreviewAmount,
+    tcsAmount: tcsPreviewAmount,
     roundOffAmount: roundOffPreviewAmount, total: projectedTotalAmount,
-  } = computeInvoiceTotals(totalLines, {
-    taxInclusive,
-    invoiceDiscount: { type: invoiceDiscountType, value: Number(invoiceDiscountValue) },
-    applyRoundOff,
-    interstateSupply: composerInterstateSupply,
-    tcs: tcsInput,
-  });
+  } = totals;
+  const billDiscountShown = discountMode === 'before_tax' ? (totals.billDiscountAmount ?? 0) : totals.invoiceDiscountAmount;
+  /* For the notes: this bill both ways, as it now stands. */
+  const showsWayNote = savedAfterGst || (copiedAfterGst !== null && discountMode === 'before_tax');
+  const afterGstTotal = showsWayNote
+    ? computeInvoiceTotals(totalLines, { ...totalsOptions, discountMode: 'after_tax', invoiceDiscount: typedBillDiscount }).total
+    : 0;
+  const beforeGstTotal = showsWayNote
+    ? computeInvoiceTotals(totalLines, { ...totalsOptions, discountMode: 'before_tax', invoiceDiscount: typedBillDiscount }).total
+    : 0;
 
   /* A section chosen for one date may not be in force on another. */
   useEffect(() => {
@@ -543,12 +576,11 @@ export default function InvoicesPage() {
     !isQuote && dueDateMode !== 'none' ? 'due date' : '',
     supplierInvoiceNumber.trim() || referenceNotes.trim() ? 'reference' : '',
     isSaleLike && !shippingSameAsBilling ? 'shipping address' : '',
-    Number(invoiceDiscountValue) > 0 ? 'discount' : '',
     applyRoundOff ? 'round off' : '',
   ].filter(Boolean);
   const advancedSummary = advancedInUse.length > 0
     ? `In use: ${advancedInUse.join(' · ')}`
-    : isQuote ? 'Reference, shipping address, discount, round off' : 'Due date, reference, shipping address, discount, round off';
+    : isQuote ? 'Reference, shipping address, round off' : 'Due date, reference, shipping address, round off';
 
   /* Never hide a setting that is in use: an invoice opened for editing can
      carry any of these, and a closed disclosure would put them out of sight
@@ -557,6 +589,12 @@ export default function InvoicesPage() {
   useEffect(() => {
     if (advancedCount > 0) setShowAdvanced(true);
   }, [advancedCount]);
+
+  useEffect(() => {
+    if (!billDiscountOpen || !focusBillDiscountRef.current) return;
+    focusBillDiscountRef.current = false;
+    billDiscountInputRef.current?.focus();
+  }, [billDiscountOpen]);
 
   function addItem() {
     setItems((current) => [...current, createItem(nextItemId)]);
@@ -616,6 +654,7 @@ export default function InvoicesPage() {
       submitProblems.push({ kind: 'serial', line: index + 1 });
     }
   });
+  if (fieldErrors.errors[BILL_DISCOUNT_ID] && billProblem) submitProblems.push({ kind: billProblem, subtotal: billSubtotalText });
   const submitReason = composerSubmitReason(submitProblems, counterparty.noun);
 
   /**
@@ -908,6 +947,10 @@ export default function InvoicesPage() {
     // Per-invoice, never remembered: a carried-over discount would silently
     // reduce the next invoice's total.
     setInvoiceDiscountValue('');
+    setDiscountMode('before_tax');
+    setSavedAfterGst(false);
+    setCopiedAfterGst(null);
+    setBillDiscountOpen(false);
     setTcsForm(EMPTY_TCS_FORM);
     setTcsHadSaved(false);
     setTcsNotice('');
@@ -961,6 +1004,33 @@ export default function InvoicesPage() {
     setNewShippingAddress(address);
   }
 
+  /**
+   * The bill discount of a document being edited, duplicated or converted (#1154).
+   * An edit keeps the document's own way; a document saved with a discount after GST
+   * says so in a note. A copy is a new document, so before GST, with a note naming
+   * the source's total when that took its discount after GST. A document with no
+   * discount gives the same figures both ways, so it is before GST from now on.
+   */
+  function loadBillDiscount(
+    document: { discount_type?: string | null; discount_value?: number | null; discount_mode?: DiscountMode },
+    { editing, copiedFrom }: { editing: boolean; copiedFrom?: { source: 'quotation' | 'invoice'; total: number } },
+  ) {
+    const hasDiscount = Number(document.discount_value) > 0;
+    const afterGst = hasDiscount && (document.discount_mode ?? 'after_tax') === 'after_tax';
+    setInvoiceDiscountType((document.discount_type as 'percentage' | 'net') || 'percentage');
+    setInvoiceDiscountValue(document.discount_value != null ? String(document.discount_value) : '');
+    setBillDiscountOpen(hasDiscount);
+    setDiscountMode(editing && afterGst ? 'after_tax' : 'before_tax');
+    setSavedAfterGst(editing && afterGst);
+    setCopiedAfterGst(!editing && afterGst && copiedFrom ? copiedFrom : null);
+  }
+
+  function openBillDiscount() {
+    setBillDiscountOpen(true);
+    // On a phone the keyboard would jump up over the block.
+    focusBillDiscountRef.current = window.matchMedia('(pointer: fine)').matches;
+  }
+
   function startEditingQuotation(quotation: Quotation) {
     setError('');
     setSuccess('');
@@ -978,8 +1048,7 @@ export default function InvoicesPage() {
     setTcsForm(tcsFormFromDocument(quotation));
     setTcsHadSaved(quotation.tcs_section_id != null);
     setTcsNotice('');
-    setInvoiceDiscountType((quotation.discount_type as 'percentage' | 'net') || 'percentage');
-    setInvoiceDiscountValue(quotation.discount_value != null ? String(quotation.discount_value) : '');
+    loadBillDiscount(quotation, { editing: true });
     setInvoiceDate(quotation.quotation_date);
     setValidUntil(quotation.valid_until ?? '');
     validUntilEditedRef.current = true;
@@ -1021,8 +1090,10 @@ export default function InvoicesPage() {
     // The invoice is new: TCS shows and is sent only while the company has TCS on.
     setTcsHadSaved(false);
     setTcsNotice('');
-    setInvoiceDiscountType(invoice.discount_type || 'percentage');
-    setInvoiceDiscountValue(invoice.discount_value != null ? String(invoice.discount_value) : '');
+    loadBillDiscount(
+      { ...invoice, discount_mode: draft.quotation_discount_mode ?? 'after_tax' },
+      { editing: false, copiedFrom: { source: 'quotation', total: draft.quotation_total_amount ?? 0 } },
+    );
     const dates = conversionDateDefaults(readInvoiceComposerPrefs());
     setInvoiceDate(dates.invoiceDate);
     setDueDateMode(dates.dueDateMode);
@@ -1066,8 +1137,7 @@ export default function InvoicesPage() {
     setTcsForm(tcsFormFromDocument(invoice));
     setTcsHadSaved(false);
     setTcsNotice('');
-    setInvoiceDiscountType(invoice.discount_type || 'percentage');
-    setInvoiceDiscountValue(invoice.discount_value != null ? String(invoice.discount_value) : '');
+    loadBillDiscount({ ...invoice, discount_mode: 'before_tax' }, { editing: false });
     const dates = conversionDateDefaults(readInvoiceComposerPrefs());
     setInvoiceDate(dates.invoiceDate);
     setDueDateMode(dates.dueDateMode);
@@ -1115,6 +1185,7 @@ export default function InvoicesPage() {
         apply_round_off: applyRoundOff,
         discount_type: invoiceDiscountType || null,
         discount_value: invoiceDiscountValue ? Number(invoiceDiscountValue) : null,
+        discount_mode: discountMode,
         ...(tcsVisible ? buildTcsPayload(tcsForm, tcsSection, selectedLedger, tcsHadSaved) : {}),
         shipping_address_same_as_billing: shippingSameAsBilling,
         shipping_address_id: (!shippingSameAsBilling && selectedShippingAddressId !== null) ? selectedShippingAddressId : null,
@@ -1167,8 +1238,7 @@ export default function InvoicesPage() {
     setTcsForm(tcsFormFromDocument(invoice));
     setTcsHadSaved(invoice.tcs_section_id != null);
     setTcsNotice('');
-    setInvoiceDiscountType((invoice.discount_type as 'percentage' | 'net') || 'percentage');
-    setInvoiceDiscountValue(invoice.discount_value != null ? String(invoice.discount_value) : '');
+    loadBillDiscount(invoice, { editing: true });
     setSelectedLedgerId(String(invoice.ledger_id));
     setPlaceOfSupplyChoice(invoice.place_of_supply ? { ledgerId: String(invoice.ledger_id), code: invoice.place_of_supply } : null);
     setSavedPlaceOfSupply(invoice.place_of_supply ? { ledgerId: String(invoice.ledger_id), code: invoice.place_of_supply } : null);
@@ -1232,8 +1302,7 @@ export default function InvoicesPage() {
     // A duplicate is a new invoice: it carries TCS only while the company has TCS on.
     setTcsHadSaved(false);
     setTcsNotice('');
-    setInvoiceDiscountType((invoice.discount_type as 'percentage' | 'net') || 'percentage');
-    setInvoiceDiscountValue(invoice.discount_value != null ? String(invoice.discount_value) : '');
+    loadBillDiscount(invoice, { editing: false, copiedFrom: { source: 'invoice', total: Number(invoice.total_amount) || 0 } });
     setSelectedLedgerId(String(invoice.ledger_id));
     setPlaceOfSupplyChoice(invoice.place_of_supply ? { ledgerId: String(invoice.ledger_id), code: invoice.place_of_supply } : null);
     setSavedPlaceOfSupply(invoice.place_of_supply ? { ledgerId: String(invoice.ledger_id), code: invoice.place_of_supply } : null);
@@ -1359,6 +1428,7 @@ export default function InvoicesPage() {
         apply_round_off: applyRoundOff,
         discount_type: invoiceDiscountType || null,
         discount_value: invoiceDiscountValue ? Number(invoiceDiscountValue) : null,
+        discount_mode: discountMode,
         ...(tcsVisible && voucherType === 'sales' ? buildTcsPayload(tcsForm, tcsSection, selectedLedger, tcsHadSaved) : {}),
         ...(voucherType === 'sales' ? {
           place_of_supply: placeOfSupply || null,
@@ -2021,55 +2091,6 @@ export default function InvoicesPage() {
                   </p>
                 ) : null}
 
-                {/* Invoice-level discount */}
-                <div className="field" style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: 0, flexWrap: 'wrap' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <input
-                      id="invoice-discount-percentage"
-                      type="radio"
-                      name="inv-disc-type"
-                      value="percentage"
-                      checked={invoiceDiscountType === 'percentage'}
-                      onChange={() => {
-                        setInvoiceDiscountType('percentage');
-                        updateInvoiceComposerPrefs({ invoiceDiscountType: 'percentage' });
-                      }}
-                    />
-                    <label htmlFor="invoice-discount-percentage" style={{ marginBottom: 0, cursor: 'pointer', fontSize: '13px' }}>%</label>
-                    <input
-                      id="invoice-discount-net"
-                      type="radio"
-                      name="inv-disc-type"
-                      value="net"
-                      checked={invoiceDiscountType === 'net'}
-                      onChange={() => {
-                        setInvoiceDiscountType('net');
-                        updateInvoiceComposerPrefs({ invoiceDiscountType: 'net' });
-                      }}
-                    />
-                    <label htmlFor="invoice-discount-net" style={{ marginBottom: 0, cursor: 'pointer', fontSize: '13px' }}>Flat</label>
-                  </div>
-                  <label htmlFor="invoice-discount-value" style={{ marginBottom: 0, cursor: 'pointer', fontSize: '13px' }}>
-                    Invoice discount:
-                  </label>
-                  <input
-                    id="invoice-discount-value"
-                    className="input"
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    max={invoiceDiscountType === 'percentage' ? '100' : undefined}
-                    value={invoiceDiscountValue}
-                    onChange={(e) => setInvoiceDiscountValue(e.target.value)}
-                    placeholder={invoiceDiscountType === 'percentage' ? 'e.g. 5%' : 'e.g. 100.00'}
-                    style={{ width: '120px' }}
-                  />
-                </div>
-                {invoiceDiscountValue && Number(invoiceDiscountValue) > 0 ? (
-                  <p className="muted-text" style={{ marginTop: 0 }}>
-                    Discount: {formatCurrency(invoiceDiscountAmount, activeCurrencyCode)} · After discount: {formatCurrency(afterDiscountTotal, activeCurrencyCode)}
-                  </p>
-                ) : null}
               </div>
             ) : null}
 
@@ -2423,6 +2444,66 @@ export default function InvoicesPage() {
                   Add stock for {stockShortage.productName}
                 </button>
               </div>
+            ) : null}
+
+            {hasTotalsBlock ? (
+              <ComposerTotals
+                mode={discountMode}
+                currencyCode={activeCurrencyCode}
+                subtotal={billSubtotal}
+                discount={{
+                  open: billDiscountOpen || invoiceDiscountValue.trim() !== '',
+                  type: invoiceDiscountType,
+                  value: invoiceDiscountValue,
+                  amount: billDiscountShown,
+                  invalid: billProblem !== null,
+                  validity: billProblem ? (fieldProblemMessage(billProblem, billSubtotalText) ?? 'Check the discount') : '',
+                  error: (
+                    <FieldError
+                      id={BILL_DISCOUNT_ID}
+                      errors={fieldErrors.errors}
+                      text={billProblem ? fieldProblemMessage(billProblem, billSubtotalText) : null}
+                    />
+                  ),
+                  onOpen: openBillDiscount,
+                  onTypeChange: (type) => {
+                    setInvoiceDiscountType(type);
+                    updateInvoiceComposerPrefs({ invoiceDiscountType: type });
+                  },
+                  onValueChange: setInvoiceDiscountValue,
+                  inputRef: billDiscountInputRef,
+                }}
+                taxableAmount={totals.taxableAmount}
+                gstRows={composerInterstateSupply
+                  ? [{ label: 'IGST', amount: gstHeads(totals.taxAmount, true).igstAmount }]
+                  : [
+                    { label: 'CGST', amount: gstHeads(totals.taxAmount, false).cgstAmount },
+                    { label: 'SGST', amount: gstHeads(totals.taxAmount, false).sgstAmount },
+                  ]}
+                tcs={tcsSection && tcsPreviewAmount !== undefined
+                  ? { label: tcsLabel(effectiveTcsRate(tcsForm, tcsSection, selectedLedger), tcsSection.section_ref), amount: tcsPreviewAmount }
+                  : null}
+                roundOff={applyRoundOff ? roundOffPreviewAmount : null}
+                total={projectedTotalAmount}
+                hint={discountMode === 'before_tax' && !billProblem && billDiscountShown > 0
+                  ? billDiscountHint(totalLines.map((line) => line.gstRate))
+                  : null}
+                note={savedAfterGst ? {
+                  text: oldDocumentNote(isQuote ? 'quotation' : 'invoice', discountMode === 'before_tax', {
+                    from: formatCurrency(afterGstTotal, activeCurrencyCode),
+                    to: formatCurrency(beforeGstTotal, activeCurrencyCode),
+                  }),
+                  action: discountMode === 'after_tax'
+                    ? { label: 'Take the discount before GST instead', onClick: () => setDiscountMode('before_tax') }
+                    : { label: 'Keep it after GST', onClick: () => setDiscountMode('after_tax') },
+                } : copiedAfterGst && discountMode === 'before_tax' ? {
+                  text: copiedDocumentNote(
+                    copiedAfterGst.source,
+                    formatCurrency(copiedAfterGst.total, activeCurrencyCode),
+                    formatCurrency(projectedTotalAmount, activeCurrencyCode),
+                  ),
+                } : null}
+              />
             ) : null}
 
             <div className="button-row">
