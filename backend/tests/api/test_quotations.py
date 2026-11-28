@@ -1119,14 +1119,17 @@ def test_restoring_over_a_later_decline_leaves_no_decline_behind(setup):
     assert detail["declined_at"] is None
 
 
-def test_restoring_after_the_quote_was_cancelled_leaves_it_cancelled(setup):
+def test_restoring_after_the_quote_was_cancelled_marks_it_converted(setup):
     client, ledger, product = setup
     quote = create_quotation(client, ledger["id"], product["id"])
     invoice = ok(convert(client, quote["id"]))
     ok(client.delete(f"/api/invoices/{invoice['id']}"))
     ok(client.post(f"/api/quotations/{quote['id']}/cancel"))
     ok(client.post(f"/api/invoices/{invoice['id']}/restore"))
-    assert ok(client.get(f"/api/quotations/{quote['id']}"))["status"] == "cancelled"
+    detail = ok(client.get(f"/api/quotations/{quote['id']}"))
+    assert detail["status"] == "converted"
+    assert detail["converted_invoice_id"] == invoice["id"]
+    assert detail["cancelled_at"] is None
 
 
 def test_the_index_is_the_backstop(setup, db_session):

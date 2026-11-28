@@ -888,13 +888,13 @@ def require_restorable(db: Session, quotation: Quotation | None, invoice: Invoic
 def close_after_invoice_restored(quotation: Quotation | None) -> None:
     """The invoice is live again, so its quotation is converted again.
 
-    A quotation cancelled in the meantime stays cancelled: nobody asked to revive the
-    offer, only the invoice. One declined in the meantime does not: a live invoice
-    outranks that answer, and its decline would otherwise contradict the status.
+    A live invoice also supersedes a cancellation or decline recorded while it
+    was cancelled. Leaving either state in place would hide its source document.
     """
-    if quotation is None or quotation.status == STATUS_CANCELLED:
+    if quotation is None:
         return
     quotation.status = STATUS_CONVERTED
     quotation.declined_at = None
+    quotation.cancelled_at = None
     quotation.converted_at = datetime.utcnow()
     quotation.updated_at = quotation.converted_at

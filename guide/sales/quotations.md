@@ -49,6 +49,8 @@ Filter by status, search by number or party, or narrow to one document type.
 
 The invoice takes stock out, uses the next invoice number, and marks the quotation as converted.
 
+Restoring a cancelled invoice marks its source quotation or proforma as converted again, even if you cancelled the quotation in the meantime. Its existing share link becomes available again unless you revoked it.
+
 Good to know:
 
 - A quoted price is kept even if the product's price has changed. The GST rate uses the current rate.

@@ -123,6 +123,24 @@ def test_cancelled_quotation_cannot_get_a_new_link(setup):
     assert response.status_code == 404
 
 
+@pytest.mark.parametrize("document_type", ["quotation", "proforma"])
+def test_restoring_invoice_reopens_cancelled_source_share(setup, document_type):
+    client, ledger, product = setup
+    quote = create_quotation(client, ledger["id"], product["id"], document_type=document_type)
+    token = _link(client, quote)["token"]
+    invoice = ok(convert(client, quote["id"]))
+    ok(client.delete(f"/api/invoices/{invoice['id']}"))
+    ok(client.post(f"/api/quotations/{quote['id']}/cancel"))
+    assert client.get(f"/s/{token}").status_code == 404
+
+    ok(client.post(f"/api/invoices/{invoice['id']}/restore"))
+    page = client.get(f"/s/{token}")
+    assert page.status_code == 200
+    assert quote["quotation_number"] in page.text
+    assert client.get(f"/s/{token}/document.html").status_code == 200
+    assert client.get(f"/s/{token}/pdf").status_code == 200
+
+
 def test_unknown_quotation_cannot_get_a_link(setup):
     client, _, _ = setup
     response = client.post("/api/share/", json={"resource_type": "quotation", "resource_id": 999})
