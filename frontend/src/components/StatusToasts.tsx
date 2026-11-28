@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { DIALOG_SELECTOR, shouldDismissOnDialogOpen } from '../utils/toastDialog';
+import { DIALOG_SELECTOR, shouldDismissOnDialogOpen, watchUserInput } from '../utils/toastDialog';
 import { ERROR_TOAST_MS, SUCCESS_TOAST_MS, scheduleToastDismiss } from '../utils/toastTiming';
 
 type ToastKind = 'success' | 'error';
@@ -66,14 +66,17 @@ export default function StatusToasts({
     return scheduleToastDismiss(successDurationMs, () => onClearSuccessRef.current());
   }, [success, successDurationMs]);
 
-  // A success already showing when a dialog opens is cleared so it cannot cover the dialog.
-  // The dialog count is read when this success is first shown (after the commit, so a dialog
-  // rendered in the same pass counts as already open); only a later rise clears it.
+  // A success already showing when the user opens a dialog is cleared so it cannot cover the
+  // dialog (issue 1110). The dialog count is read when this success is first shown (after the
+  // commit, so a dialog rendered in the same pass counts as already open); only a later rise
+  // clears it, and only after a tap, click or key press since the toast showed. A dialog that
+  // opens by itself, like the challan preview after its fetch, keeps the toast (issue 1129).
   useEffect(() => {
     if (!success || typeof MutationObserver === 'undefined') {
       return undefined;
     }
 
+    const userInput = watchUserInput(document);
     let dialogCount = document.querySelectorAll(DIALOG_SELECTOR).length;
     const observer = new MutationObserver(() => {
       const dialogCountAfter = document.querySelectorAll(DIALOG_SELECTOR).length;
@@ -82,6 +85,7 @@ export default function StatusToasts({
         successShownBeforeOpen: true,
         dialogCountBefore: dialogCount,
         dialogCountAfter,
+        userActedSinceShown: userInput.acted(),
       });
       dialogCount = dialogCountAfter;
       if (dismiss) {
@@ -89,7 +93,10 @@ export default function StatusToasts({
       }
     });
     observer.observe(document.body, { childList: true, subtree: true });
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      userInput.stop();
+    };
   }, [success]);
 
   useEffect(() => {

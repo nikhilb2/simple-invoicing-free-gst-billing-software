@@ -76,7 +76,7 @@ test.describe('Delivery challans', () => {
     await selectComboboxOption(page, 'challan-product-1', sku);
     await page.fill('#challan-quantity-1', '10');
     await page.click('button:has-text("Save challan")');
-    await expectSuccess(page, 'saved');
+    await expectSuccess(page, /Delivery challan \S+ saved\./);
 
     const preview = page.getByRole('dialog', { name: /Delivery Challan DC/ });
     await expect(preview).toBeVisible();
@@ -102,7 +102,7 @@ test.describe('Delivery challans', () => {
     await expect(page.locator('#challan-quantity-1')).toHaveValue('10');
     await page.fill('#challan-quantity-1', '12');
     await page.click('button:has-text("Save challan")');
-    await expectSuccess(page, 'updated');
+    await expectSuccess(page, /Delivery challan \S+ updated\./);
     await closePreview(page);
     expect(await stockOf(page, sku)).toBe(38);
 
