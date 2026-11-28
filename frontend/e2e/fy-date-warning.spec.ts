@@ -1,4 +1,4 @@
-import { test, expect, uniqueGstin, expectSuccess, clickNavLink } from './fixtures';
+import { test, expect, uniqueGstin, expectSuccess, clickNavLink, ensureAndActivateFY } from './fixtures';
 
 /**
  * Financial year used for all warning tests.
@@ -22,31 +22,7 @@ const AFTER_FY_WARNING = /outside the active financial year|isn't set up yet/;
  * Creates it if missing, then clicks it in the nav switcher to activate it.
  */
 async function activateTestFY(page: import('@playwright/test').Page) {
-  const fyButton = page.getByTestId('fy-switcher');
-  await fyButton.click();
-  const listbox = page.locator('[role="listbox"]');
-  await expect(listbox).toBeVisible({ timeout: 5_000 });
-
-  const existingOption = listbox.locator(`button:has-text("${TEST_FY_LABEL}")`).first();
-  if (!(await existingOption.isVisible())) {
-    // Create the FY
-    await listbox.locator('button:has-text("+ New FY")').click();
-    const dialog = page.locator('[role="dialog"][aria-label="Create new financial year"]');
-    await expect(dialog).toBeVisible({ timeout: 5_000 });
-    await dialog.locator('input[type="number"]').fill(String(TEST_FY_START_YEAR));
-    await dialog.locator('button:has-text("Create")').click();
-    await expect(dialog).not.toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
-    // Reopen dropdown to activate
-    await fyButton.click();
-    await expect(listbox).toBeVisible({ timeout: 5_000 });
-  }
-
-  // Click the FY button to activate it
-  await listbox.locator(`button:has-text("${TEST_FY_LABEL}")`).first().click();
-  // Dismiss dropdown if still open
-  if (await listbox.isVisible()) {
-    await page.locator('h1').first().click();
-  }
+  await ensureAndActivateFY(page, TEST_FY_START_YEAR, TEST_FY_LABEL);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

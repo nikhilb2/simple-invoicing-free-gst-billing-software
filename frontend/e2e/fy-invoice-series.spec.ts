@@ -6,7 +6,7 @@
  *
  * We use the far-future years 2031/2032 to avoid conflicts with real data.
  */
-import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption, clickNavLink, createProduct, adjustInventory, chooseVoucherType } from './fixtures';
+import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption, clickNavLink, createProduct, adjustInventory, chooseVoucherType, ensureAndActivateFY } from './fixtures';
 
 test.use({ timezoneId: 'Asia/Kolkata' });
 
@@ -20,43 +20,6 @@ const ACTIVE_FY_LABEL = '2032-33';
 const ACTIVE_FY_DATE = '2032-10-15'; // inside 2032-04-01 … 2033-03-31
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-/**
- * Ensure a financial year exists and activate it.
- * Creates the FY if missing, then clicks it to activate.
- * Clicking an FY option calls setFyDropdownOpen(false), so the dropdown is
- * always closed when this function returns — safe to call multiple times in
- * sequence.
- */
-async function ensureAndActivateFY(
-  page: import('@playwright/test').Page,
-  startYear: number,
-  label: string,
-) {
-  const fyButton = page.getByTestId('fy-switcher');
-  await fyButton.click();
-  const listbox = page.locator('[role="listbox"]');
-  await expect(listbox).toBeVisible({ timeout: 5_000 });
-
-  const existing = listbox.locator(`button:has-text("${label}")`).first();
-  if (!(await existing.isVisible())) {
-    await listbox.locator('button:has-text("+ New FY")').click();
-    const dialog = page.locator('[role="dialog"][aria-label="Create new financial year"]');
-    await expect(dialog).toBeVisible({ timeout: 5_000 });
-    await dialog.locator('input[type="number"]').fill(String(startYear));
-    await dialog.locator('button:has-text("Create")').click();
-    await expect(dialog).not.toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
-    // Reopen the dropdown to activate
-    await fyButton.click();
-    await expect(listbox).toBeVisible({ timeout: 5_000 });
-  }
-
-  // Activate by clicking the FY option — this also calls setFyDropdownOpen(false)
-  await listbox.locator(`button:has-text("${label}")`).first().click();
-  if (await listbox.isVisible()) {
-    await page.locator('h1').first().click();
-  }
-}
 
 async function configureActiveFySalesSeries(page: import('@playwright/test').Page) {
   await page.goto('/settings/company');
