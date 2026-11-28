@@ -19,9 +19,20 @@ export type ComposerProblemKind =
   | 'discount-min'
   | 'discount-max'
   | 'discount-check'
-  | 'serial';
+  | 'serial'
+  | 'bill-discount-min'
+  | 'bill-discount-max'
+  | 'bill-discount-subtotal'
+  | 'bill-discount-check';
 
-export type ComposerProblem = { kind: ComposerProblemKind; line?: number };
+/**
+ * `subtotal` is the formatted subtotal a flat bill discount went over
+ * ('bill-discount-subtotal'). The bill discount kinds have no line: they sit in
+ * the totals block under the lines (#1154), so they come after every line.
+ */
+export type ComposerProblem = { kind: ComposerProblemKind; line?: number; subtotal?: string };
+
+export type BillDiscountProblemKind = Extract<ComposerProblemKind, `bill-discount-${string}`>;
 
 export type LineField = 'product' | 'quantity' | 'price' | 'discount';
 
@@ -41,7 +52,13 @@ const FIELD_RANK: Record<ComposerProblemKind, number> = {
   'discount-max': 4,
   'discount-check': 4,
   serial: 5,
+  'bill-discount-min': 6,
+  'bill-discount-max': 6,
+  'bill-discount-subtotal': 6,
+  'bill-discount-check': 6,
 };
+
+const isBillDiscount = (kind: ComposerProblemKind): kind is BillDiscountProblemKind => kind.startsWith('bill-discount-');
 
 export function quantityProblem(value: string, allowDecimal: boolean): ComposerProblemKind | null {
   if (value.trim() === '') return 'quantity-missing';
@@ -70,6 +87,20 @@ export function discountProblem(value: string, type: string): ComposerProblemKin
   return null;
 }
 
+/**
+ * The bill discount in the totals block (#1154). It comes off the subtotal before
+ * GST, so a flat amount can't be more than the subtotal; equal to it is allowed.
+ */
+export function billDiscountProblem(value: string, type: string, subtotal: number): BillDiscountProblemKind | null {
+  if (value.trim() === '') return null;
+  const discount = Number(value);
+  if (!Number.isFinite(discount)) return 'bill-discount-check';
+  if (discount < 0) return 'bill-discount-min';
+  if (type === 'percentage') return discount > 100 ? 'bill-discount-max' : null;
+  // Compared in paise, as the amount is taken to the paisa.
+  return Math.round(discount * 100) > Math.round(subtotal * 100) ? 'bill-discount-subtotal' : null;
+}
+
 /** The fallback when the browser refuses a value none of the rules above name (say a price with three decimals). */
 export function checkProblem(field: LineField): ComposerProblemKind {
   if (field === 'quantity') return 'quantity-check';
@@ -79,7 +110,7 @@ export function checkProblem(field: LineField): ComposerProblemKind {
 }
 
 /** The message directly under the field. Null for the kinds that have their own (customer, serial) or keep the browser's (check). */
-export function fieldProblemMessage(kind: ComposerProblemKind): string | null {
+export function fieldProblemMessage(kind: ComposerProblemKind, subtotal = ''): string | null {
   switch (kind) {
     case 'product': return 'Pick a product from the list';
     case 'quantity-missing': return 'Enter a quantity';
@@ -90,6 +121,9 @@ export function fieldProblemMessage(kind: ComposerProblemKind): string | null {
     case 'price-min': return "Price can't be less than 0";
     case 'discount-min': return "Discount can't be below 0";
     case 'discount-max': return "Discount can't be more than 100%";
+    case 'bill-discount-min': return "Discount can't be below 0";
+    case 'bill-discount-max': return "Discount can't be more than 100%";
+    case 'bill-discount-subtotal': return `Discount can't be more than the subtotal (${subtotal})`;
     default: return null;
   }
 }
@@ -111,14 +145,21 @@ function stripSentence(problem: ComposerProblem, noun: string): string {
     case 'discount-max': return `Discount can't be more than 100% for line ${line}`;
     case 'discount-check': return `Check the discount for line ${line}`;
     case 'serial': return missingSerialsMessage([line]).replace(/\.$/, '');
+    case 'bill-discount-check': return 'Check the discount';
+    default: return fieldProblemMessage(problem.kind, problem.subtotal) ?? 'Check the discount';
   }
 }
 
-/** Customer first, then line by line, each line's fields left to right and its serials last. */
+/** Customer first, then line by line, each line's fields left to right and its serials last, then the bill discount. */
 export function inPageOrder(problems: ComposerProblem[]): ComposerProblem[] {
+  const lineOf = (problem: ComposerProblem) => {
+    if (problem.kind === 'customer') return 0;
+    if (isBillDiscount(problem.kind)) return Number.POSITIVE_INFINITY;
+    return problem.line ?? 0;
+  };
   return [...problems].sort((a, b) => {
-    const lineA = a.kind === 'customer' ? 0 : a.line ?? 0;
-    const lineB = b.kind === 'customer' ? 0 : b.line ?? 0;
+    const lineA = lineOf(a);
+    const lineB = lineOf(b);
     return lineA - lineB || FIELD_RANK[a.kind] - FIELD_RANK[b.kind];
   });
 }

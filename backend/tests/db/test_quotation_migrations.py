@@ -25,6 +25,7 @@ MIGRATIONS = [
     "20261104000003_add_source_quotation_id_to_invoices",
     # Later migrations that add quotation columns, so the shape still matches the models.
     "20261108000201_add_tcs_to_sales_documents",
+    "20261128000001_bill_discount_before_gst",
 ]
 
 pytestmark = pytest.mark.skipif(

@@ -8,6 +8,7 @@ from io import StringIO
 import pytest
 
 from src.models.company import CompanyProfile
+from tests.api.legacy_discount import create_invoice_after_gst
 from tests.api.test_tcs_invoices import SCRAP_2025, _section_id, _seed_sections
 
 
@@ -38,13 +39,18 @@ def _create_ledger(client, name):
     return response.json()["id"]
 
 
-def _create_invoice(client, ledger_id, items, *, voucher_type="sales", invoice_date=None, **extra):
+def _create_invoice(client, ledger_id, items, *, voucher_type="sales", invoice_date=None, after_gst=False, **extra):
     """Create an invoice. Omitting invoice_date lets the column default to
     datetime.utcnow — which, unlike the API's date-only input, carries a real
-    time component (see test_invoice_dated_today_is_included)."""
+    time component (see test_invoice_dated_today_is_included).
+
+    ``after_gst`` makes it an invoice saved before #1154, its bill discount taken
+    after GST, so the report figures for those stay pinned."""
     payload = {"voucher_type": voucher_type, "ledger_id": ledger_id, "items": items, **extra}
     if invoice_date is not None:
         payload["invoice_date"] = invoice_date.date().isoformat()
+    if after_gst:
+        return create_invoice_after_gst(client, payload)
     response = client.post("/api/invoices/", json=payload)
     assert response.status_code == 200, response.text
     return response.json()
@@ -352,7 +358,7 @@ class TestProductSales:
         _create_invoice(client, ledger, [
             {"product_id": product, "quantity": 1, "unit_price": 1000, "gst_rate": 18},
         ], invoice_date=datetime(2026, 10, 10, 12, 0),
-            discount_type="net", discount_value=118)
+            discount_type="net", discount_value=118, after_gst=True)
 
         res = client.get("/api/analytics/sales-by-product", params={"from_date": "2026-10-01", "to_date": "2026-10-31"})
         assert res.status_code == 200, res.text
@@ -387,7 +393,7 @@ class TestProductSales:
             invoice = _create_invoice(client, ledger, [
                 {"product_id": product, "quantity": 1, "unit_price": 1000, "gst_rate": 18},
             ], invoice_date=datetime(2026, 10, day, 12, 0),
-                discount_type="net", discount_value=discount)
+                discount_type="net", discount_value=discount, after_gst=True)
             assert invoice["total_amount"] == invoice_total
             row = client.get("/api/analytics/sales-by-product", params=params).json()["rows"][0]
             assert row["total_revenue"] == expected_total
@@ -402,7 +408,7 @@ class TestProductSales:
             {"product_id": exempt, "quantity": 1, "unit_price": 1000, "gst_rate": 0},
             {"product_id": taxed, "quantity": 1, "unit_price": 1000, "gst_rate": 28},
         ], invoice_date=datetime(2026, 10, 10, 12, 0),
-            discount_type="net", discount_value=228)
+            discount_type="net", discount_value=228, after_gst=True)
 
         res = client.get("/api/analytics/sales-by-product", params={"from_date": "2026-10-01", "to_date": "2026-10-31"})
         rows = {row["name"]: row for row in res.json()["rows"]}
@@ -421,7 +427,7 @@ class TestProductSales:
             {"product_id": widget, "quantity": 1, "unit_price": 100, "gst_rate": 18},
             {"product_id": gadget, "quantity": 1, "unit_price": 50, "gst_rate": 18},
         ], invoice_date=datetime(2026, 10, 10, 12, 0),
-            discount_type="net", discount_value=17.70)
+            discount_type="net", discount_value=17.70, after_gst=True)
 
         params = {"from_date": "2026-10-01", "to_date": "2026-10-31"}
         rows = {r["name"]: r for r in client.get("/api/analytics/sales-by-product", params=params).json()["rows"]}
@@ -592,7 +598,7 @@ class TestProfitLoss:
         _create_invoice(client, ledger, [
             {"product_id": product, "quantity": 1, "unit_price": 1000, "gst_rate": 18},
         ], invoice_date=datetime(2026, 3, 10, 12, 0),
-            discount_type="net", discount_value=118)
+            discount_type="net", discount_value=118, after_gst=True)
         _create_invoice(client, ledger, [
             {"product_id": plain, "quantity": 1, "unit_price": 100, "gst_rate": 18},
         ], invoice_date=datetime(2026, 3, 12, 12, 0))
@@ -974,7 +980,7 @@ class TestCreditNotes:
         sale = _create_invoice(client, ledger, [
             {"product_id": product, "quantity": quantity, "unit_price": price, "gst_rate": rate}
             for product, (quantity, price, rate, _) in zip(products, lines)
-        ], invoice_date=datetime(2026, 5, 14, 12, 0),
+        ], invoice_date=datetime(2026, 5, 14, 12, 0), after_gst=discounted,
             apply_round_off=True, tcs_section_id=_section_id(db_session, SCRAP_2025), **extra)
         assert sale["tcs_amount"] > 0
         assert sale["round_off_amount"] != 0

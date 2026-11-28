@@ -10,6 +10,7 @@ from src.models.company import CompanyProfile
 from src.models.credit_note import CreditNote, CreditNoteItem
 from src.models.invoice import Invoice, InvoiceItem
 from src.services.gst_tax_service import india_today
+from tests.api.legacy_discount import create_invoice_after_gst
 
 MARCH = {"from_date": "2026-03-01", "to_date": "2026-03-31"}
 IN_MARCH = datetime(2026, 3, 10, 12, 0)
@@ -40,12 +41,15 @@ def _line(product_id, quantity, unit_price, gst_rate=18):
     return {"product_id": product_id, "quantity": quantity, "unit_price": unit_price, "gst_rate": gst_rate}
 
 
-def _create_invoice(client, ledger_id, items, *, voucher_type="sales", invoice_date=IN_MARCH, **extra):
+def _create_invoice(client, ledger_id, items, *, voucher_type="sales", invoice_date=IN_MARCH, after_gst=False, **extra):
     """invoice_date=None leaves the column default (now), which credit-note
-    tests need: a note is dated by its credit_note_date, by default today."""
+    tests need: a note is dated by its credit_note_date, by default today.
+    ``after_gst``: saved before #1154, the bill discount taken after GST."""
     payload = {"voucher_type": voucher_type, "ledger_id": ledger_id, "items": items, **extra}
     if invoice_date is not None:
         payload["invoice_date"] = invoice_date.date().isoformat()
+    if after_gst:
+        return create_invoice_after_gst(client, payload)
     response = client.post("/api/invoices/", json=payload)
     assert response.status_code == 200, response.text
     return response.json()
@@ -197,7 +201,7 @@ class TestInvoiceDiscounts:
         # paisa moves to its taxable value and the CGST/SGST halves stay equal.
         _create_invoice(
             client, customer, [_line(a, 1, 100), _line(b, 3, 100)],
-            discount_type="net", discount_value=59,
+            discount_type="net", discount_value=59, after_gst=True,
         )
 
         rows = _rows(_report(client))
@@ -211,12 +215,40 @@ class TestInvoiceDiscounts:
         # 1000 + 180 GST; 118 off is 100 ex-GST.
         _create_invoice(
             client, supplier, [_line(widget, 10, 100)], voucher_type="purchase",
-            discount_type="net", discount_value=118,
+            discount_type="net", discount_value=118, after_gst=True,
         )
 
         row = _rows(_report(client))["Widget"]
         assert row["purchase_spend"] == 900.00
         assert row["average_buying_price"] == 90.00
+
+    def test_a_discount_before_gst_is_already_in_the_lines(self, client):
+        """#1154: each line's share is off its taxable value, and nothing comes off twice."""
+        a = _create_product(client, "ID-8", "Alpha", purchase_price=10)
+        b = _create_product(client, "ID-9", "Beta", purchase_price=10)
+        customer = _create_ledger(client, "Customer")
+        # 59 off a 400 subtotal, split 1:3: 14.75 and 44.25.
+        _create_invoice(
+            client, customer, [_line(a, 1, 100), _line(b, 3, 100)],
+            discount_type="net", discount_value=59,
+        )
+
+        rows = _rows(_report(client))
+        assert rows["Alpha"]["revenue"] == 85.25
+        assert rows["Beta"]["revenue"] == 255.75
+
+    def test_a_purchase_discount_before_gst_lowers_spend(self, client):
+        widget = _create_product(client, "ID-10", "Widget")
+        supplier = _create_ledger(client, "Supplier")
+        # 1000 taxable, 118 off before GST: 882.
+        _create_invoice(
+            client, supplier, [_line(widget, 10, 100)], voucher_type="purchase",
+            discount_type="net", discount_value=118,
+        )
+
+        row = _rows(_report(client))["Widget"]
+        assert row["purchase_spend"] == 882.00
+        assert row["average_buying_price"] == 88.20
 
     def test_product_filter_keeps_only_that_products_share(self, client):
         a = _create_product(client, "ID-6", "Alpha", purchase_price=10)

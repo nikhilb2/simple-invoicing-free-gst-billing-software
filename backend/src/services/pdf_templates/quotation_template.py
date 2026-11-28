@@ -25,6 +25,7 @@ from .builders import (
     _amount_in_words_indian,
     _build_invoice_discount_html,
     _build_item_discount_html,
+    _build_taxable_html,
     _build_pdf_table_colgroup,
     _build_pdf_tax_breakup_rows,
     _build_pdf_tax_header_cells,
@@ -497,7 +498,7 @@ def _build_quotation_html(
     <div>{_bank_details_html(quotation, bank_accounts or [])}</div>
     <div class="sheet__totals">
       <p class="eyebrow">Estimated tax</p>
-      <p>Taxable: {_fmt_currency(float(quotation.taxable_amount or 0), currency)}</p>
+      {_build_taxable_html(quotation, currency)}
       {_build_pdf_tax_breakup_rows(quotation, currency)}
       <p>Total estimated GST: {_fmt_currency(float(quotation.total_tax_amount or 0), currency)}</p>
       {_build_invoice_discount_html(quotation, currency)}

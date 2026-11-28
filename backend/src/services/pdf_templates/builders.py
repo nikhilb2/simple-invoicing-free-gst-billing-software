@@ -7,7 +7,12 @@ from decimal import Decimal, ROUND_HALF_UP
 from src.models.company_account import CompanyAccount
 from src.models.invoice import Invoice, InvoiceItem
 from src.services.gst_tax_service import to_india_date
-from src.services.invoice_discounts import invoice_discount_amount, item_discount_amount
+from src.services.invoice_discounts import (
+    bill_discount_total,
+    invoice_discount_amount,
+    item_discount_amount,
+    takes_discount_before_tax,
+)
 from src.services.pdf_paper import page_css
 
 
@@ -106,6 +111,11 @@ def _fmt_rate(value: float) -> str:
 
 
 def _build_item_discount_html(item: InvoiceItem, currency: str | None, *, tax_inclusive: bool) -> str:
+    """Muted sub-lines under a product: its own discount, then its share of a before-GST bill discount."""
+    return _build_line_discount_html(item, currency, tax_inclusive=tax_inclusive) + _build_bill_discount_share_html(item, currency)
+
+
+def _build_line_discount_html(item: InvoiceItem, currency: str | None, *, tax_inclusive: bool) -> str:
     """Muted sub-line under a product naming its discount and the amount it took off."""
     raw_value = float(item.discount_value or 0)
     if not item.discount_type or raw_value <= 0:
@@ -116,6 +126,18 @@ def _build_item_discount_html(item: InvoiceItem, currency: str | None, *, tax_in
     else:
         label = f"Disc: {_fmt_currency(amount, currency)} off"
     return f"<br><span class=\"muted-text\">{label}</span>"
+
+
+def _build_bill_discount_share_html(item: InvoiceItem, currency: str | None) -> str:
+    """The line's share of a before-GST bill discount (#1154), and its taxable value after it.
+
+    Empty on every line of an after-GST document, which stores no share.
+    """
+    share = float(getattr(item, "bill_discount_amount", 0) or 0)
+    if share <= 0:
+        return ""
+    taxable = _fmt_currency(float(item.taxable_amount or 0), currency)
+    return f"<br><span class=\"muted-text\">Bill discount: -{_fmt_currency(share, currency)} (taxable {taxable})</span>"
 
 
 def tcs_label(rate, section_ref: str | None) -> str:
@@ -137,10 +159,44 @@ def _build_tcs_html(doc, currency: str | None) -> str:
     return f"<p>{label}: {_fmt_currency(amount, currency)}</p>"
 
 
+def bill_discount_label(document) -> str:
+    """``Discount``, or ``Discount (10%)`` for a percentage."""
+    if document.discount_type == "percentage":
+        return f"Discount ({_fmt_rate(float(document.discount_value or 0))}%)"
+    return "Discount"
+
+
+def shows_discount_before_tax(document) -> bool:
+    """A before-GST document whose bill discount took something off (#1154)."""
+    return takes_discount_before_tax(document) and bill_discount_total(document) > 0
+
+
+def _build_taxable_html(document, currency: str | None) -> str:
+    """The totals box's first lines.
+
+    ``Taxable:`` as always; for a before-GST document with a bill discount (#1154),
+    ``Subtotal``, ``Discount`` and a bold ``Taxable value`` instead, so the discount
+    is read before the GST it reduced.
+    """
+    taxable = float(document.taxable_amount or 0)
+    if not shows_discount_before_tax(document):
+        return f"<p>Taxable: {_fmt_currency(taxable, currency)}</p>"
+    discount = bill_discount_total(document)
+    subtotal = float(_money(Decimal(str(document.taxable_amount or 0)) + discount))
+    return (
+        f"<p>Subtotal: {_fmt_currency(subtotal, currency)}</p>\n"
+        f"      <p>{bill_discount_label(document)}: -{_fmt_currency(float(discount), currency)}</p>\n"
+        f"      <p><b>Taxable value: {_fmt_currency(taxable, currency)}</b></p>"
+    )
+
+
 def _build_invoice_discount_html(invoice: Invoice, currency: str | None) -> str:
-    """Totals-box line naming the invoice-level discount and the amount it took off."""
+    """Totals-box line naming the invoice-level discount and the amount it took off.
+
+    Only for an after-GST document: a before-GST one names it above the taxable value.
+    """
     raw_value = float(invoice.discount_value or 0)
-    if not invoice.discount_type or raw_value <= 0:
+    if not invoice.discount_type or raw_value <= 0 or takes_discount_before_tax(invoice):
         return ""
     amount = _fmt_currency(float(invoice_discount_amount(invoice)), currency)
     if invoice.discount_type == "percentage":

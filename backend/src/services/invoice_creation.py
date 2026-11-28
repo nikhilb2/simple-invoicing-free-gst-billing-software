@@ -11,6 +11,7 @@ from src.models.company import CompanyProfile
 from src.models.financial_year import FinancialYear
 from src.models.invoice import Invoice
 from src.schemas.invoice import InvoiceCreate
+from src.services.document_totals import resolve_discount_mode
 from src.services.financial_year import get_fy_for_date
 from src.services.gst_tax_service import india_today
 from src.services.invoice_processor import InvoiceProcessor
@@ -40,10 +41,14 @@ def create_invoice_record(
             fy_for_invoice = date_fy
     fy_id = fy_for_invoice.id if fy_for_invoice else None
 
+    # Every new invoice, a duplicate or a conversion included, takes the bill
+    # discount before GST (#1154); asking for after GST is refused here.
+    discount_mode = resolve_discount_mode(None, payload.discount_mode, creating=True)
     invoice = Invoice(
         total_amount=0,
         created_by=created_by,
         company_id=company.id,
+        discount_mode=discount_mode,
     )
     db.add(invoice)
     db.flush()

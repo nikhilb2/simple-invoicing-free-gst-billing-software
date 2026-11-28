@@ -109,6 +109,11 @@ class Quotation(Base):
     round_off_amount = Column(Numeric(5, 2), nullable=False, default=0)
     discount_type = Column(String(20), nullable=True)
     discount_value = Column(Numeric(10, 2), nullable=True)
+    # Which way the document takes its bill discount (#1154). 'before_tax' shares it
+    # over the lines' taxable values, so GST is on the discounted amount and each
+    # line's share is in invoice_items.bill_discount_amount. 'after_tax' (every
+    # document saved before #1154) took it off taxable + GST and stays that way.
+    discount_mode = Column(String(20), nullable=False, default="before_tax", server_default=text("'before_tax'"))
     taxable_amount = Column(Numeric(10, 2), nullable=False, default=0)
     total_tax_amount = Column(Numeric(10, 2), nullable=False, default=0)
     cgst_amount = Column(Numeric(10, 2), nullable=False, default=0)
@@ -178,5 +183,8 @@ class QuotationItem(Base):
     description = Column(Text, nullable=True)
     discount_type = Column(String(20), nullable=True)
     discount_value = Column(Numeric(10, 2), nullable=True)
+    # This line's share of a 'before_tax' bill discount (#1154), already taken off
+    # taxable_amount. 0 on 'after_tax' documents and on every line before #1154.
+    bill_discount_amount = Column(Numeric(10, 2), nullable=False, default=0, server_default=text("0"))
 
     quotation = relationship("Quotation", back_populates="items")
