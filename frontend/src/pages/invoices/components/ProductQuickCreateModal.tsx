@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import ModalCloseButton from '../../../components/ModalCloseButton';
 import { useQueryClient } from '@tanstack/react-query';
 import api, { getApiErrorMessage } from '../../../api/client';
@@ -14,7 +14,11 @@ import {
   NO_STOCK_WARNING,
   hsnProblem,
   plainProductError,
+  productFieldProblems,
+  revealFieldError,
+  shownFieldErrors,
   startsWithNoStock,
+  type ProductFieldKey,
 } from '../../catalogue/productFormRules';
 
 type ProductQuickCreateModalProps = {
@@ -98,12 +102,35 @@ export default function ProductQuickCreateModal({ countsStockByDefault }: Produc
      failed on stock. 0 stays allowed, with the warning. */
   const openingStockAnswered = productForm.initial_quantity.trim() !== '';
   const noOpeningStock = openingStockAnswered && !productForm.track_serials && startsWithNoStock(productForm.maintain_inventory, openingQuantity);
-  const openingStockRef = useRef<HTMLInputElement>(null);
+  // The fields a save was refused for, and the id to bring into view after that render.
+  const [flagged, setFlagged] = useState<ProductFieldKey[]>([]);
+  const [reveal, setReveal] = useState<{ id: string } | null>(null);
+  const fieldProblems = productFieldProblems({
+    name: productForm.name,
+    price: productForm.price,
+    gstRate: productForm.gst_rate,
+    priceNoun: 'unit price',
+    stockMissing: asksOpeningStock && !openingStockAnswered,
+  });
+  const fieldErrors = shownFieldErrors(flagged, fieldProblems);
+  const FIELD_IDS: Record<ProductFieldKey, string> = {
+    name: 'modal-product-name',
+    price: 'modal-product-price',
+    gst: 'modal-product-gst-rate',
+    stock: 'modal-product-opening-stock',
+  };
+  const errorProps = (key: ProductFieldKey) =>
+    fieldErrors[key] ? { 'aria-invalid': true as const, 'aria-describedby': `${FIELD_IDS[key]}-error` } : {};
+  const fieldError = (key: ProductFieldKey) =>
+    fieldErrors[key] ? (
+      <p className="field-error field-error--block" id={`${FIELD_IDS[key]}-error`} role="alert">
+        {fieldErrors[key]}
+      </p>
+    ) : null;
+
   useEffect(() => {
-    openingStockRef.current?.setCustomValidity(
-      openingStockAnswered ? '' : 'Enter how many you have now, or untick Maintain inventory.',
-    );
-  }, [openingStockAnswered, asksOpeningStock, showProductCreateModal]);
+    if (reveal) revealFieldError(reveal.id);
+  }, [reveal]);
 
   useEscapeClose(() => {
     if (showProductCreateModal) {
@@ -115,6 +142,15 @@ export default function ProductQuickCreateModal({ countsStockByDefault }: Produc
     event.preventDefault();
     if (submitGuard.busy) return;
     setSaveFailed(false);
+
+    const missing = Object.keys(fieldProblems) as ProductFieldKey[];
+    if (missing.length > 0) {
+      setFlagged(missing);
+      setFeedbackError('');
+      setReveal({ id: FIELD_IDS[missing[0]] });
+      return;
+    }
+    setFlagged([]);
 
     const hsnError = hsnProblem(productForm.hsn_sac);
     if (hsnError) {
@@ -199,7 +235,7 @@ export default function ProductQuickCreateModal({ countsStockByDefault }: Produc
           <p className="field-error save-failed" id="product-quick-create-save-failed" role="alert">{SAVE_FAILED_MESSAGE}</p>
         ) : null}
 
-        <form id="product-quick-create-form" className="stack" onSubmit={handleSubmit}>
+        <form id="product-quick-create-form" className="stack" onSubmit={handleSubmit} noValidate>
           {/* Nothing can be changed while the save is on its way. */}
           <fieldset className="fieldset-contents" disabled={productSubmitting}>
           <div className="field">
@@ -211,7 +247,9 @@ export default function ProductQuickCreateModal({ countsStockByDefault }: Produc
               onChange={(event) => setProductForm((current) => ({ ...current, name: event.target.value }))}
               placeholder="e.g., Widget Pro"
               required
+              {...errorProps('name')}
             />
+            {fieldError('name')}
           </div>
           <div className="field">
             <label htmlFor="modal-product-sku">SKU (optional)</label>
@@ -245,11 +283,13 @@ export default function ProductQuickCreateModal({ countsStockByDefault }: Produc
               onChange={(event) => setProductForm((current) => ({ ...current, price: event.target.value }))}
               placeholder="0.00"
               required
+              {...errorProps('price')}
             />
+            {fieldError('price')}
           </div>
           <div className="field">
             <label htmlFor="modal-product-gst-rate">GST % <RequiredMark /></label>
-            <GstRateSelect id="modal-product-gst-rate" value={productForm.gst_rate} onChange={(rate) => setProductForm((current) => ({ ...current, gst_rate: rate }))} />
+            <GstRateSelect id="modal-product-gst-rate" value={productForm.gst_rate} onChange={(rate) => setProductForm((current) => ({ ...current, gst_rate: rate }))} error={fieldErrors.gst} />
           </div>
           <div className="field field--full" style={{ marginBottom: 0 }}>
             <label htmlFor="modal-product-maintain-inventory" style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: 0 }}>
@@ -278,7 +318,6 @@ export default function ProductQuickCreateModal({ countsStockByDefault }: Produc
             <div className="field">
               <label htmlFor="modal-product-opening-stock">Opening stock <RequiredMark /></label>
               <input
-                ref={openingStockRef}
                 id="modal-product-opening-stock"
                 className="input"
                 type="number"
@@ -288,7 +327,9 @@ export default function ProductQuickCreateModal({ countsStockByDefault }: Produc
                 onChange={(event) => setProductForm((current) => ({ ...current, initial_quantity: event.target.value }))}
                 placeholder="How many you have now"
                 required
+                {...errorProps('stock')}
               />
+              {fieldError('stock')}
               {noOpeningStock
                 ? <small className="field-warning" role="status">{NO_STOCK_WARNING}</small>
                 : <small className="field-hint">An invoice can only sell what is in stock.</small>}

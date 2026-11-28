@@ -9,6 +9,8 @@ type GstRateSelectProps = {
   /** The rate as a string, '' while none has been chosen. */
   value: string;
   onChange: (rate: string) => void;
+  /** A message for a save refused because no rate was chosen, shown above the hint. */
+  error?: string;
 };
 
 /**
@@ -16,11 +18,12 @@ type GstRateSelectProps = {
  * composer's quick-add. It starts empty on purpose, so a rate is always a choice;
  * "Other rate…" reveals a number input for rates outside the usual slabs.
  */
-export default function GstRateSelect({ id, value, onChange }: GstRateSelectProps) {
+export default function GstRateSelect({ id, value, onChange, error }: GstRateSelectProps) {
   const [other, setOther] = useState(() => value !== '' && !isGstSlab(value));
   const selectValue = value === '' && !other ? '' : other || !isGstSlab(value) ? OTHER_GST_VALUE : String(Number(value));
   const isZero = value !== '' && Number(value) === 0;
   const noteId = `${id}-note`;
+  const errorId = `${id}-error`;
 
   return (
     <>
@@ -29,7 +32,8 @@ export default function GstRateSelect({ id, value, onChange }: GstRateSelectProp
         className="select"
         value={selectValue}
         required
-        aria-describedby={noteId}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={error ? `${noteId} ${errorId}` : noteId}
         onChange={(e) => {
           if (e.target.value === OTHER_GST_VALUE) {
             setOther(true);
@@ -62,6 +66,11 @@ export default function GstRateSelect({ id, value, onChange }: GstRateSelectProp
           onChange={(e) => onChange(e.target.value)}
           required
         />
+      ) : null}
+      {error ? (
+        <p className="field-error field-error--block" id={errorId} role="alert">
+          {error}
+        </p>
       ) : null}
       <p className="field-hint" id={noteId} data-testid={noteId} role={isZero ? 'status' : undefined}>
         {isZero ? GST_ZERO_NOTE : 'The tax you charge customers on this product.'}

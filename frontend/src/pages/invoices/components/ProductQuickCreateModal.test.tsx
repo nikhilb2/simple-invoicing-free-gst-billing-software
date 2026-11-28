@@ -66,3 +66,13 @@ describe('serial tracking warning', () => {
     expect(renderOpenModal(false)).not.toContain('Leave this off to bill it now.');
   });
 });
+
+describe('ProductQuickCreateModal field errors (issue 1153)', () => {
+  it('turns the browser bubble off, so our own messages run', () => {
+    expect(renderOpenModal(true)).toMatch(/<form[^>]*novalidate=""/);
+  });
+
+  it('shows no field message before Save was tapped', () => {
+    expect(renderOpenModal(true)).not.toContain('field-error');
+  });
+});

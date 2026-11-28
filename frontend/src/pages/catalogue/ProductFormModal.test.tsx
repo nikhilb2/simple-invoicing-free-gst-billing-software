@@ -263,3 +263,14 @@ describe('ProductFormModal stock counting (issue 983)', () => {
     expect(value('product-initial-qty')).toBe('0');
   });
 });
+
+describe('ProductFormModal field errors (issue 1153)', () => {
+  test('turns the browser bubble off so our own messages run, in create and in edit', () => {
+    expect(render({}).html).toMatch(/<form[^>]*novalidate=""/);
+    expect(render({ row: row() }).html).toMatch(/<form[^>]*novalidate=""/);
+  });
+
+  test('shows no field message before a save was tapped', () => {
+    expect(render({}).html).not.toContain('field-error');
+  });
+});

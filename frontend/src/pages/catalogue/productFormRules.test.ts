@@ -6,6 +6,8 @@ import {
   hsnProblem,
   isGstSlab,
   plainProductError,
+  productFieldProblems,
+  shownFieldErrors,
   startsWithNoStock,
 } from './productFormRules';
 
@@ -56,5 +58,55 @@ describe('stock counting for a new product (issue 983)', () => {
 
   test('stays on once the company counts stock for any product', () => {
     expect(countsStockByDefault([{ maintain_inventory: false }, { maintain_inventory: true }])).toBe(true);
+  });
+});
+
+describe('field messages when a save is tapped with fields missing (issue 1153)', () => {
+  const GST = 'Choose a GST rate. Pick 0% only if you charge no GST on this product.';
+  const base = { name: 'Demo Atta 5kg', price: '', gstRate: '', priceNoun: 'selling price' };
+
+  test('with only a name, the price and the GST rate each get their own message', () => {
+    expect(productFieldProblems(base)).toEqual({ price: 'Enter a selling price.', gst: GST });
+  });
+
+  test('names every empty field, in page order', () => {
+    expect(Object.keys(productFieldProblems({ ...base, name: ' ' }))).toEqual(['name', 'price', 'gst']);
+    expect(productFieldProblems({ ...base, name: ' ' }).name).toBe('Product name is required.');
+  });
+
+  test('uses the quick-add label word, and says when the price is below 0', () => {
+    expect(productFieldProblems({ ...base, priceNoun: 'unit price' }).price).toBe('Enter a unit price.');
+    expect(productFieldProblems({ ...base, price: '-1' }).price).toBe('Selling price cannot be negative.');
+    expect(productFieldProblems({ ...base, price: 'abc' }).price).toBe('Enter a selling price.');
+  });
+
+  test('0% is a real choice, and 0 a real price', () => {
+    expect(productFieldProblems({ ...base, price: '0', gstRate: '0' })).toEqual({});
+  });
+
+  test('asks for opening stock only where it is counted and unanswered', () => {
+    const filled = { ...base, price: '10', gstRate: '5' };
+    expect(productFieldProblems({ ...filled, stockMissing: true })).toEqual({
+      stock: 'Enter how many you have now, or untick Maintain inventory.',
+    });
+    expect(productFieldProblems({ ...filled, stockMissing: false })).toEqual({});
+  });
+
+  test('a valid form has no messages', () => {
+    expect(productFieldProblems({ ...base, price: '120', gstRate: '5' })).toEqual({});
+  });
+
+  test('a message clears when its field is fixed and the others stay', () => {
+    const flagged = ['price', 'gst'] as const;
+    const before = shownFieldErrors(flagged, productFieldProblems(base));
+    expect(Object.keys(before)).toEqual(['price', 'gst']);
+    const priceFixed = shownFieldErrors(flagged, productFieldProblems({ ...base, price: '120' }));
+    expect(Object.keys(priceFixed)).toEqual(['gst']);
+    const gstFixed = shownFieldErrors(flagged, productFieldProblems({ ...base, gstRate: '18' }));
+    expect(Object.keys(gstFixed)).toEqual(['price']);
+  });
+
+  test('a field that was never refused shows nothing, even while empty', () => {
+    expect(shownFieldErrors([], productFieldProblems(base))).toEqual({});
   });
 });

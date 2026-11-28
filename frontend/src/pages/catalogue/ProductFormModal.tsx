@@ -15,7 +15,11 @@ import {
   hsnProblem,
   errorAfterHsnEdit,
   plainProductError,
+  productFieldProblems,
+  revealFieldError,
+  shownFieldErrors,
   startsWithNoStock,
+  type ProductFieldKey,
 } from './productFormRules';
 import {
   ADVANCED_FIELDS,
@@ -180,12 +184,19 @@ export default function ProductFormModal({
   // request. Left claimed on success: the dialog is closing.
   const [submitGuard] = useState(createSubmitGuard);
   const [error, setError] = useState('');
+  // The fields a save was refused for, and the id to bring into view after that render.
+  const [flagged, setFlagged] = useState<ProductFieldKey[]>([]);
+  const [reveal, setReveal] = useState<{ id: string } | null>(null);
   // A network failure or a 5xx, shown under the button with the typed values kept.
   const [saveFailed, setSaveFailed] = useState(false);
   const [prefs, setPrefs] = useState(readProductFormPrefs);
   const firstFieldRef = useRef<HTMLInputElement | null>(null);
 
   useEscapeClose(onCancel);
+
+  useEffect(() => {
+    if (reveal) revealFieldError(reveal.id);
+  }, [reveal]);
 
   // Opening a dialog should land the caret in it, not leave focus behind on the
   // button that summoned it.
@@ -258,16 +269,27 @@ export default function ProductFormModal({
     return notes.length ? `${message} ${notes.join(' ')}` : message;
   }
 
-  /** Everything the server would reject, said inline before a round trip. */
+  const fieldProblems = productFieldProblems({
+    name: form.name,
+    price: form.price,
+    gstRate: form.gst_rate,
+    priceNoun: 'selling price',
+  });
+  const fieldErrors = shownFieldErrors(flagged, fieldProblems);
+  const FIELD_IDS: Record<ProductFieldKey, string> = { name: 'product-name', price: 'product-price', gst: 'product-gst', stock: '' };
+  const errorProps = (key: ProductFieldKey, id: string) =>
+    fieldErrors[key] ? { 'aria-invalid': true as const, 'aria-describedby': `${id}-error` } : {};
+  const fieldError = (key: ProductFieldKey, id: string) =>
+    fieldErrors[key] ? (
+      <p className="field-error field-error--block" id={`${id}-error`} role="alert">
+        {fieldErrors[key]}
+      </p>
+    ) : null;
+
+  /** The rarer checks the server would reject, said inline before a round trip. */
   function validate(): string {
-    if (!form.name.trim()) return 'Product name is required.';
-    if (form.price === '' || Number.isNaN(Number(form.price))) return 'Enter a selling price.';
-    if (Number(form.price) < 0) return 'Selling price cannot be negative.';
     if (form.purchase_price !== '' && Number(form.purchase_price) < 0) {
       return 'Purchase price cannot be negative.';
-    }
-    if (form.gst_rate.trim() === '') {
-      return 'Choose a GST rate. Pick 0% only if you charge no GST on this product.';
     }
     const gst = Number(form.gst_rate);
     if (Number.isNaN(gst) || gst < 0 || gst > 100) return 'GST rate must be between 0 and 100.';
@@ -287,6 +309,15 @@ export default function ProductFormModal({
     event.preventDefault();
     if (submitGuard.busy) return;
     setSaveFailed(false);
+
+    const missing = (Object.keys(fieldProblems) as ProductFieldKey[]);
+    if (missing.length > 0) {
+      setFlagged(missing);
+      setError('');
+      setReveal({ id: FIELD_IDS[missing[0]] });
+      return;
+    }
+    setFlagged([]);
 
     const message = validate();
     if (message) {
@@ -370,7 +401,7 @@ export default function ProductFormModal({
           <ModalCloseButton onClick={onCancel} label="Close product form" />
         </div>
 
-        <form className="stack" onSubmit={handleSubmit}>
+        <form className="stack" onSubmit={handleSubmit} noValidate>
           {/* Nothing can be changed while the save is on its way. */}
           <fieldset className="fieldset-contents" disabled={submitting}>
           <div className="field-grid">
@@ -386,7 +417,9 @@ export default function ProductFormModal({
                 onChange={(e) => update('name', e.target.value)}
                 placeholder="Widget A"
                 required
+                {...errorProps('name', 'product-name')}
               />
+              {fieldError('name', 'product-name')}
             </label>
 
             <label className="field" htmlFor="product-sku">
@@ -417,7 +450,9 @@ export default function ProductFormModal({
                 value={form.price}
                 onChange={(e) => update('price', e.target.value)}
                 required
+                {...errorProps('price', 'product-price')}
               />
+              {fieldError('price', 'product-price')}
             </label>
 
             <div className="field">
@@ -426,7 +461,7 @@ export default function ProductFormModal({
                   GST rate <RequiredMark />
                 </span>
               </label>
-              <GstRateSelect id="product-gst" value={form.gst_rate} onChange={(rate) => update('gst_rate', rate)} />
+              <GstRateSelect id="product-gst" value={form.gst_rate} onChange={(rate) => update('gst_rate', rate)} error={fieldErrors.gst} />
             </div>
 
             <label className="field" htmlFor="product-hsn">
