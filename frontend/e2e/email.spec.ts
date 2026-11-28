@@ -185,7 +185,7 @@ test.describe('Send Email Modal', () => {
       await page.getByRole('tab', { name: 'Card' }).click();
       const invoiceCard = page.locator('.invoice-compact-card', { hasText: ledgerName }).first();
       await expect(invoiceCard).toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
-      await invoiceCard.locator('button[title="Preview"]').click();
+      await invoiceCard.getByRole('button', { name: /^View invoice/ }).click();
 
       const preview = page.locator('.modal-panel--invoice-preview');
       await expect(preview).toBeVisible({ timeout: EXPECT_TIMEOUT_MS });

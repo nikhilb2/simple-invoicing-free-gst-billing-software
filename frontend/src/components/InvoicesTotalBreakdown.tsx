@@ -12,11 +12,12 @@ interface InvoicesTotalBreakdownProps {
   currencyCode: string;
   title?: string;
   note?: string;
+  className?: string;
 }
 
-export default function InvoicesTotalBreakdown({ breakdown, currencyCode, title, note }: InvoicesTotalBreakdownProps) {
+export default function InvoicesTotalBreakdown({ breakdown, currencyCode, title, note, className }: InvoicesTotalBreakdownProps) {
   return (
-    <section className="panel invoice-feed-breakdown">
+    <section className={`panel invoice-feed-breakdown${className ? ` ${className}` : ''}`}>
       {(title || note) && (
         <div className="invoice-feed-breakdown__header">
           {title ? <h3 className="invoice-feed-breakdown__title">{title}</h3> : null}

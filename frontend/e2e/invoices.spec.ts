@@ -697,7 +697,7 @@ test.describe('Invoices', () => {
 
     await openInvoiceFeed(page);
     const invoiceCard = page.locator('.invoice-compact-card', { hasText: ledgerName }).first();
-    await invoiceCard.locator('button[title="Preview"]').click();
+    await invoiceCard.getByRole('button', { name: /^View invoice/ }).click();
 
     const modal = page.locator('[role="dialog"]');
     await expect(modal).toBeVisible();
@@ -728,7 +728,7 @@ test.describe('Invoices', () => {
 
     await openInvoiceFeed(page);
     const invoiceCard = page.locator('.invoice-compact-card', { hasText: ledgerName }).first();
-    await invoiceCard.locator('button[title="Preview"]').click();
+    await invoiceCard.getByRole('button', { name: /^View invoice/ }).click();
 
     // Supplier ref is surfaced in the feed card metadata.
     await expect(invoiceCard).toContainText(`Ref: ${supplierRef}`);
@@ -755,7 +755,7 @@ test.describe('Invoices', () => {
 
     await openInvoiceFeed(page);
     const invoiceCard = page.locator('.invoice-compact-card', { hasText: ledgerName }).first();
-    await invoiceCard.locator('button[title="Preview"]').click();
+    await invoiceCard.getByRole('button', { name: /^View invoice/ }).click();
 
     await expect(invoiceCard).not.toContainText('Ref:');
 
@@ -780,7 +780,7 @@ test.describe('Invoices', () => {
 
     await openInvoiceFeed(page);
     const invoiceCard = page.locator('.invoice-compact-card', { hasText: ledgerName }).first();
-    await invoiceCard.locator('button[title="Preview"]').click();
+    await invoiceCard.getByRole('button', { name: /^View invoice/ }).click();
 
     const modal = page.locator('[role="dialog"]');
     await expect(modal).toBeVisible();
@@ -807,7 +807,7 @@ test.describe('Invoices', () => {
 
     await openInvoiceFeed(page);
     const invoiceCard = page.locator('.invoice-compact-card', { hasText: ledgerName }).first();
-    await invoiceCard.locator('button[title="Preview"]').click();
+    await invoiceCard.getByRole('button', { name: /^View invoice/ }).click();
 
     const modal = page.locator('[role="dialog"]');
     await expect(modal).toBeVisible();
@@ -838,7 +838,7 @@ test.describe('Invoices', () => {
     // Open preview and click Download PDF — intercept the network request
     await openInvoiceFeed(page);
     const invoiceCard = page.locator('.invoice-compact-card', { hasText: ledgerName }).first();
-    await invoiceCard.locator('button[title="Preview"]').click();
+    await invoiceCard.getByRole('button', { name: /^View invoice/ }).click();
 
     const modal = page.locator('[role="dialog"]');
     await expect(modal).toBeVisible();
@@ -867,7 +867,7 @@ test.describe('Invoices', () => {
 
     await openInvoiceFeed(page);
     const invoiceCard = page.locator('.invoice-compact-card', { hasText: ledgerName }).first();
-    await invoiceCard.locator('button[title="Preview"]').click();
+    await invoiceCard.getByRole('button', { name: /^View invoice/ }).click();
 
     const modal = page.locator('[role="dialog"]');
     await expect(modal).toBeVisible();

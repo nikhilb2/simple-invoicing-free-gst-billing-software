@@ -3880,6 +3880,11 @@ a.invoice-row {
   color: var(--muted);
 }
 
+/* Phone-only totals line; desktop keeps the FY label and the summary panel. */
+.invoice-feed-view__summary-line {
+  display: none;
+}
+
 .invoice-feed-view__error {
   border: 1px solid rgb(var(--rgb-danger) / 0.3);
   background: rgb(var(--rgb-danger) / 0.12);
@@ -4421,6 +4426,10 @@ a.invoice-row {
   color: var(--muted);
 }
 
+.invoice-compact-card__title {
+  min-width: 0;
+}
+
 .invoice-compact-card__badges {
   display: inline-flex;
   gap: 8px;
@@ -4519,6 +4528,18 @@ a.invoice-row {
   gap: 8px;
   flex-wrap: wrap;
   justify-content: flex-end;
+}
+
+/* 44px minimum targets for the card buttons on touch and on a phone. */
+@media (pointer: coarse), (max-width: 767px) {
+  .invoice-compact-card__actions .button--icon {
+    width: 44px;
+    height: 44px;
+  }
+
+  .invoice-compact-card__actions .button--small {
+    min-height: 44px;
+  }
 }
 
 @media print {
@@ -4842,6 +4863,51 @@ a.invoice-row {
 
   .invoice-compact-card__grid {
     grid-template-columns: 1fr;
+  }
+
+  /* Phone: name, bill number, then badges, each on its own row. The badges no
+     longer sit beside the name, so a long name gets the full width. */
+  .invoice-compact-card__head {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .invoice-compact-card__ledger {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+  }
+
+  .invoice-compact-card__number {
+    white-space: nowrap;
+  }
+
+  .invoice-compact-card__badges {
+    flex-shrink: 1;
+  }
+
+  /* The hint stays in the DOM for aria-describedby, as .sr-only does. */
+  .invoice-feed-view__search-hint {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .invoice-feed-view__fy-label--wide,
+  .invoice-feed-breakdown--top {
+    display: none;
+  }
+
+  .invoice-feed-view__summary-line {
+    display: block;
   }
 
   .invoice-compact-card__side {
