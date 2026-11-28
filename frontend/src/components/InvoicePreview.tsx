@@ -270,6 +270,7 @@ export default function InvoicePreview({ invoice, onClose, onError, onPaymentRec
               onClick: handlePrintPdf,
               disabled: !pdfUrl || loadingPdf || previewFailed,
               title: 'Print invoice',
+              overflowOnPhone: true,
             },
             ...(canSend ? [downloadAction] : []),
             ...(showRecordPayment ? [{
@@ -285,6 +286,7 @@ export default function InvoicePreview({ invoice, onClose, onError, onPaymentRec
               icon: <FileJson size={16} aria-hidden="true" />,
               onClick: () => setShowEwayBillModal(true),
               title: 'Generate E-Way Bill JSON',
+              overflowOnPhone: true,
             }] : []),
           ]}
           menuExtra={<><CopiesStepper value={copies} onChange={setCopies} /><PaperSizePicker value={paper} onChange={setPaper} /></>}

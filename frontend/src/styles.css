@@ -8929,32 +8929,119 @@ a.ledger-chip:focus-visible {
   background: transparent;
 }
 
-@media (max-width: 640px) {
-  /* The row wraps rather than dropping labels: every action here is one a user
-     came to the preview to perform, and an unlabelled icon is exactly how Email
-     got lost in the first place. */
-  .preview-header__actions {
-    width: 100%;
-    justify-content: space-between;
-  }
+/* ── Phone layout of the preview header ────────────────────────────────────
+   PreviewToolbar renders a different structure on a phone (see its comments):
+   a pinned title bar, then the actions as an ordinary block that scrolls away.
+   These rules are scoped by class, not by media query, because the markup
+   itself is what changes. */
+/* Written against `.modal-panel > .panel__header` so it outranks the pinned
+   header's own padding and margin, which it replaces. */
+.modal-panel > .preview-header--bar {
+  align-items: center;
+  flex-wrap: nowrap;
+  margin-bottom: 0;
+  /* Pinned to 44px of Close plus 12px above and below: the title bar is all
+     that stays on screen, so every px here is a px off the document. */
+  padding-top: 12px;
+  padding-bottom: 12px;
+  /* Above the open "…" menu, which scrolls under it rather than over it. */
+  z-index: 210;
+}
 
-  /* `.button-row` stacks into a full-width column on mobile, which is right for
-     a form's buttons and wrong here — it turns a four-action toolbar into a
-     four-row header. These labels are one word, so they pair up two to a line. */
-  .preview-toolbar {
-    /* Leaves room for the close button beside the actions rather than under
-       them: the whole header is competing with the document preview for a
-       phone screen. */
-    flex: 1 1 calc(100% - 50px);
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-items: center;
-    width: auto;
-  }
+.preview-header--bar .preview-header__title {
+  flex: 1 1 auto;
+}
 
-  .preview-toolbar .button:not(.button--icon) {
-    flex: 1 1 calc(50% - 8px);
-  }
+/* The invoice number and its copy button stay on one line; a long number is
+   cut with an ellipsis instead of pushing Close onto a second row. */
+.preview-header--bar .preview-header__heading-row {
+  flex-wrap: nowrap;
+}
+
+.preview-header--bar .nav-panel__title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preview-header--bar .invoice-number-copy__feedback {
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.preview-header--bar .invoice-number-copy__feedback:empty {
+  display: none;
+}
+
+.preview-header--bar .button--icon {
+  width: 44px;
+  height: 44px;
+}
+
+.preview-actions {
+  display: grid;
+  gap: 12px;
+  /* Room under the pinned bar, also when there is no date line (a receipt). */
+  padding-top: 14px;
+}
+
+.preview-actions .preview-header__meta {
+  margin: 0;
+}
+
+.preview-toolbar--phone {
+  display: grid;
+  gap: 8px;
+}
+
+/* Share and Email share the row with the 44px "…"; the second row starts under
+   Share, so Download lines up with it. Three or more actions on the second row
+   fall back to two a line, because a third column is only 44px wide. */
+.preview-toolbar__row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) 44px;
+  gap: 8px;
+}
+
+.preview-toolbar__row--rest[data-count="1"] > * {
+  grid-column: 1 / -1;
+}
+
+.preview-toolbar__row--rest[data-count="2"] > :last-child {
+  grid-column: 2 / -1;
+}
+
+.preview-toolbar__row--rest:not([data-count="1"]):not([data-count="2"]) {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.preview-toolbar__row--rest:not([data-count="1"]):not([data-count="2"]) > :last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+}
+
+.preview-toolbar__row > .button:not(.button--icon) {
+  min-height: 44px;
+  min-width: 0;
+}
+
+.preview-toolbar__row > .action-dropdown {
+  grid-column: 3;
+}
+
+.preview-toolbar__row .action-dropdown .button--icon {
+  width: 44px;
+  height: 44px;
+}
+
+/* The menu sits under the "…" and runs left from it, inside the dialog. Items
+   are 48px, like the header help menu. */
+.preview-toolbar--phone .action-dropdown__menu {
+  min-width: 232px;
+}
+
+.preview-toolbar--phone .action-dropdown__item {
+  min-height: 48px;
 }
 
 /* --- Appearance settings page --- */
