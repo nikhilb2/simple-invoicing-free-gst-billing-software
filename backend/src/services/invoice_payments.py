@@ -3,7 +3,7 @@ from datetime import date, datetime
 from decimal import Decimal, ROUND_HALF_UP
 
 from fastapi import HTTPException
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, joinedload
 
 from src.api.search import contains_pattern
@@ -229,7 +229,12 @@ def outstanding_due_invoices(
         base = base.filter(Invoice.ledger_id == ledger_id)
     if search.strip():
         term = contains_pattern(search)
-        base = base.filter(Invoice.ledger_name.ilike(term, escape="\\"))
+        base = base.filter(
+            or_(
+                Invoice.ledger_name.ilike(term, escape="\\"),
+                Invoice.invoice_number.ilike(term, escape="\\"),
+            )
+        )
     if due_date_from is not None:
         base = base.filter(effective_due_date >= datetime.combine(due_date_from, datetime.min.time()))
     if due_date_to is not None:
