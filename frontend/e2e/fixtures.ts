@@ -157,12 +157,29 @@ export async function adjustInventory(page: Page, sku: string, quantity: string,
 }
 
 /**
+ * The first sentence of each invoice and challan toast (frontend/src/utils/invoiceToast.ts).
+ * Wait for these, never the stock sentence after them: that one shows only when a
+ * product has "Maintain inventory" on. The number is optional because it can be missing.
+ */
+export const INVOICE_TOAST = {
+  salesSaved: /^Invoice( \S+)? saved\./,
+  purchaseSaved: /^Purchase invoice( \S+)? saved\./,
+  updated: /^(Purchase invoice|Invoice)( \S+)? updated\./,
+  fromQuotation: /^Invoice( \S+)? created( from \S+)?\./,
+  cancelled: /^(Purchase invoice|Invoice)( \S+)? cancelled\./,
+  restored: /^(Purchase invoice|Invoice)( \S+)? restored\./,
+  challanSavedOrUpdated: /^Delivery challan( \S+)? (saved|updated)\./,
+} as const;
+
+/**
  * Helper: wait for a success toast to appear and contain text.
  * Pass a RegExp when the toast embeds a generated number, e.g. the invoice
  * number in "Invoice INV-2026-010 saved." (see invoiceToast.ts).
  */
 export async function expectSuccess(page: Page, substring: string | RegExp) {
-  const banner = page.locator('.toast--success').filter({ hasText: substring }).last();
+  // Only the message text, so a pattern anchored with ^ starts at the message
+  // (the toast also holds a hidden "Success notification" title).
+  const banner = page.locator('.toast--success .toast__message').filter({ hasText: substring }).last();
   await expect(banner).toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
   await expect(banner).toContainText(substring);
 }

@@ -1,4 +1,4 @@
-import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption, clickNavLink, createProduct, adjustInventory, searchAllFY, chooseVoucherType } from './fixtures';
+import { test, expect, expectSuccess, INVOICE_TOAST, uniqueSku, uniqueGstin, selectComboboxOption, clickNavLink, createProduct, adjustInventory, searchAllFY, chooseVoucherType } from './fixtures';
 
 /**
  * Helper: create a product (with stock) + ledger, navigate to /invoices, and
@@ -81,7 +81,7 @@ test.describe('Invoice cancellation', () => {
     await expect(page.locator('.modal-overlay')).toBeVisible({ timeout: 5_000 });
     await page.click('button:has-text("Cancel invoice")');
 
-    await expectSuccess(page, /Invoice \S+ cancelled\./);
+    await expectSuccess(page, INVOICE_TOAST.cancelled);
 
     // By default, cancelled invoices are hidden from the list
     await expect(page.locator('.invoice-compact-card', { hasText: ledgerName })).toHaveCount(0);
@@ -98,7 +98,7 @@ test.describe('Invoice cancellation', () => {
     await row.locator('button[title="Cancel"]').click();
     await expect(page.locator('.modal-overlay')).toBeVisible({ timeout: 5_000 });
     await page.click('button:has-text("Cancel invoice")');
-    await expectSuccess(page, /Invoice \S+ cancelled\./);
+    await expectSuccess(page, INVOICE_TOAST.cancelled);
 
     // Toggle "Show Cancelled"
     await page.locator('label.invoice-feed-view__checkbox', { hasText: 'Show cancelled' }).locator('input').check();
@@ -128,7 +128,7 @@ test.describe('Invoice cancellation', () => {
     await row.locator('button[title="Cancel"]').click();
     await expect(page.locator('.modal-overlay')).toBeVisible({ timeout: 5_000 });
     await page.click('button:has-text("Cancel invoice")');
-    await expectSuccess(page, /Invoice \S+ cancelled\./);
+    await expectSuccess(page, INVOICE_TOAST.cancelled);
 
     // Show Cancelled
     await page.locator('label.invoice-feed-view__checkbox', { hasText: 'Show cancelled' }).locator('input').check();
@@ -139,7 +139,7 @@ test.describe('Invoice cancellation', () => {
 
     // Restore it
     await cancelledRow.locator('button[title="Restore"]').click();
-    await expectSuccess(page, /Invoice \S+ restored\./);
+    await expectSuccess(page, INVOICE_TOAST.restored);
 
     // Toggle back to "Hide Cancelled" mode (default)
     await page.locator('label.invoice-feed-view__checkbox', { hasText: 'Show cancelled' }).locator('input').uncheck();
@@ -166,7 +166,7 @@ test.describe('Invoice cancellation', () => {
     await row.locator('button[title="Cancel"]').click();
     await expect(page.locator('.modal-overlay')).toBeVisible({ timeout: 5_000 });
     await page.click('button:has-text("Cancel invoice")');
-    await expectSuccess(page, /Invoice \S+ cancelled\./);
+    await expectSuccess(page, INVOICE_TOAST.cancelled);
 
     // Navigate away and come back
     await clickNavLink(page, '/catalogue');

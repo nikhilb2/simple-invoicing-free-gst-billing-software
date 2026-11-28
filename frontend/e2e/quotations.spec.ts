@@ -3,6 +3,7 @@ import {
   test,
   expect,
   expectSuccess,
+  INVOICE_TOAST,
   uniqueSku,
   uniqueGstin,
   selectComboboxOption,
@@ -141,7 +142,7 @@ test.describe('Quotations', () => {
     const card = page.locator('.invoice-compact-card', { hasText: invoiceNumber }).first();
     await card.locator('button[title="Cancel"]').click();
     await page.click('button:has-text("Cancel invoice")');
-    await expectSuccess(page, /Invoice \S+ cancelled\./);
+    await expectSuccess(page, INVOICE_TOAST.cancelled);
 
     await expect.poll(async () => {
       await page.goto('/quotations');
