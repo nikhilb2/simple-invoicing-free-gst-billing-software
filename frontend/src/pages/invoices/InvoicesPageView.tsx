@@ -2244,6 +2244,7 @@ export default function InvoicesPage() {
                           type="number"
                           min={allowDecimalQuantity ? '0.001' : '1'}
                           step={allowDecimalQuantity ? '0.001' : '1'}
+                          max={allowDecimalQuantity ? '999999999.999' : '999999999'}
                           value={quantityValue}
                           disabled={tracked}
                           title={tracked ? 'Quantity follows the serial numbers' : undefined}

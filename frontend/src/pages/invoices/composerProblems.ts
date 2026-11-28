@@ -12,6 +12,7 @@ export type ComposerProblemKind =
   | 'quantity-min'
   | 'quantity-positive'
   | 'quantity-whole'
+  | 'quantity-max'
   | 'quantity-check'
   | 'price-missing'
   | 'price-min'
@@ -33,6 +34,7 @@ const FIELD_RANK: Record<ComposerProblemKind, number> = {
   'quantity-min': 2,
   'quantity-positive': 2,
   'quantity-whole': 2,
+  'quantity-max': 2,
   'quantity-check': 2,
   'price-missing': 3,
   'price-min': 3,
@@ -43,13 +45,20 @@ const FIELD_RANK: Record<ComposerProblemKind, number> = {
   serial: 5,
 };
 
+/** A quantity must be less than this, as on the server (`backend/src/core/document_limits.py`). */
+export const QUANTITY_LIMIT = 1_000_000_000;
+
 export function quantityProblem(value: string, allowDecimal: boolean): ComposerProblemKind | null {
   if (value.trim() === '') return 'quantity-missing';
   const quantity = Number(value);
   if (!Number.isFinite(quantity)) return 'quantity-missing';
-  if (allowDecimal) return quantity <= 0 ? 'quantity-positive' : null;
-  if (quantity < 1) return 'quantity-min';
-  if (!Number.isInteger(quantity)) return 'quantity-whole';
+  if (allowDecimal) {
+    if (quantity <= 0) return 'quantity-positive';
+  } else {
+    if (quantity < 1) return 'quantity-min';
+    if (!Number.isInteger(quantity)) return 'quantity-whole';
+  }
+  if (quantity >= QUANTITY_LIMIT) return 'quantity-max';
   return null;
 }
 
@@ -86,6 +95,7 @@ export function fieldProblemMessage(kind: ComposerProblemKind): string | null {
     case 'quantity-min': return 'Enter 1 or more';
     case 'quantity-positive': return 'Enter more than 0';
     case 'quantity-whole': return 'Use a whole number';
+    case 'quantity-max': return 'Enter less than 100 crore';
     case 'price-missing': return 'Enter a price';
     case 'price-min': return "Price can't be less than 0";
     case 'discount-min': return "Discount can't be below 0";
@@ -103,6 +113,7 @@ function stripSentence(problem: ComposerProblem, noun: string): string {
     case 'quantity-min': return `Enter a quantity of 1 or more for line ${line}`;
     case 'quantity-positive': return `Enter a quantity of more than 0 for line ${line}`;
     case 'quantity-whole': return `Use a whole number for line ${line}`;
+    case 'quantity-max': return `Enter a quantity of less than 100 crore for line ${line}`;
     case 'quantity-check': return `Check the quantity for line ${line}`;
     case 'price-missing': return `Enter a price for line ${line}`;
     case 'price-min': return `Price can't be less than 0 for line ${line}`;

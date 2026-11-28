@@ -70,6 +70,20 @@ describe('line field rules', () => {
     expect(quantityProblem('0', true)).toBe('quantity-positive');
   });
 
+  it('refuses a quantity of 100 crore or more, as the server does (#1146)', () => {
+    expect(quantityProblem('1000000000', false)).toBe('quantity-max');
+    expect(quantityProblem('1000000000', true)).toBe('quantity-max');
+    expect(quantityProblem('999999999', false)).toBeNull();
+    expect(quantityProblem('999999999.999', true)).toBeNull();
+    expect(quantityProblem('0', false)).toBe('quantity-min');
+    expect(quantityProblem('1000000000.5', false)).toBe('quantity-whole');
+    expect(fieldProblemMessage('quantity-max')).toBe('Enter less than 100 crore');
+    expect(composerSubmitReason([{ kind: 'quantity-max', line: 1 }]))
+      .toBe('Enter a quantity of less than 100 crore for line 1.');
+    expect(composerSubmitReason([{ kind: 'quantity-max', line: 3 }]))
+      .toBe('Enter a quantity of less than 100 crore for line 3.');
+  });
+
   it('reads the price, and a blank one only when the catalogue has no price', () => {
     expect(priceProblem('-5', 450)).toBe('price-min');
     expect(priceProblem('0', 0)).toBeNull();
