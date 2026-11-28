@@ -282,3 +282,147 @@ def test_editing_a_receipt_to_a_date_no_year_covers_is_refused(two_years, side):
 
     assert response.status_code == 400, response.text
     assert response.json()["detail"] == s.refusal(day)
+
+
+# ---------------------------------------------------------------------------
+# A request with no date is dated today in India and checked like a dated one (#1156)
+# ---------------------------------------------------------------------------
+
+def _freeze_india_day(monkeypatch, day: date) -> None:
+    from datetime import datetime, timezone
+
+    from src.services import gst_tax_service
+
+    # 10:00 in India, so the UTC date is the same day and no midnight edge is involved.
+    instant = datetime(day.year, day.month, day.day, 4, 30, tzinfo=timezone.utc)
+
+    class Frozen(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return instant.astimezone(tz) if tz else instant.replace(tzinfo=None)
+
+    monkeypatch.setattr(gst_tax_service, "datetime", Frozen)
+
+
+def _undated_invoice(s, voucher_type: str = "sales"):
+    body = {
+        "ledger_id": s.ledger,
+        "voucher_type": voucher_type,
+        "items": [{"product_id": s.product, "quantity": 1, "unit_price": 100}],
+    }
+    if voucher_type == "purchase":
+        body["supplier_invoice_number"] = "SUP-UNDATED"
+    return s.client.post("/api/invoices/", json=body)
+
+
+def _undated_quotation(s, document_type: str):
+    body = quotation_payload(s.ledger, s.product, document_type=document_type, valid_until=None)
+    body.pop("quotation_date", None)
+    return s.client.post("/api/quotations/", json=body)
+
+
+def _undated_challan(s):
+    return s.client.post("/api/delivery-challans/", json={
+        "ledger_id": s.ledger,
+        "items": [{"product_id": s.product, "quantity": 1, "unit_price": 100}],
+    })
+
+
+def _undated_voucher(s, voucher_type: str):
+    return s.client.post("/api/payments/", json={
+        "ledger_id": s.ledger, "voucher_type": voucher_type, "amount": 100, "mode": "bank",
+    })
+
+
+def _undated_credit_note(s):
+    """The invoice it covers is made before the clock is frozen; this returns the request to send."""
+    invoice = ok(_invoice(s, s.current + timedelta(days=1)))
+    body = {
+        "ledger_id": s.ledger,
+        "invoice_ids": [invoice["id"]],
+        "credit_note_type": "return",
+        "items": [{"invoice_id": invoice["id"], "invoice_item_id": invoice["items"][0]["id"], "quantity": 1}],
+    }
+    return lambda: s.client.post("/api/credit-notes/", json=body)
+
+
+def _request(s, make):
+    """The undated request, with anything it needs created while the real clock still runs."""
+    return make(s) if make is _undated_credit_note else None
+
+
+def _send(s, make, send):
+    return send() if send is not None else make(s)
+
+
+UNDATED = [
+    pytest.param(lambda s: _undated_invoice(s), "invoice_date", id="sales"),
+    pytest.param(lambda s: _undated_invoice(s, "purchase"), "invoice_date", id="purchase"),
+    pytest.param(lambda s: _undated_quotation(s, "quotation"), "quotation_date", id="quotation"),
+    pytest.param(lambda s: _undated_quotation(s, "proforma"), "quotation_date", id="proforma"),
+    pytest.param(_undated_challan, "challan_date", id="challan"),
+    pytest.param(lambda s: _undated_voucher(s, "receipt"), "date", id="receipt"),
+    pytest.param(lambda s: _undated_voucher(s, "payment"), "date", id="payment"),
+    pytest.param(_undated_credit_note, "credit_note_date", id="credit-note"),
+]
+
+
+@pytest.mark.parametrize("make, _field", UNDATED)
+def test_an_undated_create_on_a_day_no_financial_year_covers_is_refused(two_years, db_session, monkeypatch, make, _field):
+    s = two_years
+    send = _request(s, make)
+    before = _sequences(db_session)
+    _freeze_india_day(monkeypatch, s.after_last)
+
+    response = _send(s, make, send)
+
+    assert response.status_code == 400, response.text
+    assert response.json()["detail"] == s.refusal(s.after_last)
+    assert _sequences(db_session) == before
+
+
+@pytest.mark.parametrize("make, field", UNDATED)
+def test_an_undated_create_on_a_covered_day_is_dated_today_in_india(two_years, monkeypatch, make, field):
+    s = two_years
+    today = s.current + timedelta(days=10)
+    send = _request(s, make)
+    _freeze_india_day(monkeypatch, today)
+
+    response = _send(s, make, send)
+
+    assert response.status_code in (200, 201), response.text
+    assert response.json()[field][:10] == today.isoformat()
+
+
+def test_an_undated_invoice_is_numbered_in_the_year_that_holds_today(two_years, monkeypatch):
+    s = two_years
+    _freeze_india_day(monkeypatch, s.previous + timedelta(days=30))
+
+    created = ok(_undated_invoice(s))
+
+    assert created["invoice_number"] == f"INV-{s.previous.year}-001"
+    assert created["invoice_date"][:10] == (s.previous + timedelta(days=30)).isoformat()
+
+
+def test_an_undated_invoice_just_after_midnight_in_india_takes_the_india_date(two_years, monkeypatch):
+    """00:30 on 2 April in India is still 1 April in UTC; the invoice is dated 2 April."""
+    from datetime import datetime, timezone
+
+    from src.services import gst_tax_service
+
+    s = two_years
+    day = date(s.after_last.year, 4, 2)
+    _add_year(s.client, s.after_last)
+    instant = datetime(day.year, 4, 1, 19, 0, tzinfo=timezone.utc)
+
+    class Frozen(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return instant.astimezone(tz) if tz else instant.replace(tzinfo=None)
+
+    monkeypatch.setattr(gst_tax_service, "datetime", Frozen)
+
+    created = ok(_undated_invoice(s))
+
+    assert created["invoice_date"][:10] == day.isoformat()
+    assert created["invoice_number"] == f"INV-{day.year}-001"
