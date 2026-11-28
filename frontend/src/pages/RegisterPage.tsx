@@ -1,8 +1,9 @@
 import { FormEvent, useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { registerAccount, resendVerification } from '../api/auth';
 import { useAuthConfig } from '../hooks/useAuthConfig';
 import { authErrorMessage } from '../utils/authFlow';
+import { loginPathWithNext, sanitizeNextPath } from '../utils/nextPath';
 import AuthLayout from '../components/AuthLayout';
 import OAuthButtons from '../components/OAuthButtons';
 import { suggestEmailDomain } from '../utils/emailDomainSuggestion';
@@ -22,6 +23,11 @@ export default function RegisterPage() {
   const emailInputRef = useRef<HTMLInputElement>(null);
   const [focusEmail, setFocusEmail] = useState(false);
   const config = useAuthConfig();
+  const [searchParams] = useSearchParams();
+  // The page a signed-out visitor was headed for, carried through the Sign in
+  // link and the Google button below. Anything unsafe falls back to '/', which
+  // both drop, so a visitor who opened /register directly is unchanged.
+  const next = sanitizeNextPath(searchParams.get('next'));
 
   // The form is only back in the DOM after submittedEmail clears, so focus
   // the address once it has rendered.
@@ -107,13 +113,13 @@ export default function RegisterPage() {
         <h2 className="page-title">Start invoicing</h2>
         <p className="section-copy">We will email you a link to choose your password, then you can set up your company.</p>
         <p className="section-copy">
-          Already have an account? <Link to="/login" style={SIGN_IN_LINK_STYLE}>Sign in</Link>
+          Already have an account? <Link to={loginPathWithNext(next)} style={SIGN_IN_LINK_STYLE}>Sign in</Link>
         </p>
       </div>
 
       <OAuthButtons
         providers={config.providers}
-        next="/"
+        next={next}
         emailAction="sign up"
         googleHint="Works for new and existing Google accounts."
         divider="or sign up with your email"

@@ -109,15 +109,28 @@ type LandingInput = {
 /**
  * Where a signed-out visitor goes.
  *
- * Someone who opens the bare home page (`/`, any query string, so UTM tags
- * survive) in a browser that has never signed in, on a deployment that accepts
- * sign-ups, wants Create account. Every other case (deep links, ended sessions,
- * returning users, sign-up off) goes to /login with the return path, as before.
+ * A browser that has never signed in, on a deployment that accepts sign-ups,
+ * wants Create account: the bare home page (`/`, any query string, so UTM tags
+ * survive) keeps its query string, and any other page goes to
+ * `/register?next=<path+query>` so the Sign in link and the Google button on
+ * that page can carry the visitor back after sign-in. The only exception is
+ * under `/oauth/`, where the visitor is mid-way through connecting an app and
+ * already has an account, so they still get Sign in. Every other case (ended
+ * sessions, returning users, sign-up off) goes to /login with the return path,
+ * as before. A return path that fails `isSafeNextPath` is never put in the
+ * Create account URL; the visitor gets plain `/register`.
  */
 export function signedOutLandingPath({ pathname, search, sessionEnded, signedInBefore, signupEnabled }: LandingInput): string {
-  if (pathname === '/' && !sessionEnded && !signedInBefore && signupEnabled) {
-    return `${REGISTER_PATH}${search}`;
+  if (!sessionEnded && !signedInBefore && signupEnabled && !pathname.startsWith('/oauth/')) {
+    if (pathname === '/') {
+      return `${REGISTER_PATH}${search}`;
+    }
+    const next = `${pathname}${search}`;
+    if (!isSafeNextPath(next)) {
+      return REGISTER_PATH;
+    }
+    const params = new URLSearchParams({ [NEXT_PARAM]: next });
+    return `${REGISTER_PATH}?${params.toString()}`;
   }
   return loginPathWithNext(`${pathname}${search}`, sessionEnded ? SESSION_EXPIRED_REASON : undefined);
 }
-// seed

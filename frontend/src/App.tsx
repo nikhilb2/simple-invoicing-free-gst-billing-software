@@ -87,9 +87,10 @@ function Protected({ children }: { children: React.ReactNode }) {
 /**
  * Sends a signed-out visitor to Create account or Sign in (see signedOutLandingPath).
  *
- * Only a first-time visitor on `/` depends on the sign-up config, so only they
- * wait for it (rendering nothing, not the wrong page). If the config request
- * fails, useAuthConfig reports sign-up as off and they get Sign in.
+ * Only a first-time visitor on a non-`/oauth/` path depends on the sign-up
+ * config, so only they wait for it (rendering nothing, not the wrong page).
+ * If the config request fails, useAuthConfig reports sign-up as off and they
+ * get Sign in.
  */
 function SignedOutRedirect() {
   const location = useLocation();
@@ -97,8 +98,8 @@ function SignedOutRedirect() {
   const config = useAuthConfig();
   const [signedInBefore] = useState(hasSignedInBefore);
 
-  const firstTimeHome = location.pathname === '/' && !sessionEnded && !signedInBefore;
-  if (firstTimeHome && config.isLoading) {
+  const firstTimeVisitor = !sessionEnded && !signedInBefore && !location.pathname.startsWith('/oauth/');
+  if (firstTimeVisitor && config.isLoading) {
     return null;
   }
 

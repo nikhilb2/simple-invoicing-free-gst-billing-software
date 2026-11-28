@@ -9,9 +9,9 @@ vi.mock('../hooks/useAuthConfig', () => ({ useAuthConfig: () => config.value }))
 
 import RegisterPage from './RegisterPage';
 
-function render() {
+function render(entry = '/register') {
   return renderToStaticMarkup(
-    <MemoryRouter initialEntries={['/register']}>
+    <MemoryRouter initialEntries={[entry]}>
       <RegisterPage />
     </MemoryRouter>,
   ).replace(/<!-- -->/g, '');
@@ -33,5 +33,25 @@ describe('RegisterPage', () => {
     const html = render();
     expect(html).not.toContain('Google');
     expect(html).toContain('Already have an account?');
+  });
+
+  it('carries next through the Sign in link and the Google button', () => {
+    const html = render('/register?next=%2Finvoices%3Futm_source%3Dchatgpt.com');
+    // A normal link: Sign in never redirects back to Create account, so there
+    // is nothing to bounce, and signing in lands on the deep link.
+    expect(html).toContain('href="/login?next=%2Finvoices%3Futm_source%3Dchatgpt.com"');
+    expect(html).toContain('next=%2Finvoices%3Futm_source%3Dchatgpt.com');
+  });
+
+  it('drops next from both when the page was opened directly', () => {
+    const html = render();
+    expect(html).toContain('href="/login"');
+    expect(html).not.toContain('next=%2Finvoices');
+  });
+
+  it('drops an unsafe next from both', () => {
+    const html = render('/register?next=%2F%2Fevil.com');
+    expect(html).toContain('href="/login"');
+    expect(html).not.toContain('evil.com');
   });
 });
